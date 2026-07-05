@@ -346,3 +346,281 @@ changed, only documentation of a deliberately-not-taken path.
    not a build change.
 
 ## Decisions Needed status: still none open.
+
+---
+
+# Changelog — spec v0.4.4 → v0.4.5
+
+You chose simple, single-size Gelato templates over Gelato's multi-size/
+multi-price-point template option ("start easy with simpler template with
+each an individual size and cost"). That's a direct, unambiguous request,
+but it surfaced a real architectural gap the spec hadn't made explicit:
+how a design sold at 2–3 sizes (already assumed since v0.4, section 1's
+"8–12 listings... a few designs × 2–3 sizes") actually flows through
+mockup, critic pass, digest, and publish once each size is its own
+separate Gelato product instead of one shared multi-variant product.
+Resolved with a "review once at a primary size, fan out to secondary
+sizes only after approval" model — one new item flagged, not silently
+decided.
+
+1. **Section 4 (static configuration):** Gelato template-ID mapping bullet
+   rewritten to state explicitly that each size × orientation is its own
+   individual, single-variant, single-price template — not a shared
+   template with Gelato's multi-size-variant option — and why (starting
+   simple, avoiding Gelato's per-template variant/price-selection surface
+   for M1). **New: "Primary size designation"** — one size per orientation
+   (defaulting to the smaller/cheaper one, ~12x16) is marked primary and
+   used for generation/review; the rest are secondary, created only after
+   approval.
+2. **Section 3, step 3 (POD mockup) — now primary-size only.** Previously
+   ambiguous about how many sizes get rendered per candidate. Now: exactly
+   one Gelato product, at the primary size, per candidate — secondary
+   sizes are explicitly deferred to step 7. This is the core mechanical
+   change everything else follows from.
+3. **Section 3, step 4 (compliance draft):** clarified the draft text is
+   generated once, at the primary size, and reused (with a small
+   size-specific title/price adjustment) for secondary-size listings at
+   publish time — not redrafted per size.
+4. **Section 3, step 5 (critic pass):** clarified this is inherently a
+   single review per design now, since only the primary size exists at
+   this point — removes what would otherwise have been a real cost/
+   thoroughness tradeoff (reviewing N sizes vs. one). Cleanup on 3-attempt
+   failure simplified to match: only ever one Gelato product to delete per
+   attempt, not one per size.
+5. **Section 3, step 6 (Telegram digest):** clarified the gallery shown is
+   the primary size's (the only one that exists yet), and that approving
+   a candidate approves the whole design — all configured sizes — not
+   just the primary one. Flagged as D6 (see section 9) since this means
+   secondary-size renders are never individually reviewed before
+   publishing.
+6. **Section 3, step 7 (evening run) — new fan-out logic.** On approval:
+   publish the primary-size listing (already created), then for each
+   remaining configured size, create its Gelato product (using that size's
+   template), reuse the compliance draft with a size-specific adjustment,
+   and publish it as its own Etsy listing. Added a lightweight retry-once-
+   then-surface-in-next-digest fallback for a secondary size's creation/
+   publish failure — deliberately simpler than the Go/Hold/Kill/critic-pass
+   machinery, since there's no compliance risk at this stage.
+7. **Section 3, step 9 (performance monitor) and section 6 (learning
+   loop):** clarified that per-listing `views`/`numFavorers`/order data is
+   tracked per size-variant listing but rolled up to the design level
+   before feeding the fast/slow learning loops, since a design's overall
+   performance across sizes — not one size in isolation — is the
+   meaningful signal.
+8. **Section 4 (data storage):** schema description updated — one design/
+   candidate row links to exactly one primary Gelato product
+   (pre-approval, subject to the retry/cleanup cycle) and zero or more
+   secondary Gelato products + Etsy listing IDs (post-approval only).
+9. **Section 5 (M1 milestone):** added a third required manual test — a
+   full approve → multi-size fan-out run — alongside the existing Kill-
+   branch and 3-attempt-failure tests, since the fan-out logic only runs
+   after approval and wouldn't be exercised by the other two.
+10. **Section 1:** minor cross-references added (primary/secondary size
+    labels on the two price points; per-size Gelato cost check clarified
+    as a simple per-size lookup, not a shared multi-variant price table).
+    No numbers changed.
+11. **Section 9 — new item, D6 (flagged, not blocking):** approve-once-
+    per-design vs. approve-per-size. Defaulted to approve-once (matches
+    your "start easy" direction and keeps the Telegram flow unchanged),
+    but flagged because it means secondary-size renders publish without
+    individual review — low risk since the artwork is identical across
+    sizes and Gelato's rendering is mechanical, but not zero risk (a
+    lifestyle image could crop/scale differently at a larger size). Noted
+    the small addition needed (show secondary renders in a follow-up
+    digest message) if you'd rather review them individually.
+
+## Decisions Needed status: one flagged (D6), not blocking.
+
+---
+
+# Changelog — spec v0.4.5 → v0.4.6
+
+You provided the real size lineup you want (six sizes, both orientations)
+and the actual Gelato per-size cost data (`gelato_premium_matte_poster_
+prices_BE_2026-07-05.csv`, Belgium market, EUR) — this finally resolves
+the "Gelato base cost per size" item that section 1 had flagged as an
+action item since v0.4. You also asked for explicit placeholders on the
+12 Gelato template IDs since creating them is a manual step on your side.
+Two new items are flagged (D7, D8) rather than decided silently, since the
+real cost data changes the pricing math in ways that go beyond what you
+asked me to resolve.
+
+1. **Section 1 — size lineup replaced.** The old 2-size ($22/$32 USD,
+   12x16/18x24) placeholder pair is replaced with your six real sizes
+   (5x7″, 8x12″, 10x24″, A3, A2, A1), each in both orientations, with real
+   product/shipping/total cost pulled directly from your CSV. **Flagged,
+   not normalized away:** A2 is the one size where Gelato's own price list
+   has portrait and landscape costing differently (€20.21 vs €19.60) —
+   you said all sizes are "the same price point" across orientations,
+   which is true for five of six, so this discrepancy is called out
+   explicitly rather than silently averaged.
+2. **Section 1 — success metric recalculated.** One approved design now
+   produces 6 listings (was 2–3), so roughly 2 approved designs reach a
+   similar 8–12-listing sample size, versus "a few designs" before.
+3. **Section 3, steps 3, 6, 7 — fan-out updated from 1–2 secondary sizes
+   to 5.** Mockup/critic-pass/digest still touch only the primary size
+   (unchanged mechanism from v0.4.5); step 7's publish fan-out now creates
+   and publishes five secondary-size listings per approved design instead
+   of one or two.
+4. **Section 4 (static configuration) — Gelato template-ID mapping
+   expanded to 12 entries (6 sizes × 2 orientations) and seeded with
+   explicit placeholder values**, per your request, since real template
+   IDs require a manual Gelato-dashboard step on your side. Added an
+   explicit **placeholder policy**: all code/config/tests can be built
+   against placeholders now; the actual blocking point is the first live
+   `products:create-from-template` call, and a still-placeholder
+   `templateId` reaching that call should fail loudly, not silently skip
+   or publish against a fake ID. Primary size default changed from
+   12x16-equivalent to **21x29.7 cm / 8x12″** (one of the five sizes
+   without the A2-style orientation cost asymmetry).
+5. **Section 5 (M1 milestone) — sequencing clarified against the
+   placeholder policy.** Only the primary size's two templates need to be
+   real before M1's first manual run; only one secondary size's templates
+   need to be real before M1's required multi-size fan-out test; the
+   remaining four sizes can stay as placeholders until you're ready to
+   sell them. This directly answers "when does this become blocking."
+6. **Section 6 (learning loop):** views/favorites/orders now tracked
+   across up to six size-variant listings per design instead of two or
+   three, still rolled up to the design level before feeding the loop —
+   mechanism unchanged from v0.4.5, just a larger fan-out.
+7. **Section 9 — two new flagged items, not decided silently:**
+   - **D7 (shop listing currency):** the real cost data is EUR; the
+     spec's price points were previously USD. I don't know which currency
+     your actual Etsy shop lists in, and I'm not guessing — this needs
+     your confirmation before final prices are locked in.
+   - **D8 (final retail prices per size):** provided illustrative
+     cost-plus pricing at a 45% margin for reference, but flagged that a
+     strict margin percentage makes small sizes (e.g. 5x7″ at ~€29) land
+     well above the old $22 anchor, which may cut against the
+     "price-sensitive" buyer framing in section 1 — offered alternatives
+     (lower margin on entry sizes, round-number anchors) without picking
+     one for you. **D8a** bundled in: whether A2's two orientations get
+     cost-accurate or unified pricing.
+   - **D6 re-flagged, not re-resolved:** noted that the existing
+     approve-once-per-design tradeoff now spans five unreviewed secondary
+     renders instead of one or two, since the size lineup grew — same
+     open question as v0.4.5, just higher stakes now that it's real sizes
+     instead of a placeholder pair.
+8. **CSV added to the repo-facing outputs**, alongside the spec, per your
+   stated plan to commit it for reference.
+9. **No changes** to sections 2, 7, 8, or the trend-research/critic-pass/
+   Telegram-mechanism logic beyond the size-count substitution — those
+   remain exactly as resolved in v0.4.3–v0.4.5.
+
+## Decisions Needed status: two new items flagged (D7, D8/D8a), plus D6
+carried over from v0.4.5 — none blocking the build from starting, but D7
+and D8 should be resolved before any listing actually goes live with real
+prices.
+
+---
+
+# Changelog — spec v0.4.6 → v0.4.7
+
+You resolved D7, D8, and D8a directly: EUR confirmed, lower margins on
+entry sizes, round-number price anchors preferred over precise margin
+targeting, and a single shared price for A2 despite its orientation cost
+asymmetry. All three are now locked into the spec, not left as reference
+math.
+
+1. **D7 resolved — shop currency: EUR (section 1).** All USD framing
+   removed; the earlier $22/$32 anchors are fully retired rather than
+   just superseded. The €5/day Etsy Ads cap restated in EUR (the round
+   "5" figure carries over unchanged). Etsy's own flat fees are still
+   USD-denominated globally and convert at time of charge — kept as a
+   noted approximation (~€0.40), not treated as a fixed EUR number.
+2. **D8 resolved — final retail prices, tiered by margin (section 1,
+   section 3 steps 4/7, section 4).** Six round-number EUR prices set:
+   €19 (5x7″), €24 (8x12″, primary), €35 (A3), €39 (A2), €45 (10x24″),
+   €49 (A1). Two sizes (5x7″, 8x12″) deliberately priced at lower margin
+   (~21%, ~32%) than the rest (~38–44%), per your "lower margins for
+   entry versions" instruction — framed against the existing
+   "price-sensitive self-purchase redecorator" buyer segment in section 1
+   so the reasoning is traceable, not just the numbers. Noted (not
+   flagged as a problem) that 10x24″ prices above A2 despite covering
+   less print area, since it genuinely costs more to produce — prices
+   follow real Gelato cost, not physical size.
+3. **D8a resolved — A2 orientation pricing (section 1, section 4).**
+   Single €39 price for both A2 orientations, per your explicit
+   instruction to prefer one round number over cost-accurate per-
+   orientation pricing. Documented the resulting small margin difference
+   (~38% portrait vs. ~39% landscape) so it's a known, deliberate choice
+   rather than something a future reviewer flags as an inconsistency.
+4. **Section 3, steps 4 and 7:** compliance draft and the fan-out/publish
+   step now reference the specific final EUR price per size rather than
+   a placeholder or illustrative figure.
+5. **Section 4 (static configuration):** template-ID mapping table now
+   also lists each size's final retail price alongside its (still
+   placeholder) template IDs, so the two pieces of config live in one
+   place instead of two.
+6. **Section 5 (M1 milestone):** the required multi-size fan-out test now
+   explicitly confirms listings publish "at their real EUR prices," not
+   just that they publish at all.
+7. **Section 9:** D7, D8, D8a moved to resolved. **D6 remains the only
+   open item** — unaffected by this revision, still the approve-once-
+   per-design-vs-per-size tradeoff from v0.4.5, now covering five
+   secondary sizes with real, final prices attached rather than
+   illustrative ones.
+8. **No other changes.** Trend research, critic pass, Telegram mechanism,
+   Gelato confirmations (D4/D5), and SerpApi's parked status (section 8)
+   all carry over unchanged from v0.4.6.
+
+## Decisions Needed status: one open item (D6). Everything else in the
+spec — including currency, final pricing, and the size lineup — is now
+resolved, not just flagged with reference numbers.
+
+---
+
+# Changelog — spec v0.4.7 → v0.4.8
+
+You resolved D6 with a specific middle-ground rule: review the primary
+size first; if approved, bundle and approve the rest by aspect ratio
+rather than either auto-publishing everything or reviewing every size
+individually. This is the last open item — **section 9 now has zero
+unresolved decisions.**
+
+1. **Aspect-ratio groups derived from the actual six sizes' geometry
+   (section 1, section 4) — a factual determination, not a judgment
+   call.** 8x12″ (21x29.7cm) is literally A4 dimensions, and A3/A2/A1
+   share the exact same ISO ratio (~1:1.414) — these four form the
+   **primary group**. 5x7″ (13x18cm, ~1:1.385) is close but distinctly
+   different. 10x24″ (25x60cm, ~1:2.4) is a genuinely different,
+   elongated ratio. Both get their own group.
+2. **Section 3, steps 6–7 — the core rewrite.** Step 6 is now explicitly
+   "primary group review" only. Step 7 splits into: (a) primary-group
+   approval auto-publishes A3/A2/A1 alongside the primary with no further
+   review, since they share its exact aspect ratio and render identically
+   just scaled; (b) the 5x7 and 10x24 groups are then independently
+   generated (re-cropped from the same approved artwork — no new
+   image-gen call), critic-passed with the same rubric as step 5, and
+   sent as their own follow-up digest entries (same `sendMediaGroup` +
+   `sendMessage` mechanism, sent immediately in the same evening run) for
+   their own separate Approve/Edit/Reject.
+3. **Failure handling scoped per group, not per design.** A 5x7 or 10x24
+   group that fails critic pass 3 times is abandoned on its own — cleanup
+   removes only that group's Gelato product, and the design's
+   already-published primary group is untouched. Documented explicitly
+   that a design can end up selling at 4, 5, or 6 sizes depending on
+   which groups pass review — framed as expected behavior, not an error
+   state.
+4. **Section 4 (static configuration):** new "aspect-ratio group mapping"
+   entry; template-ID table now shows each size's group; data-storage
+   schema rewritten around one row per group per candidate (not one row
+   per candidate) so each group can carry its own decision, critic-pass
+   history, and Gelato/Etsy IDs independently.
+5. **Section 5 (M1 milestone):** replaced the old "one secondary size"
+   fan-out test with a requirement to exercise the full group flow at
+   least once — primary-group auto-publish, plus both an approve and a
+   reject/abandon outcome across the 5x7/10x24 groups — flagged as the one
+   genuinely new behavior this revision introduces, needing a real-world
+   test, not just unit tests against mocks.
+6. **Section 6 (learning loop):** decision log now records up to three
+   separate approve/edit/reject decisions per design instead of one;
+   sales/views data rolls up through group level before reaching the
+   design level.
+7. **Section 9:** D6 resolved. **No open Decisions Needed items remain.**
+8. **No other changes.** Pricing (D7/D8/D8a), the Gelato/Telegram/Etsy
+   mechanics, and SerpApi's parked status all carry over unchanged from
+   v0.4.7.
+
+## Decisions Needed status: none open. All flagged items across this
+spec's revision history (D1–D8a) are resolved.
