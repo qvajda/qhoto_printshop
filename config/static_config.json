@@ -1,0 +1,34 @@
+{
+  "gelato_templates": {
+    "5x7_portrait": "PLACEHOLDER_5x7_PORTRAIT",
+    "5x7_landscape": "PLACEHOLDER_5x7_LANDSCAPE",
+    "8x12_portrait": "PLACEHOLDER_8x12_PORTRAIT",
+    "8x12_landscape": "PLACEHOLDER_8x12_LANDSCAPE",
+    "A3_portrait": "PLACEHOLDER_A3_PORTRAIT",
+    "A3_landscape": "PLACEHOLDER_A3_LANDSCAPE",
+    "A2_portrait": "PLACEHOLDER_A2_PORTRAIT",
+    "A2_landscape": "PLACEHOLDER_A2_LANDSCAPE",
+    "10x24_portrait": "PLACEHOLDER_10x24_PORTRAIT",
+    "10x24_landscape": "PLACEHOLDER_10x24_LANDSCAPE",
+    "A1_portrait": "PLACEHOLDER_A1_PORTRAIT",
+    "A1_landscape": "PLACEHOLDER_A1_LANDSCAPE"
+  },
+  "prices_eur": {
+    "5x7": 19,
+    "8x12": 24,
+    "A3": 35,
+    "A2": 39,
+    "10x24": 45,
+    "A1": 49
+  },
+  "aspect_ratio_groups": {
+    "primary": ["8x12", "A3", "A2", "A1"],
+    "5x7": ["5x7"],
+    "10x24": ["10x24"]
+  },
+  "primary_size": "8x12",
+  "etsy_taxonomy_id": "",
+  "etsy_shipping_profile_id": "",
+  "etsy_production_partner_ids": [],
+  "etsy_who_made": ""
+}
