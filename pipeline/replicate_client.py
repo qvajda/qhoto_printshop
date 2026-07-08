@@ -27,7 +27,7 @@ def generate_image(prompt: str, *, api_token: str = None) -> dict:
         },
         method="POST",
     )
-    result = http.send(request)
+    result = http.send(request, timeout=65)
 
     if result.get("status") != "succeeded":
         raise ReplicatePredictionTimeoutError(

@@ -14,6 +14,7 @@ def test_generate_image_builds_correct_request_and_parses_response():
         captured["auth_header"] = request.get_header("Authorization")
         captured["prefer_header"] = request.get_header("Prefer")
         captured["body"] = json.loads(request.data)
+        captured["timeout"] = timeout
         return {"id": "pred123", "status": "succeeded", "output": ["https://replicate.delivery/out.png"]}
 
     with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
@@ -24,6 +25,10 @@ def test_generate_image_builds_correct_request_and_parses_response():
     assert captured["prefer_header"] == "wait"
     assert captured["body"]["input"]["prompt"] == "a botanical watercolor poster"
     assert result == {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred123"}
+    # Replicate's Prefer: wait can hold the connection open up to 60s server-side;
+    # the client-side socket timeout must be at least that long or the raw
+    # URLError/socket timeout fires before our ReplicatePredictionTimeoutError can.
+    assert captured["timeout"] >= 60
 
 
 def test_generate_image_raises_timeout_error_when_not_succeeded():
