@@ -131,3 +131,17 @@ def test_collect_trending_now_combines_web_search_and_demand_proxy():
     assert raw_candidates[0]["trend_source"] == "trending_now:monstera line art"
     assert raw_candidates[0]["listing_count"] == 1000
     assert raw_candidates[0]["demand_ratio"] == 10 / 1000
+
+
+def test_collect_on_demand_returns_single_demand_checked_candidate():
+    def fake_find_listings(keywords, **kwargs):
+        assert keywords == "coastal minimalist print"
+        return {"count": 500, "results": [{"num_favorers": 2}]}
+
+    with patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        raw = research.collect_on_demand("coastal minimalist print")
+
+    assert raw["niche"] == "coastal minimalist print"
+    assert raw["trend_source"] == "telegram_on_demand:coastal minimalist print"
+    assert raw["listing_count"] == 500
+    assert raw["demand_ratio"] == 2 / 500

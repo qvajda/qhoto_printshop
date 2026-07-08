@@ -184,3 +184,10 @@ def collect_trending_now(*, anthropic_api_key=None, etsy_api_key=None, etsy_api_
         )
         for idea in keyword_ideas
     ]
+
+
+def collect_on_demand(topic: str, *, etsy_api_key=None, etsy_api_secret=None) -> dict:
+    return _build_demand_checked_candidate(
+        topic, "Requested via Telegram /research command", "telegram_on_demand",
+        etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+    )
