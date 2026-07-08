@@ -1,6 +1,6 @@
 import json
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pipeline.anthropic_client as anthropic_client
@@ -191,3 +191,24 @@ def collect_on_demand(topic: str, *, etsy_api_key=None, etsy_api_secret=None) ->
         topic, "Requested via Telegram /research command", "telegram_on_demand",
         etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
     )
+
+
+def _insert_candidate(conn, raw: dict, classification: dict, *, now=None) -> int:
+    now = now or datetime.utcnow()
+    timestamp = now.isoformat()
+    status = "pending" if classification["go_hold_kill"] == "go" else "abandoned"
+
+    cursor = conn.execute(
+        """
+        INSERT INTO candidates (
+            created_at, niche, trend_source, go_hold_kill, hold_recheck_date,
+            kill_reason, status, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            timestamp, raw["niche"], raw["trend_source"], classification["go_hold_kill"],
+            classification["hold_recheck_date"], classification["kill_reason"], status, timestamp,
+        ),
+    )
+    conn.commit()
+    return cursor.lastrowid

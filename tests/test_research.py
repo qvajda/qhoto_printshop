@@ -1,7 +1,8 @@
 import json
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
+import pipeline.db as db
 import pipeline.research as research
 
 
@@ -145,3 +146,52 @@ def test_collect_on_demand_returns_single_demand_checked_candidate():
     assert raw["trend_source"] == "telegram_on_demand:coastal minimalist print"
     assert raw["listing_count"] == 500
     assert raw["demand_ratio"] == 2 / 500
+
+
+def _fresh_conn(tmp_path):
+    conn = db.get_connection(tmp_path / "test.sqlite3")
+    db.init_db(conn)
+    return conn
+
+
+def test_insert_candidate_writes_go_row_as_pending(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    raw = {"niche": "monstera line art", "trend_source": "trending_now:monstera line art"}
+    classification = {"go_hold_kill": "go", "hold_recheck_date": None, "kill_reason": None}
+
+    candidate_id = research._insert_candidate(conn, raw, classification, now=datetime(2026, 7, 8, 10, 0, 0))
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["niche"] == "monstera line art"
+    assert row["go_hold_kill"] == "go"
+    assert row["status"] == "pending"
+    assert row["created_at"] == "2026-07-08T10:00:00"
+    conn.close()
+
+
+def test_insert_candidate_writes_hold_row_as_abandoned(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    raw = {"niche": "holiday design", "trend_source": "event_lookahead:holiday_peak"}
+    classification = {"go_hold_kill": "hold", "hold_recheck_date": "2027-09-11", "kill_reason": None}
+
+    candidate_id = research._insert_candidate(conn, raw, classification, now=datetime(2026, 7, 8, 10, 0, 0))
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["go_hold_kill"] == "hold"
+    assert row["hold_recheck_date"] == "2027-09-11"
+    assert row["status"] == "abandoned"
+    conn.close()
+
+
+def test_insert_candidate_writes_kill_row_as_abandoned_with_reason(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    raw = {"niche": "saturated term", "trend_source": "trending_now:saturated term"}
+    classification = {"go_hold_kill": "kill", "hold_recheck_date": None, "kill_reason": "demand_ratio too low"}
+
+    candidate_id = research._insert_candidate(conn, raw, classification, now=datetime(2026, 7, 8, 10, 0, 0))
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["go_hold_kill"] == "kill"
+    assert row["kill_reason"] == "demand_ratio too low"
+    assert row["status"] == "abandoned"
+    conn.close()
