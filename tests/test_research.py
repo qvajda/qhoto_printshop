@@ -195,3 +195,62 @@ def test_insert_candidate_writes_kill_row_as_abandoned_with_reason(tmp_path):
     assert row["kill_reason"] == "demand_ratio too low"
     assert row["status"] == "abandoned"
     conn.close()
+
+
+def test_run_research_cycle_writes_all_collected_candidates(tmp_path):
+    conn = _fresh_conn(tmp_path)
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": json.dumps([{"keyword": "monstera line art", "rationale": "rising"}]), "raw": {}}
+
+    def fake_find_listings(keywords, **kwargs):
+        return {"count": 1000, "results": [{"num_favorers": 50}]}  # ratio 0.05, well above threshold -> go
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search), \
+         patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        inserted_ids = research.run_research_cycle(conn, {}, now=date(2026, 9, 1))
+
+    rows = conn.execute("SELECT * FROM candidates").fetchall()
+    assert len(rows) == len(inserted_ids)
+    assert len(rows) == len(research.EVENT_WINDOWS_2026) + 1  # 6 event candidates + 1 trending-now
+    conn.close()
+
+
+def test_run_research_cycle_includes_on_demand_topics(tmp_path):
+    conn = _fresh_conn(tmp_path)
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": "[]", "raw": {}}
+
+    def fake_find_listings(keywords, **kwargs):
+        return {"count": 1000, "results": [{"num_favorers": 50}]}
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search), \
+         patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        research.run_research_cycle(conn, {}, on_demand_topics=["desert minimalist art"], now=date(2026, 9, 1))
+
+    row = conn.execute(
+        "SELECT * FROM candidates WHERE trend_source = ?", ("telegram_on_demand:desert minimalist art",)
+    ).fetchone()
+    assert row is not None
+    assert row["go_hold_kill"] == "go"
+    conn.close()
+
+
+def test_run_research_cycle_falls_back_to_safe_evergreen_when_nothing_goes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": "[]", "raw": {}}
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search):
+        # now chosen so every event window (including engagement_season, which runs
+        # to 2027-02-14 - the latest end date of any window) is within MIN_EVENT_LEAD_DAYS
+        # of closing or already closed
+        inserted_ids = research.run_research_cycle(conn, {}, now=date(2027, 2, 10))
+
+    rows = conn.execute("SELECT * FROM candidates WHERE go_hold_kill = 'go'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["trend_source"].startswith("safe_evergreen_fallback:")
+    assert len(inserted_ids) == len(research.EVENT_WINDOWS_2026) + 1  # events (all hold) + 1 fallback
+    conn.close()

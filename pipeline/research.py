@@ -212,3 +212,29 @@ def _insert_candidate(conn, raw: dict, classification: dict, *, now=None) -> int
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def run_research_cycle(conn, static_config, *, on_demand_topics=None, now=None) -> list:
+    now_dt = datetime.combine(now, datetime.min.time()) if now else datetime.utcnow()
+    today = now_dt.date()
+    on_demand_topics = on_demand_topics or []
+
+    raw_candidates = collect_event_lookahead()
+    raw_candidates += collect_trending_now()
+    for topic in on_demand_topics:
+        raw_candidates.append(collect_on_demand(topic))
+
+    inserted_ids = []
+    any_go = False
+    for raw in raw_candidates:
+        classification = classify(raw, now=today)
+        if classification["go_hold_kill"] == "go":
+            any_go = True
+        inserted_ids.append(_insert_candidate(conn, raw, classification, now=now_dt))
+
+    if not any_go:
+        fallback_raw = pick_safe_evergreen_fallback()
+        fallback_classification = classify(fallback_raw, now=today)
+        inserted_ids.append(_insert_candidate(conn, fallback_raw, fallback_classification, now=now_dt))
+
+    return inserted_ids
