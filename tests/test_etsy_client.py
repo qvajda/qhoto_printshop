@@ -1,8 +1,6 @@
 import json
 from unittest.mock import patch
 
-import pytest
-
 import pipeline.etsy_client as etsy_client
 
 
