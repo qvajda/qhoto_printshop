@@ -33,3 +33,6 @@ npm-debug.log*
 
 # Local runtime data
 db/*.sqlite3
+
+# Git worktrees
+.worktrees/
