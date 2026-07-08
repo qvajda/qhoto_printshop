@@ -36,3 +36,6 @@ db/*.sqlite3
 
 # Git worktrees
 .worktrees/
+
+# Session handoff notes (local scratch, not project docs)
+.remember/

@@ -1,0 +1,100 @@
+call (keystring only — fails):
+curl -H "x-api-key: eo5s…tl" "https://openapi.etsy.com/v3/application/listings/active?keywords=botanical%20poster&limit=1"
+
+response:
+HTTP 403
+{"error":"Shared secret is required in x-api-key header."}
+
+
+call (keystring:shared_secret — works):
+curl -H "x-api-key: eo5s…tl:••••••" "https://openapi.etsy.com/v3/application/listings/active?keywords=botanical%20poster&limit=1"
+
+response:
+HTTP 200
+{
+  "count": 243150,
+  "results": [
+    {
+      "listing_id": 4534574808,
+      "user_id": 481530611,
+      "shop_id": 29388859,
+      "title": "Green Leaf Wall Art - Abstract Botanical Chevron Print for Living Room & Bedroom",
+      "description": "Bold green chevron leaf art \u2014 an abstract botanical print that brings calm, modern tropical style to any space.\n\nLayered leaves in deep greens, mint and ivory create movement and texture while keeping a clean, contemporary look.\n\nIdeal as a focal gallery piece or a subtle nature accent to complete a curated wall.\n\nPerfect for:\n- Living rooms and entryways\n- Bedrooms and home offices\n- Coastal, modern, or boho interiors\n\nPairs beautifully with natural wood frames and linen or jute textiles.\n\n\ud83d\udfe2 AVAILABLE OPTIONS\n1\ufe0f\u20e3 Digital Download\n\n\u2022 High-resolution file\n\u2022 Print at home or via local print shop\n\u2022 Includes 2:3 size ratio files. Custom dimensions available upon request.\n\n2\ufe0f\u20e3 Poster Print\n\n\u2022 Museum-quality paper\n\u2022 Vibrant, fade-resistant inks\n\u2022 Matte finish for a premium look\n\u2022 Carefully packaged for protection\n\n3\ufe0f\u20e3 Framed Print\n\n\u2022 Ready-to-hang\n\u2022 Premium wooden frame\n\u2022 Crystal-clear protective cover\n\u2022 Clean, modern presentation\nAvailable frame colors: Black, Natural Wood, or White.\nPlease include your preferred frame color in the checkout notes.\n\n4\ufe0f\u20e3 Framed Canvas\n\n\u2022 Gallery-wrapped canvas\n\u2022 Deep edge profile\n\u2022 Premium frame finish\n\u2022 High-end statement look\n\nBest for creating a bold centerpiece wall.\n\n\ud83d\udfe2 WHY THIS ARTWORK SELLS WELL IN INTERIORS\n\n\u2022 Cool tones match modern neutral palettes\n\u2022 Masculine aesthetic appeals to male buyers & gift shoppers\n\u2022 Works in professional environments\n\u2022 Creates depth without overwhelming decor\n\u2022 Adds atmosphere and sophistication\n\nThis is not just wall art \u2014 it is mood-setting decor.\n\n\ud83d\udcac What is included with the Digital Download?\nYou will receive high-resolution files suitable for professional printing in multiple size ratios. This allows you to print in various standard frame sizes.\n\n\ud83d\udcac When will I receive my order?\n\u2022 Digital downloads will be sent after purchase within a few hours max.\n\u2022 Physical prints are processed within a few business days and shipped securely packaged.\n\n\ud83d\udcac Are frames included?\nFrames are included only if you select the \u201cFramed Print\u201d or \u201cFramed Canvas\u201d option. Poster prints do not include a frame.\n\n\ud83d\udcac What print quality can I expect?\nWe use high-resolution artwork and professional printing techniques to ensure sharp detail, rich tones, and long-lasting color quality.\n\n\ud83d\udcac Will the colors look exactly like on my screen?\nColors may vary slightly due to monitor settings and printing processes, but we ensure the closest possible match to the original design.\n\n\ud83d\udcac Is the artwork ready to hang?\nFramed prints and framed canvas options arrive ready to hang. Poster prints will require framing.\n\n\ud83d\udcac What sizes are available?\nWe offer multiple standard size options. Please refer to the size selection menu in the listing.\n\n\ud83d\udcac Can I request a custom size?\nFeel free to message us \u2014 we\u2019re happy to check availability for custom sizing whenever possible.\n\n\ud83d\udcac Is this suitable as a gift?\nYes \u2014 our wall art makes a thoughtful gift for housewarmings, birthdays, office decor, holidays, and special occasions.\n\n\ud83d\udcac What if there is an issue with my order?\nCustomer satisfaction is important to us. If you experience any issue with your order, please contact us and we will make it right.\n\n\ud83d\udfe2 SHIPPING POLICY\n\n\u2022 Digital downloads will be sent after purchase within a few hours max.\n\u2022 Physical prints are made to order and sent to production shortly after purchase.\n\u2022 Production typically begins within a few hours of ordering.\n\u2022 Delivery times vary depending on destination and selected format.\n\nAll physical items are carefully packaged to ensure safe delivery.\n\n\ud83d\udfe2 CANCELLATIONS\n\n\u2022 Orders can be canceled within 6 hours of purchase.\n\u2022 After 6 hours, cancellation is no longer possible because the item enters production.\n\nPlease contact us as soon as possible if you need to cancel your order.\n\n\ud83d\udfe2 RETURNS & REFUNDS\n\nBecause all physical prints are made to order, we do not accept general returns or exchanges.\n\nRefunds or replacements are only available if:\n\n\u2022 You received the wrong item, or\n\u2022 Your item arrived damaged.\n\nIf your order arrives damaged, please contact us within 48 hours and include clear photos of the packaging and the product. We will arrange a replacement or refund.\n\n\ud83d\udfe2 DIGITAL DOWNLOAD POLICY\n\nDue to the nature of digital products:\n\n\u2022 Digital downloads are non-refundable.\n\u2022 Once files have been delivered, cancellations and refunds are not possible.\n\nIf you experience any issues accessing your files, please contact us and we will assist you promptly.\n\n\ud83d\udfe2 EXCHANGES\n\nWe do not offer exchanges on made-to-order items.\nPlease double-check size and format selections before purchasing.\n\n\ud83d\udfe2 DIGITAL FILE USAGE & LICENSE\n\nBy purchasing a digital download, you are granted a license to:\n\n\u2022 Print the artwork for personal use\n\u2022 Use the artwork commercially only as a physical printed product\n\nCommercial use example:\nYou may print the artwork on posters, canvas, framed prints, etc., and sell those physical products.\n\nNot Allowed:\n\n\u2022 Reselling or redistributing the digital file in any format\n\u2022 Sharing, transferring, or giving away the file\n\u2022 Uploading the file to print-on-demand platforms as a standalone digital product\n\u2022 Selling the file as a digital download\n\u2022 Modifying the file and reselling it as a digital product\n\nThe digital file must remain in your possession and may not be redistributed.\n\n\ud83d\udece\ufe0f If you have any questions, then feel free to contact me anytime. I usually respond within a few hours! :)\n\n\u2139\ufe0f All listing images are copyrighted and may not be reproduced or used without permission.",
+      "state": "active",
+      "creation_timestamp": 1783522161,
+      "created_timestamp": 1783522161,
+      "ending_timestamp": 1794152961,
+      "original_creation_timestamp": 1783522145,
+      "last_modified_timestamp": 1783522219,
+      "updated_timestamp": 1783522219,
+      "state_timestamp": 1783522161,
+      "quantity": 999,
+      "shop_section_id": 49030934,
+      "featured_rank": -1,
+      "url": "https://www.etsy.com/listing/4534574808/green-leaf-wall-art-abstract-botanical",
+      "num_favorers": 0,
+      "non_taxable": false,
+      "is_taxable": true,
+      "is_customizable": false,
+      "is_personalizable": true,
+      "listing_type": "physical",
+      "tags": [
+        "green leaf art",
+        "botanical print",
+        "tropical wall",
+        "abstract leaf",
+        "chevron print",
+        "modern wall art",
+        "living room art",
+        "bedroom wall",
+        "plant wall art",
+        "palm leaf art",
+        "nature poster",
+        "green decor",
+        "minimal botanical"
+      ],
+      "materials": [
+        "Paper",
+        "Wood",
+        "Canvas"
+      ],
+      "shipping_profile_id": 240541012482,
+      "return_policy_id": 1344878904354,
+      "processing_min": 1,
+      "processing_max": 2,
+      "who_made": "i_did",
+      "when_made": "made_to_order",
+      "is_supply": false,
+      "item_weight": null,
+      "item_weight_unit": null,
+      "item_length": null,
+      "item_width": null,
+      "item_height": null,
+      "item_dimensions_unit": null,
+      "is_private": false,
+      "style": [],
+      "file_data": null,
+      "has_variations": true,
+      "should_auto_renew": true,
+      "language": "en-US",
+      "price": {
+        "amount": 1200,
+        "divisor": 100,
+        "currency_code": "USD"
+      },
+      "taxonomy_id": 1029,
+      "production_partners": [
+        {
+          "production_partner_id": 2254465,
+          "partner_name": "A print shop",
+          "location": "Los Angeles, CA"
+        }
+      ],
+      "skus": [],
+      "views": 0,
+      "readiness_state_id": null,
+      "suggested_title": null
+    }
+  ]
+}
+

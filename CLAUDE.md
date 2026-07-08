@@ -1,6 +1,6 @@
 # Etsy AI POD pipeline
 
-Full spec: SPEC_v4.9.md. Changelog/decision history: CHANGELOG.md.
+Full spec: SPEC_v4.10.md. Changelog/decision history: CHANGELOG.md.
 Gelato cost reference: gelato_premium_matte_poster_prices_BE_2026-07-05.csv.
 Shop currency: EUR. Read the relevant spec section before touching a
 pipeline stage — don't guess at behavior that's already specified.

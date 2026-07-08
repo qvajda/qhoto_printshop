@@ -308,3 +308,59 @@ for outbound digest calls).
   content (aspect-ratio-group resolution, D6) and layer the Telegram
   admin-ID addition on top in the same delivery, so nothing from v0.4.8
   is lost.
+
+---
+
+# Changelog — spec v0.4.9 → v0.4.10
+
+**Cause:** the Etsy app was approved, and while planning the research
+stage you flagged an open implementation gap: section 3 step 1 names
+"Etsy's own API to check candidate-keyword listing counts/favorites as a
+demand proxy" but no real endpoint had been wrapped in `etsy_client.py`
+yet, and its request/response shape hadn't been verified against the
+live API or Etsy's free Dev MCP server — per standing practice, that
+shape shouldn't be locked in from memory. You added `ETSY_API_KEY` and
+`ETSY_API_SECRET` to `.env` so this could be tested live.
+
+- **Demand-proxy endpoint confirmed live, no design change:** verified
+  against Etsy's real OpenAPI v3 spec
+  (`https://www.etsy.com/openapi/generated/oas/3.0.0.json`) and a live
+  call, not memory. It's `findAllListingsActive` —
+  `GET /v3/application/listings/active` — taking `keywords` (plus
+  `limit`/`offset`/`sort_on`/`sort_order`/`min_price`/`max_price`/
+  `taxonomy_id`/`shop_location`/`is_safe`/`currency`/`buyer_country`).
+  Response is `{count, results[]}`: `count` is the keyword's total active
+  listing count, and each result carries `num_favorers`. **There is no
+  view-count field on this endpoint at all** — the demand proxy this
+  pipeline can actually build is listing-count + favorites, not views;
+  section 3 step 1 corrected to say so explicitly. Auth is `api_key`
+  only — this endpoint does not require an OAuth access token, unlike
+  the shop-management endpoints `etsy_client.py` already wraps.
+- **Bug found in the already-shipped `etsy_client.py`, not yet fixed:**
+  live-testing the endpoint surfaced that Etsy's `x-api-key` header must
+  be `keystring:shared_secret` (colon-joined), confirmed both in Etsy's
+  request-essentials docs and empirically — a bare keystring gets a live
+  `403 {"error":"Shared secret is required in x-api-key header."}`,
+  while `keystring:secret` returns `200`. `etsy_client.py`'s `_headers()`
+  currently sends the keystring alone, which means
+  `get_seller_taxonomy_nodes`, `create_draft_listing`, and
+  `upload_listing_image` are all sending a malformed `x-api-key` today,
+  not just the not-yet-written demand-proxy call. Left unfixed
+  deliberately in this revision — flagged for a follow-up change to
+  `etsy_client.py` (fix `_headers()`, add the `find_all_listings_active`
+  wrapper, and correct the existing test's assertion) rather than bundled
+  silently into a spec-verification pass.
+- Raw masked request/response pairs (the 403 and the corrected 200, real
+  live data) saved to
+  `docs/etsy_call_response_example_from_manual_tests.txt`, mirroring the
+  existing Gelato manual-test log.
+- **Etsy shop switched into Developer Mode for M1 testing:** noted in
+  section 5's M1 milestone as the sandbox-equivalent this pipeline is
+  using for live Etsy testing (Etsy v3 has no separate sandbox
+  environment). Reverting it is **not self-service** — requires emailing
+  developer@etsy.com and waiting for Etsy's approval — so this needs
+  lead time before any real go-live milestone, and M1 observations about
+  listing visibility/indexing shouldn't be assumed fully representative
+  of a normal live shop until it's reverted.
+- Section 9 unchanged (`None open`) — this was an implementation-time
+  verification, not a tracked Decisions Needed item.
