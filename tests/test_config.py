@@ -66,7 +66,15 @@ def test_is_placeholder_detects_placeholder_ids():
 
 
 def test_get_template_id_returns_configured_value():
-    static_config = {"gelato_templates": {"8x12_portrait": "tpl_real_abc123"}}
+    static_config = {
+        "gelato_templates": {
+            "8x12_portrait": {
+                "template_id": "tpl_real_abc123",
+                "template_variant_id": "variant_real_456",
+                "image_placeholder_name": "real_image_slot.jpg",
+            }
+        }
+    }
 
     result = config.get_template_id(static_config, "8x12", "portrait")
 
@@ -74,17 +82,81 @@ def test_get_template_id_returns_configured_value():
 
 
 def test_get_template_id_raises_on_unknown_size_orientation():
-    static_config = {"gelato_templates": {"8x12_portrait": "tpl_real_abc123"}}
+    static_config = {
+        "gelato_templates": {
+            "8x12_portrait": {
+                "template_id": "tpl_real_abc123",
+                "template_variant_id": "variant_real_456",
+                "image_placeholder_name": "real_image_slot.jpg",
+            }
+        }
+    }
 
     with pytest.raises(KeyError):
         config.get_template_id(static_config, "5x7", "landscape")
 
 
-def test_repo_static_config_has_all_twelve_template_slots():
+def test_get_template_variant_returns_full_entry():
+    static_config = {
+        "gelato_templates": {
+            "8x12_portrait": {
+                "template_id": "tpl_real_abc123",
+                "template_variant_id": "variant_real_456",
+                "image_placeholder_name": "real_image_slot.jpg",
+            }
+        }
+    }
+
+    result = config.get_template_variant(static_config, "8x12", "portrait")
+
+    assert result == {
+        "template_id": "tpl_real_abc123",
+        "template_variant_id": "variant_real_456",
+        "image_placeholder_name": "real_image_slot.jpg",
+    }
+
+
+def test_get_template_variant_raises_on_unknown_size_orientation():
+    static_config = {
+        "gelato_templates": {
+            "8x12_portrait": {
+                "template_id": "tpl_real_abc123",
+                "template_variant_id": "variant_real_456",
+                "image_placeholder_name": "real_image_slot.jpg",
+            }
+        }
+    }
+
+    with pytest.raises(KeyError):
+        config.get_template_variant(static_config, "5x7", "landscape")
+
+
+def test_repo_static_config_has_all_twelve_template_slots_with_full_metadata():
     static_config = config.load_static_config()
 
     sizes = ["5x7", "8x12", "A3", "A2", "10x24", "A1"]
     for size in sizes:
         for orientation in ("portrait", "landscape"):
             key = f"{size}_{orientation}"
-            assert key in static_config["gelato_templates"]
+            entry = static_config["gelato_templates"][key]
+            assert "template_id" in entry
+            assert "template_variant_id" in entry
+            assert "image_placeholder_name" in entry
+
+
+def test_is_live_mode_false_when_env_var_unset(monkeypatch):
+    monkeypatch.delenv("QHOTOTEST_LIVE_MODE", raising=False)
+
+    assert config.is_live_mode("QHOTOTEST") is False
+
+
+def test_is_live_mode_false_when_env_var_not_exactly_true(monkeypatch):
+    monkeypatch.setenv("QHOTOTEST_LIVE_MODE", "1")
+
+    assert config.is_live_mode("QHOTOTEST") is False
+
+
+def test_is_live_mode_true_when_env_var_is_exactly_true(monkeypatch):
+    monkeypatch.setenv("QHOTOTEST_LIVE_MODE", "true")
+
+    assert config.is_live_mode("QHOTOTEST") is True

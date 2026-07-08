@@ -48,4 +48,13 @@ def is_placeholder(template_id: str) -> bool:
 
 def get_template_id(static_config: dict, size: str, orientation: str) -> str:
     key = f"{size}_{orientation}"
+    return static_config["gelato_templates"][key]["template_id"]
+
+
+def get_template_variant(static_config: dict, size: str, orientation: str) -> dict:
+    key = f"{size}_{orientation}"
     return static_config["gelato_templates"][key]
+
+
+def is_live_mode(service: str) -> bool:
+    return os.environ.get(f"{service}_LIVE_MODE") == "true"
