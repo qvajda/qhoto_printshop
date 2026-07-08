@@ -1,8 +1,11 @@
+import json
 import random
 from datetime import date, timedelta
 from pathlib import Path
 
+import pipeline.anthropic_client as anthropic_client
 import pipeline.config as config
+import pipeline.etsy_client as etsy_client
 
 SAFE_EVERGREEN_BUCKET_PATH = config.REPO_ROOT / "docs" / "safe_evergreen_bucket.md"
 
@@ -121,3 +124,63 @@ def _classify_by_timing(raw: dict, now: date) -> dict:
     next_year_start = date(raw["window_start"].year + 1, raw["window_start"].month, raw["window_start"].day)
     recheck_date = next_year_start - timedelta(days=60)
     return {"go_hold_kill": "hold", "hold_recheck_date": recheck_date.isoformat(), "kill_reason": None}
+
+
+# Rough heuristic per SPEC_v4.10.md section 3 step 1 ("a keyword with very
+# high competition and no differentiation angle" / "revisit at M3").
+KILL_DEMAND_RATIO_THRESHOLD = 0.002
+
+TRENDING_NOW_PROMPT = (
+    "You are researching Etsy trends for a shop selling AI-generated botanical/minimalist "
+    "wall art and posters. Using web search, identify 3-5 currently trending or rising search "
+    "keywords/niches on Etsy that fit this niche (nature, botanical, minimalist landscape wall "
+    "art). For each, give a short keyword phrase suitable for an Etsy search and a one-sentence "
+    "rationale. Reply with ONLY a JSON list of objects with 'keyword' and 'rationale' fields, "
+    "no other text."
+)
+
+
+def _classify_by_demand(raw: dict) -> dict:
+    if raw["demand_ratio"] < KILL_DEMAND_RATIO_THRESHOLD:
+        return {
+            "go_hold_kill": "kill",
+            "hold_recheck_date": None,
+            "kill_reason": (
+                f"demand_ratio {raw['demand_ratio']:.6f} below threshold "
+                f"{KILL_DEMAND_RATIO_THRESHOLD} (listing_count={raw['listing_count']})"
+            ),
+        }
+    return {"go_hold_kill": "go", "hold_recheck_date": None, "kill_reason": None}
+
+
+def _build_demand_checked_candidate(keyword: str, rationale: str, source_label: str, *,
+                                     etsy_api_key=None, etsy_api_secret=None) -> dict:
+    demand = etsy_client.find_all_listings_active(
+        keyword, limit=10, sort_on="favorites", sort_order="desc",
+        api_key=etsy_api_key, api_secret=etsy_api_secret,
+    )
+    listing_count = demand["count"]
+    results = demand["results"]
+    avg_favorers = (sum(r["num_favorers"] for r in results) / len(results)) if results else 0.0
+    demand_ratio = (avg_favorers / listing_count) if listing_count else 0.0
+    return {
+        "niche": keyword,
+        "trend_source": f"{source_label}:{keyword}",
+        "rationale": rationale,
+        "window_start": None,
+        "window_end": None,
+        "demand_ratio": demand_ratio,
+        "listing_count": listing_count,
+    }
+
+
+def collect_trending_now(*, anthropic_api_key=None, etsy_api_key=None, etsy_api_secret=None) -> list:
+    search_result = anthropic_client.research_web_search(TRENDING_NOW_PROMPT, api_key=anthropic_api_key)
+    keyword_ideas = json.loads(search_result["text"])
+    return [
+        _build_demand_checked_candidate(
+            idea["keyword"], idea["rationale"], "trending_now",
+            etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+        )
+        for idea in keyword_ideas
+    ]

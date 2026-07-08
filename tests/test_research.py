@@ -1,4 +1,6 @@
+import json
 from datetime import date
+from unittest.mock import patch
 
 import pipeline.research as research
 
@@ -77,3 +79,55 @@ def test_classify_event_candidate_holds_when_inside_window_but_too_close_to_clos
     result = research.classify(raw, now=date(2026, 11, 1))
 
     assert result["go_hold_kill"] == "hold"
+
+
+def test_classify_demand_candidate_goes_when_ratio_above_threshold():
+    raw = {
+        "niche": "x", "trend_source": "trending_now:x", "rationale": "r",
+        "window_start": None, "window_end": None,
+        "demand_ratio": research.KILL_DEMAND_RATIO_THRESHOLD * 10, "listing_count": 1000,
+    }
+
+    result = research.classify(raw)
+
+    assert result == {"go_hold_kill": "go", "hold_recheck_date": None, "kill_reason": None}
+
+
+def test_classify_demand_candidate_kills_when_ratio_below_threshold():
+    raw = {
+        "niche": "x", "trend_source": "trending_now:x", "rationale": "r",
+        "window_start": None, "window_end": None,
+        "demand_ratio": research.KILL_DEMAND_RATIO_THRESHOLD / 10, "listing_count": 1000,
+    }
+
+    result = research.classify(raw)
+
+    assert result["go_hold_kill"] == "kill"
+    assert result["hold_recheck_date"] is None
+    assert "1000" in result["kill_reason"]
+
+
+def test_collect_trending_now_combines_web_search_and_demand_proxy():
+    search_response = json.dumps([
+        {"keyword": "monstera line art", "rationale": "rising interest"},
+        {"keyword": "moon phase print", "rationale": "steady evergreen demand"},
+    ])
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": search_response, "raw": {}}
+
+    def fake_find_listings(keywords, **kwargs):
+        return {
+            "count": 1000,
+            "results": [{"num_favorers": 5}, {"num_favorers": 15}],
+        }
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search), \
+         patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        raw_candidates = research.collect_trending_now()
+
+    assert len(raw_candidates) == 2
+    assert raw_candidates[0]["niche"] == "monstera line art"
+    assert raw_candidates[0]["trend_source"] == "trending_now:monstera line art"
+    assert raw_candidates[0]["listing_count"] == 1000
+    assert raw_candidates[0]["demand_ratio"] == 10 / 1000
