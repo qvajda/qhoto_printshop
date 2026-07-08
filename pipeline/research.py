@@ -121,7 +121,3 @@ def _classify_by_timing(raw: dict, now: date) -> dict:
     next_year_start = date(raw["window_start"].year + 1, raw["window_start"].month, raw["window_start"].day)
     recheck_date = next_year_start - timedelta(days=60)
     return {"go_hold_kill": "hold", "hold_recheck_date": recheck_date.isoformat(), "kill_reason": None}
-
-
-def _classify_by_demand(raw: dict) -> dict:
-    raise NotImplementedError("Task 6 adds demand-based classification")
