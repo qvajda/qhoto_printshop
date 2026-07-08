@@ -106,3 +106,37 @@ def test_dry_run_false_when_live_mode_env_var_is_true(monkeypatch):
         )
 
     mock_send.assert_called_once()
+
+
+def test_find_all_listings_active_builds_correct_request_with_only_required_param():
+    def fake_send(request, timeout=30):
+        assert request.full_url == (
+            "https://openapi.etsy.com/v3/application/listings/active?keywords=botanical+poster"
+        )
+        assert request.get_method() == "GET"
+        assert request.get_header("X-api-key") == "key1:secret1"
+        assert request.get_header("Authorization") is None
+        return {"count": 243150, "results": [{"listing_id": 1, "num_favorers": 3}]}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        result = etsy_client.find_all_listings_active("botanical poster", api_key="key1", api_secret="secret1")
+
+    assert result == {"count": 243150, "results": [{"listing_id": 1, "num_favorers": 3}]}
+
+
+def test_find_all_listings_active_includes_optional_params_when_given():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["url"] = request.full_url
+        return {"count": 0, "results": []}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        etsy_client.find_all_listings_active(
+            "botanical poster", limit=10, sort_on="favorites", sort_order="desc",
+            api_key="key1", api_secret="secret1",
+        )
+
+    assert "limit=10" in captured["url"]
+    assert "sort_on=favorites" in captured["url"]
+    assert "sort_order=desc" in captured["url"]

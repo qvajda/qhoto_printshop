@@ -1,4 +1,5 @@
 import json
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -77,4 +78,41 @@ def upload_listing_image(
     headers = _headers(api_key, api_secret, access_token)
     headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    return http.send(request)
+
+
+def find_all_listings_active(
+    keywords: str,
+    *,
+    limit: int = None,
+    offset: int = None,
+    sort_on: str = None,
+    sort_order: str = None,
+    min_price: float = None,
+    max_price: float = None,
+    taxonomy_id: str = None,
+    shop_location: str = None,
+    is_safe: bool = None,
+    currency: str = None,
+    buyer_country: str = None,
+    api_key: str = None,
+    api_secret: str = None,
+) -> dict:
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+
+    params = {"keywords": keywords}
+    optional_params = {
+        "limit": limit, "offset": offset, "sort_on": sort_on, "sort_order": sort_order,
+        "min_price": min_price, "max_price": max_price, "taxonomy_id": taxonomy_id,
+        "shop_location": shop_location, "is_safe": is_safe, "currency": currency,
+        "buyer_country": buyer_country,
+    }
+    for key, value in optional_params.items():
+        if value is not None:
+            params[key] = value
+
+    query = urllib.parse.urlencode(params)
+    url = f"{ETSY_API_BASE}/listings/active?{query}"
+    request = urllib.request.Request(url, headers=_headers(api_key, api_secret), method="GET")
     return http.send(request)
