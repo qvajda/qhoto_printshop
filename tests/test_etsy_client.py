@@ -8,12 +8,12 @@ def test_get_seller_taxonomy_nodes_builds_correct_request():
     def fake_send(request, timeout=30):
         assert request.full_url == "https://openapi.etsy.com/v3/application/seller-taxonomy/nodes"
         assert request.get_method() == "GET"
-        assert request.get_header("X-api-key") == "key1"
+        assert request.get_header("X-api-key") == "key1:secret1"
         assert request.get_header("Authorization") == "Bearer token1"
         return {"count": 2, "results": [{"id": 1}, {"id": 2}]}
 
     with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
-        result = etsy_client.get_seller_taxonomy_nodes(api_key="key1", access_token="token1")
+        result = etsy_client.get_seller_taxonomy_nodes(api_key="key1", api_secret="secret1", access_token="token1")
 
     assert result == [{"id": 1}, {"id": 2}]
 
@@ -42,7 +42,7 @@ def test_create_draft_listing_sends_listing_data_as_json_body_when_live():
 
     with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
         result = etsy_client.create_draft_listing(
-            "shop1", listing_data, api_key="key1", access_token="token1", dry_run=False
+            "shop1", listing_data, api_key="key1", api_secret="secret1", access_token="token1", dry_run=False
         )
 
     assert captured["url"] == "https://openapi.etsy.com/v3/application/shops/shop1/listings"
@@ -71,7 +71,8 @@ def test_upload_listing_image_sends_multipart_body_with_image_bytes_when_live():
 
     with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
         result = etsy_client.upload_listing_image(
-            "shop1", "listing1", b"fake-image-bytes", api_key="key1", access_token="token1", dry_run=False
+            "shop1", "listing1", b"fake-image-bytes",
+            api_key="key1", api_secret="secret1", access_token="token1", dry_run=False
         )
 
     assert captured["url"] == "https://openapi.etsy.com/v3/application/shops/shop1/listings/listing1/images"
@@ -100,6 +101,8 @@ def test_dry_run_false_when_live_mode_env_var_is_true(monkeypatch):
         return {"listing_id": 1}
 
     with patch("pipeline.etsy_client.http.send", side_effect=fake_send) as mock_send:
-        etsy_client.create_draft_listing("shop1", {"title": "x"}, api_key="key1", access_token="token1")
+        etsy_client.create_draft_listing(
+            "shop1", {"title": "x"}, api_key="key1", api_secret="secret1", access_token="token1"
+        )
 
     mock_send.assert_called_once()
