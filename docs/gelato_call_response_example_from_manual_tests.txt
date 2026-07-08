@@ -1,0 +1,522 @@
+call:
+
+$headers = @{ "X-API-KEY" = $env:GELATO_API_KEY }
+Invoke-RestMethod -Uri "https://ecommerce.gelatoapis.com/v1/stores/a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a/products/f5a9e934-e306-47d2-84b2-515a7dce56c1" -Headers $headers -Method Get | ConvertTo-Json -Depth 10
+
+
+response:
+
+
+{
+    "id":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+    "storeId":  "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+    "clientId":  "99c49810-f518-4c46-948f-73d7d6c070a0",
+    "externalId":  null,
+    "title":  "API test poster - delete me",
+    "description":  "Elevate your space with the calming presence of this framed fine art print, featuring a pristine alpine wetland set against towering, snow‑capped mountains. The vivid reflection of the sky in the still water, paired with the rich textures of wild grasses and rugged peaks, creates a striking composition that brings the serenity of untouched nature into any room.\nPrinted on semi‑gloss premium paper, this artwork offers exceptional clarity, balanced contrast, and a refined sheen that enhances every detail of the landscape. The print is presented in a wooden frame that pairs beautifully with modern, rustic, Scandinavian, and nature‑inspired interiors. Each piece arrives ready to hang, making it effortless to transform your living room, office, bedroom, or hallway.\nThis mountain landscape print also makes a thoughtful gift for hikers, travelers, outdoor enthusiasts, or anyone who appreciates peaceful natural scenery. Its timeless aesthetic and soothing atmosphere make it a versatile addition to gallery walls or a standout focal point on its own.\nBring the quiet beauty of the mountains into your home with a premium framed print designed to inspire calm and connection.",
+    "previewUrl":  "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/a5b0c535-72cb-40e9-9d3f-54da1bc318c2/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD\u0026X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIA3QM3••••••••••••%2F20260704%2Feu-west-1%2Fs3%2Faws4_request\u0026X-Amz-Date=20260704T124238Z\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Expires=86400\u0026X-Amz-Signature=687875104383b59179dabe5bac1bd4792dfa04e87f2486f43c2c0c8d9124e3f3%22,
+    "externalPreviewUrl":  "",
+    "externalThumbnailUrl":  "",
+    "isReadyToPublish":  true,
+    "publishedAt":  null,
+    "createdAt":  "2026-07-04T12:41:50+0000",
+    "updatedAt":  "2026-07-04T12:41:59+0000",
+    "previewFileType":  "jpeg",
+    "productVariantPreviewScene":  "9148e219-a90b-407b-b7d7-77cc34f4ba8e",
+    "variants":  [
+                     {
+                         "id":  "5c252260-966e-4116-9c9b-abacb69c3be5",
+                         "clientId":  "99c49810-f518-4c46-948f-73d7d6c070a0",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "title":  "20x25 cm / 8x10″ - Vertical - White frame",
+                         "externalId":  null,
+                         "connectionStatus":  "created",
+                         "isHidden":  false,
+                         "productUid":  "framed_poster_mounted_200x250-mm-8x10-inch_white_wood_w12xt22-mm_plexiglass_200x250-mm-8x10-inch_200-gsm-80lb-coated-silk_4-0_ver"
+                     }
+                 ],
+    "productVariantOptions":  [
+                                  {
+                                      "name":  "Size",
+                                      "values":  [
+                                                     "15x20 cm / 6x8″",
+                                                     "20x25 cm / 8x10″",
+                                                     "21x29.7 cm / 8x12\""
+                                                 ]
+                                  },
+                                  {
+                                      "name":  "Frame",
+                                      "values":  [
+                                                     "White frame",
+                                                     "Dark wood frame",
+                                                     "Black frame"
+                                                 ]
+                                  }
+                              ],
+    "collectionsIds":  [
+
+                       ],
+    "tags":  [
+                 "ready to hang art",
+                 "nature wall décor",
+                 "wooden frame art",
+                 "fine art print",
+                 "mountain print",
+                 "alpine",
+                 "framed wall art",
+                 "nature decor",
+                 "landscape photo",
+                 "mountain decor",
+                 "semi gloss art",
+                 "outdoor scenery",
+                 "nature gift"
+             ],
+    "status":  "publishing_queued",
+    "productImages":  [
+                          {
+                              "id":  "a5b0c535-72cb-40e9-9d3f-54da1bc318c2",
+                              "storeId":  "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+                              "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                              "productVariantIds":  [
+                                                        "5c252260-966e-4116-9c9b-abacb69c3be5"
+                                                    ],
+                              "fileUrl":  "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/a5b0c535-72cb-40e9-9d3f-54da1bc318c2/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD\u0026X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIA3QM3••••••••••••%2F20260704%2Feu-west-1%2Fs3%2Faws4_request\u0026X-Amz-Date=20260704T124238Z\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Expires=86400\u0026X-Amz-Signature=687875104383b59179dabe5bac1bd4792dfa04e87f2486f43c2c0c8d9124e3f3%22,
+                              "isPrimary":  true,
+                              "status":  "created",
+                              "createdAt":  "2026-07-04T12:41:56+0000",
+                              "updatedAt":  "2026-07-04T12:41:56+0000",
+                              "metadata":  [
+
+                                           ],
+                              "skipPublishing":  false
+                          },
+                          {
+                              "id":  "876b1f3a-03c0-43b3-8319-f6d4d73cf411",
+                              "storeId":  "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+                              "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                              "productVariantIds":  [
+
+                                                    ],
+                              "fileUrl":  "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/876b1f3a-03c0-43b3-8319-f6d4d73cf411/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD\u0026X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIA3QM3••••••••••••%2F20260704%2Feu-west-1%2Fs3%2Faws4_request\u0026X-Amz-Date=20260704T124238Z\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Expires=86400\u0026X-Amz-Signature=b70d9b36e1a9c3f13174b1f8ad0a2c797f321bd0d40acacad66621b6c5476ce0%22,
+                              "isPrimary":  false,
+                              "status":  "created",
+                              "createdAt":  "2026-07-04T12:41:57+0000",
+                              "updatedAt":  "2026-07-04T12:41:57+0000",
+                              "metadata":  [
+
+                                           ],
+                              "skipPublishing":  false
+                          },
+                          {
+                              "id":  "6d1665f9-cb38-4fc6-9824-866b4a3196a1",
+                              "storeId":  "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+                              "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                              "productVariantIds":  [
+
+                                                    ],
+                              "fileUrl":  "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/6d1665f9-cb38-4fc6-9824-866b4a3196a1/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD\u0026X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIA3QM3••••••••••••%2F20260704%2Feu-west-1%2Fs3%2Faws4_request\u0026X-Amz-Date=20260704T124238Z\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Expires=86400\u0026X-Amz-Signature=bcbf1db7cfa97ab4ceb037655ff1bdb04e10c1b0493a41c31e330782f8370e0d%22,
+                              "isPrimary":  false,
+                              "status":  "created",
+                              "createdAt":  "2026-07-04T12:41:58+0000",
+                              "updatedAt":  "2026-07-04T12:41:58+0000",
+                              "metadata":  [
+
+                                           ],
+                              "skipPublishing":  false
+                          },
+                          {
+                              "id":  "e84d21b8-7cdc-486f-9f9a-3007a7c8c05d",
+                              "storeId":  "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+                              "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                              "productVariantIds":  [
+
+                                                    ],
+                              "fileUrl":  "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/e84d21b8-7cdc-486f-9f9a-3007a7c8c05d/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD\u0026X-Amz-Algorithm=AWS4-HMAC-SHA256\u0026X-Amz-Credential=AKIA3QM3••••••••••••%2F20260704%2Feu-west-1%2Fs3%2Faws4_request\u0026X-Amz-Date=20260704T124238Z\u0026X-Amz-SignedHeaders=host\u0026X-Amz-Expires=86400\u0026X-Amz-Signature=255efa10c1bf81097c1a9fccd569d56828b92fe0106e374f2934e7b73cdf93a4%22,
+                              "isPrimary":  false,
+                              "status":  "created",
+                              "createdAt":  "2026-07-04T12:41:59+0000",
+                              "updatedAt":  "2026-07-04T12:41:59+0000",
+                              "metadata":  [
+
+                                           ],
+                              "skipPublishing":  false
+                          }
+                      ],
+    "metadata":  [
+                     {
+                         "id":  "0ea9d220-a846-41e9-83b5-afbc881819d7",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "publishScopes",
+                         "value":  "[\"product\",\"variants\",\"images\",\"videos\",\"prices\"]",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "372ce891-a218-4b84-930a-e802b4ebf785",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "publishMode",
+                         "value":  "create_product",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "a64c6975-868a-4dc0-99ab-cd023a773b8e",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "previewFileType",
+                         "value":  "jpeg",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "fd73c8d5-3522-4126-9c92-9d44192ab9bc",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "previewScenes",
+                         "value":  "[\"9148e219-a90b-407b-b7d7-77cc34f4ba8e\",\"94f0e3fd-9608-48ce-9e73-45e1851a810f\",\"48e4cce4-ab97-4534-9c2b-0089158837fc\",\"2637630c-4baf-43be-8f3c-52a338b1c4c2\"]",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "7b0c29d5-439d-4f0b-b588-87e5aa7f4900",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "videoMockups",
+                         "value":  "[]",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "26c22136-2934-46f6-ad02-713267b6df1f",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "primaryPreviewScene",
+                         "value":  "9148e219-a90b-407b-b7d7-77cc34f4ba8e",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "e37c1baa-b3de-4a35-9f16-9c6fcb942391",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "primaryPreviewProductVariantKey",
+                         "value":  "framed_poster_mounted_210x297mm-8x12-inch_dark-wood_wood_w12xt22-mm_plexiglass_a4-8x12-inch_200-gsm-80lb-coated-silk_4-0_ver",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "1ddf2de4-5e93-4ecd-b382-3efa7a664aff",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "sanityProductId",
+                         "value":  "premium-silk-paper-framed-poster",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "60290196-54e3-4eee-be75-18465be16c7c",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "productVariantOptions",
+                         "value":  "[{\"name\":\"Orientation\",\"values\":[\"ver\"]},{\"name\":\"FormatSize\",\"values\":[\"15x20 cm / 6x8″\",\"20x25 cm / 8x10″\",\"A4 21x29.7 cm / 8x12″\"]},{\"name\":\"FrameColor\",\"values\":[\"white\",\"dark-wood\",\"black\"]},{\"name\":\"FrameAssembling\",\"values\":[\"mounted\"]}]",
+                         "isExternal":  false
+                     },
+                     {
+                         "id":  "4c8268dd-ab92-452d-a5cd-8aa33a80b686",
+                         "productId":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+                         "variantId":  null,
+                         "imageId":  null,
+                         "videoId":  null,
+                         "key":  "usedStandardMockup",
+                         "value":  "1",
+                         "isExternal":  false
+                     }
+                 ],
+    "handle":  null,
+    "publishingErrorCode":  null,
+    "publishingDetailsFlags":  [
+
+                               ],
+    "hasDraft":  false,
+    "isFreeShipping":  false,
+    "publishingErrorDetails":  null,
+    "productVideos":  [
+
+                      ],
+    "templateName":  "",
+    "parentTemplateId":  "",
+    "priceUpdatedAt":  null,
+    "productVariantAttributes":  [
+                                     {
+                                         "name":  "Size",
+                                         "values":  [
+                                                        {
+                                                            "value":  "15x20 cm / 6x8″",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "formatsize",
+                                                                             "value":  "15x20 cm / 6x8″",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "20x25 cm / 8x10″",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "formatsize",
+                                                                             "value":  "20x25 cm / 8x10″",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "21x29.7 cm / 8x12\"",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "formatsize",
+                                                                             "value":  "A4 21x29.7 cm / 8x12″",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        }
+                                                    ]
+                                     },
+                                     {
+                                         "name":  "Frame",
+                                         "values":  [
+                                                        {
+                                                            "value":  "White frame",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "framecolor",
+                                                                             "value":  "white",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "Dark wood frame",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "framecolor",
+                                                                             "value":  "dark-wood",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "Black frame",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "framecolor",
+                                                                             "value":  "black",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        }
+                                                    ]
+                                     }
+                                 ],
+    "personalizationSettings":  "{\"isPersonalizable\":null,\"personalizationCharCountMax\":256,\"personalizationInstructions\":null,\"isPersonalizationRequired\":false}",
+    "productType":  null,
+    "vendor":  null,
+    "hasPersonalizableVariants":  false,
+    "hasCustomSizeVariants":  false,
+    "errors":  [
+
+               ],
+    "publishingProgress":  null
+}
+
+call2:
+
+$headers = @{ "X-API-KEY" = $env:GELATO_API_KEY; "Content-Type" = "application/json" }
+$body = @{
+    templateId = "67311db4-815a-423b-9d19-5d87a6b07c91"
+    title = "API test poster - delete me"
+    isVisibleInTheOnlineStore = $false
+    variants = @(
+        @{
+            templateVariantId = "68251d90-4de4-460e-a486-c225cbe1c983"
+            imagePlaceholders = @(
+                @{ name = "011_mt_sunday_brook.JPG"; fileUrl = "https://picsum.photos/1000/1400" }
+            )
+        }
+    )
+} | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod -Uri "https://ecommerce.gelatoapis.com/v1/stores/a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a/products:create-from-template" -Headers $headers -Method Post -Body $body | ConvertTo-Json -Depth 10
+
+response2:
+
+{
+    "id":  "f5a9e934-e306-47d2-84b2-515a7dce56c1",
+    "storeId":  "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+    "clientId":  "99c49810-f518-4c46-948f-73d7d6c070a0",
+    "externalId":  null,
+    "title":  "API test poster - delete me",
+    "description":  "Elevate your space with the calming presence of this framed fine art print, featuring a pristine alpine wetland set against towering, snow‑capped mountains. The vivid reflection of the sky in the still water, paired with the rich textures of wild grasses and rugged peaks, creates a striking composition that brings the serenity of untouched nature into any room.\n\nPrinted on semi‑gloss premium paper, this artwork offers exceptional clarity, balanced contrast, and a refined sheen that enhances every detail of the landscape. The print is presented in a wooden frame that pairs beautifully with modern, rustic, Scandinavian, and nature‑inspired interiors. Each piece arrives ready to hang, making it effortless to transform your living room, office, bedroom, or hallway.\n\nThis mountain landscape print also makes a thoughtful gift for hikers, travelers, outdoor enthusiasts, or anyone who appreciates peaceful natural scenery. Its timeless aesthetic and soothing atmosphere make it a versatile addition to gallery walls or a standout focal point on its own.\n\nBring the quiet beauty of the mountains into your home with a premium framed print designed to inspire calm and connection.",
+    "previewUrl":  null,
+    "externalPreviewUrl":  "",
+    "externalThumbnailUrl":  "",
+    "isReadyToPublish":  false,
+    "publishedAt":  null,
+    "createdAt":  "2026-07-04T12:41:50+0000",
+    "updatedAt":  "2026-07-04T12:41:50+0000",
+    "previewFileType":  "jpeg",
+    "productVariantPreviewScene":  "9148e219-a90b-407b-b7d7-77cc34f4ba8e",
+    "variants":  [
+
+                 ],
+    "productVariantOptions":  [
+                                  {
+                                      "name":  "Size",
+                                      "values":  [
+                                                     "15x20 cm / 6x8″",
+                                                     "20x25 cm / 8x10″",
+                                                     "21x29.7 cm / 8x12\""
+                                                 ]
+                                  },
+                                  {
+                                      "name":  "Frame",
+                                      "values":  [
+                                                     "White frame",
+                                                     "Dark wood frame",
+                                                     "Black frame"
+                                                 ]
+                                  }
+                              ],
+    "collectionsIds":  [
+
+                       ],
+    "tags":  [
+                 "ready to hang art",
+                 "nature wall décor",
+                 "wooden frame art",
+                 "fine art print",
+                 "mountain print",
+                 "alpine",
+                 "framed wall art",
+                 "nature decor",
+                 "landscape photo",
+                 "mountain decor",
+                 "semi gloss art",
+                 "outdoor scenery",
+                 "nature gift"
+             ],
+    "status":  "created",
+    "productImages":  [
+
+                      ],
+    "metadata":  [
+
+                 ],
+    "handle":  null,
+    "publishingErrorCode":  null,
+    "publishingDetailsFlags":  [
+
+                               ],
+    "hasDraft":  false,
+    "isFreeShipping":  false,
+    "publishingErrorDetails":  null,
+    "productVideos":  [
+
+                      ],
+    "templateName":  "",
+    "parentTemplateId":  "",
+    "priceUpdatedAt":  null,
+    "productVariantAttributes":  [
+                                     {
+                                         "name":  "Size",
+                                         "values":  [
+                                                        {
+                                                            "value":  "15x20 cm / 6x8″",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "formatsize",
+                                                                             "value":  "15x20 cm / 6x8″",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "20x25 cm / 8x10″",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "formatsize",
+                                                                             "value":  "20x25 cm / 8x10″",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "21x29.7 cm / 8x12\"",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "formatsize",
+                                                                             "value":  "A4 21x29.7 cm / 8x12″",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        }
+                                                    ]
+                                     },
+                                     {
+                                         "name":  "Frame",
+                                         "values":  [
+                                                        {
+                                                            "value":  "White frame",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "framecolor",
+                                                                             "value":  "white",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "Dark wood frame",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "framecolor",
+                                                                             "value":  "dark-wood",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        },
+                                                        {
+                                                            "value":  "Black frame",
+                                                            "keys":  [
+                                                                         {
+                                                                             "name":  "framecolor",
+                                                                             "value":  "black",
+                                                                             "type":  "physical"
+                                                                         }
+                                                                     ]
+                                                        }
+                                                    ]
+                                     }
+                                 ],
+    "personalizationSettings":  "{\"isPersonalizable\":null,\"personalizationCharCountMax\":256,\"personalizationInstructions\":null,\"isPersonalizationRequired\":false}",
+    "productType":  null,
+    "vendor":  null,
+    "hasPersonalizableVariants":  false,
+    "hasCustomSizeVariants":  false,
+    "errors":  [
+
+               ],
+    "publishingProgress":  null
+}
