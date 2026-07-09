@@ -1,3 +1,6 @@
+import json as _json
+from unittest.mock import patch
+
 import pytest
 
 import pipeline.compliance_draft as compliance_draft
@@ -120,3 +123,64 @@ def test_get_primary_gallery_returns_empty_list_when_no_gallery(tmp_path):
 
     assert gallery == []
     conn.close()
+
+
+def test_build_draft_prompt_includes_niche_disclosure_and_limits():
+    candidate = {"niche": "monstera line art"}
+
+    prompt = compliance_draft.build_draft_prompt(candidate, ["flat_mockup", "lifestyle"])
+
+    assert "monstera line art" in prompt
+    assert compliance_draft.DISCLOSURE_TEXT in prompt
+    assert "140" in prompt
+    assert "13" in prompt
+    assert "20" in prompt
+    assert "flat_mockup, lifestyle" in prompt
+
+
+def test_generate_draft_text_returns_parsed_draft():
+    candidate = {"niche": "monstera line art"}
+    fake_response = {
+        "text": _json.dumps({
+            "title": "Monstera Line Art Botanical Print",
+            "tags": ["botanical", "wall art"],
+            "description": "A minimalist botanical print.",
+            "alt_texts": ["Flat mockup of monstera line art print", "Monstera print shown in a living room"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_response) as mock_complete:
+        draft = compliance_draft.generate_draft_text(
+            candidate, ["flat_mockup", "lifestyle"], api_key="key1"
+        )
+
+    mock_complete.assert_called_once()
+    assert mock_complete.call_args.kwargs["api_key"] == "key1"
+    assert draft["title"] == "Monstera Line Art Botanical Print"
+    assert draft["tags"] == ["botanical", "wall art"]
+    assert len(draft["alt_texts"]) == 2
+
+
+def test_generate_draft_text_raises_on_missing_key():
+    candidate = {"niche": "monstera line art"}
+    fake_response = {"text": _json.dumps({"title": "A title", "tags": [], "description": "desc"})}
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_response):
+        with pytest.raises(ValueError, match="alt_texts"):
+            compliance_draft.generate_draft_text(candidate, ["flat_mockup"], api_key="key1")
+
+
+def test_generate_draft_text_raises_on_alt_text_count_mismatch():
+    candidate = {"niche": "monstera line art"}
+    fake_response = {
+        "text": _json.dumps({
+            "title": "A title", "tags": ["botanical"], "description": "desc",
+            "alt_texts": ["only one alt text"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_response):
+        with pytest.raises(ValueError, match="alt_texts"):
+            compliance_draft.generate_draft_text(
+                candidate, ["flat_mockup", "lifestyle"], api_key="key1"
+            )

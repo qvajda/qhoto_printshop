@@ -15,6 +15,20 @@ MAX_TAGS = 13
 MAX_TAG_LENGTH = 20
 MAX_TITLE_LENGTH = 140
 
+DRAFT_TEXT_PROMPT_TEMPLATE = (
+    "You are writing an Etsy listing draft for an AI-generated botanical/minimalist wall "
+    "art poster print, niche: {niche}. This listing must comply with Etsy's format limits: "
+    "the title must be at most 140 characters, there must be at most 13 tags and each tag "
+    "at most 20 characters, and the description must mention the following AI disclosure: "
+    "\"{disclosure}\"\n\n"
+    "The product gallery has {image_count} images in this order: {image_types}. Write one "
+    "short, descriptive alt text per image, in the same order, distinguishing a flat print "
+    "mockup shot from a lifestyle/room-context shot.\n\n"
+    "Reply with ONLY a JSON object with keys 'title' (string), 'tags' (list of strings), "
+    "'description' (string), and 'alt_texts' (list of strings, same length and order as the "
+    "gallery), no other text."
+)
+
 
 def resolve_compliance_metadata(static_config: dict) -> dict:
     return {
@@ -52,3 +66,26 @@ def get_primary_gallery(conn, candidate_id: int) -> list:
         (candidate_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def build_draft_prompt(candidate: dict, image_types: list) -> str:
+    return DRAFT_TEXT_PROMPT_TEMPLATE.format(
+        niche=candidate["niche"],
+        disclosure=DISCLOSURE_TEXT,
+        image_count=len(image_types),
+        image_types=", ".join(image_types),
+    )
+
+
+def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = None) -> dict:
+    result = anthropic_client.complete(build_draft_prompt(candidate, image_types), api_key=api_key)
+    draft = json.loads(result["text"])
+    for key in ("title", "tags", "description", "alt_texts"):
+        if key not in draft:
+            raise ValueError(f"Claude draft response missing required key {key!r}: {draft!r}")
+    if len(draft["alt_texts"]) != len(image_types):
+        raise ValueError(
+            f"Claude draft response has {len(draft['alt_texts'])} alt_texts, "
+            f"expected {len(image_types)} to match the gallery: {draft!r}"
+        )
+    return draft
