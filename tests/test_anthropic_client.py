@@ -46,3 +46,34 @@ def test_research_web_search_concatenates_multiple_text_blocks():
         result = anthropic_client.research_web_search("prompt", api_key="key1")
 
     assert result["text"] == "line one\nline two"
+
+
+def test_complete_builds_correct_request_without_tools():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["body"] = json.loads(request.data)
+        return {"content": [{"type": "text", "text": '{"title": "Botanical Wall Art"}'}]}
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+        result = anthropic_client.complete("draft some listing text", api_key="key1")
+
+    assert captured["url"] == "https://api.anthropic.com/v1/messages"
+    assert captured["method"] == "POST"
+    assert captured["body"]["model"] == anthropic_client.ANTHROPIC_MODEL
+    assert captured["body"]["max_tokens"] == 1024
+    assert captured["body"]["messages"] == [{"role": "user", "content": "draft some listing text"}]
+    assert "tools" not in captured["body"]
+    assert result["text"] == '{"title": "Botanical Wall Art"}'
+
+
+def test_complete_concatenates_multiple_text_blocks():
+    def fake_send(request, timeout=30):
+        return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+        result = anthropic_client.complete("prompt", api_key="key1")
+
+    assert result["text"] == "line one\nline two"

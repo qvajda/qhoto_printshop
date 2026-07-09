@@ -33,3 +33,16 @@ def research_web_search(prompt: str, *, api_key: str = None, max_tokens: int = 2
     result = http.send(request, timeout=60)
     text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
     return {"text": "\n".join(text_blocks), "raw": result}
+
+
+def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024) -> dict:
+    api_key = api_key or config.require_env("ANTHROPIC_API_KEY")
+    body = json.dumps({
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode("utf-8")
+    request = urllib.request.Request(ANTHROPIC_API_BASE, data=body, headers=_headers(api_key), method="POST")
+    result = http.send(request, timeout=60)
+    text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
+    return {"text": "\n".join(text_blocks), "raw": result}
