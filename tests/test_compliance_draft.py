@@ -219,3 +219,44 @@ def test_write_listing_texts_inserts_row_with_json_encoded_lists(tmp_path):
     assert row["shipping_profile_id"] == ""
     assert row["created_at"] == "2026-07-10T09:30:00"
     conn.close()
+
+
+def test_update_gallery_alt_text_updates_rows_in_order(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+
+    compliance_draft.update_gallery_alt_text(
+        conn, candidate_id, ["Flat mockup alt text", "Lifestyle alt text"]
+    )
+
+    gallery = conn.execute(
+        """
+        SELECT pi.alt_text FROM product_images pi
+        JOIN group_products gp ON gp.id = pi.group_product_id
+        JOIN groups g ON g.id = gp.group_id
+        WHERE g.candidate_id = ? ORDER BY pi.gallery_order
+        """,
+        (candidate_id,),
+    ).fetchall()
+    assert [row["alt_text"] for row in gallery] == ["Flat mockup alt text", "Lifestyle alt text"]
+    conn.close()
+
+
+def test_update_gallery_alt_text_raises_on_count_mismatch(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+
+    with pytest.raises(ValueError, match="2"):
+        compliance_draft.update_gallery_alt_text(conn, candidate_id, ["only one alt text"])
+
+    gallery = conn.execute(
+        """
+        SELECT pi.alt_text FROM product_images pi
+        JOIN group_products gp ON gp.id = pi.group_product_id
+        JOIN groups g ON g.id = gp.group_id
+        WHERE g.candidate_id = ?
+        """,
+        (candidate_id,),
+    ).fetchall()
+    assert all(row["alt_text"] == "" for row in gallery)
+    conn.close()

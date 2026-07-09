@@ -108,3 +108,18 @@ def write_listing_texts(conn, candidate_id: int, draft: dict, metadata: dict, *,
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def update_gallery_alt_text(conn, candidate_id: int, alt_texts: list) -> None:
+    gallery = get_primary_gallery(conn, candidate_id)
+    if len(alt_texts) != len(gallery):
+        raise ValueError(
+            f"{len(alt_texts)} alt_texts provided but candidate {candidate_id}'s primary "
+            f"gallery has {len(gallery)} images"
+        )
+    for image, alt_text in zip(gallery, alt_texts):
+        conn.execute(
+            "UPDATE product_images SET alt_text = ? WHERE id = ?",
+            (alt_text, image["id"]),
+        )
+    conn.commit()
