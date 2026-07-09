@@ -110,3 +110,72 @@ def test_poll_until_ready_raises_after_timeout():
                 poll_interval=3.0, timeout=90.0,
                 sleep_fn=lambda seconds: None, now_fn=lambda: next(now_values),
             )
+
+
+STATIC_CONFIG = {
+    "gelato_templates": {
+        "8x12_portrait": {
+            "template_id": "tpl_real_8x12",
+            "template_variant_id": "variant_real_8x12",
+            "image_placeholder_name": "real_image_slot.jpg",
+        }
+    },
+    "prices_eur": {"8x12": 24},
+}
+
+
+def test_create_primary_mockup_happy_path_writes_group_product_and_images(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="monstera line art")
+
+    def fake_create_product_from_template(template_id, template_variant_id, image_placeholder_name,
+                                           image_url, title, *, store_id=None, api_key=None, **kwargs):
+        assert template_id == "tpl_real_8x12"
+        assert template_variant_id == "variant_real_8x12"
+        assert image_placeholder_name == "real_image_slot.jpg"
+        assert image_url == "https://replicate.delivery/out.png"
+        assert "monstera line art" in title
+        return {"id": "gelato_prod_1", "isReadyToPublish": False, "productImages": []}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        assert product_id == "gelato_prod_1"
+        return {
+            "id": "gelato_prod_1",
+            "isReadyToPublish": True,
+            "productImages": [
+                {"fileUrl": "https://gelato/lifestyle1.jpg", "isPrimary": False},
+                {"fileUrl": "https://gelato/flat.jpg", "isPrimary": True},
+                {"fileUrl": "https://gelato/lifestyle2.jpg", "isPrimary": False},
+            ],
+        }
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        result = primary_mockup.create_primary_mockup(
+            conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+            poll_interval=0, poll_timeout=10, now=datetime(2026, 7, 9, 12, 0, 0),
+        )
+
+    assert result["gelato_product_id"] == "gelato_prod_1"
+
+    group_row = conn.execute("SELECT * FROM groups WHERE id = ?", (result["group_id"],)).fetchone()
+    assert group_row["status"] == "pending_review"
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
+    assert gp_row["status"] == "created"
+    assert gp_row["gelato_product_id"] == "gelato_prod_1"
+    assert gp_row["size"] == "8x12"
+    assert gp_row["orientation"] == "portrait"
+    assert gp_row["price_eur"] == 24
+
+    images = conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
+        (result["group_product_id"],),
+    ).fetchall()
+    assert len(images) == 3
+    assert images[0]["image_type"] == "flat_mockup"
+    assert images[0]["image_url"] == "https://gelato/flat.jpg"
+    assert images[0]["alt_text"] == ""
+    assert [img["image_type"] for img in images[1:]] == ["lifestyle", "lifestyle"]
+    conn.close()
