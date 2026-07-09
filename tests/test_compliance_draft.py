@@ -1,4 +1,5 @@
 import json as _json
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -184,3 +185,37 @@ def test_generate_draft_text_raises_on_alt_text_count_mismatch():
             compliance_draft.generate_draft_text(
                 candidate, ["flat_mockup", "lifestyle"], api_key="key1"
             )
+
+
+def test_write_listing_texts_inserts_row_with_json_encoded_lists(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    draft = {
+        "title": "Monstera Line Art Botanical Print",
+        "tags": ["botanical", "wall art"],
+        "description": "A minimalist botanical print.",
+        "alt_texts": ["alt one", "alt two"],
+    }
+    metadata = {
+        "who_made": "i_did",
+        "production_partner_ids": [5717252],
+        "taxonomy_id": "1027",
+        "shipping_profile_id": "",
+    }
+
+    listing_text_id = compliance_draft.write_listing_texts(
+        conn, candidate_id, draft, metadata, now=datetime(2026, 7, 10, 9, 30, 0)
+    )
+
+    row = conn.execute("SELECT * FROM listing_texts WHERE id = ?", (listing_text_id,)).fetchone()
+    assert row["candidate_id"] == candidate_id
+    assert row["title"] == "Monstera Line Art Botanical Print"
+    assert _json.loads(row["tags"]) == ["botanical", "wall art"]
+    assert row["description"] == "A minimalist botanical print."
+    assert row["disclosure_text"] == compliance_draft.DISCLOSURE_TEXT
+    assert row["who_made"] == "i_did"
+    assert _json.loads(row["production_partner_ids"]) == [5717252]
+    assert row["taxonomy_id"] == "1027"
+    assert row["shipping_profile_id"] == ""
+    assert row["created_at"] == "2026-07-10T09:30:00"
+    conn.close()

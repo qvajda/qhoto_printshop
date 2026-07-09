@@ -89,3 +89,22 @@ def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = No
             f"expected {len(image_types)} to match the gallery: {draft!r}"
         )
     return draft
+
+
+def write_listing_texts(conn, candidate_id: int, draft: dict, metadata: dict, *, now=None) -> int:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    cursor = conn.execute(
+        """
+        INSERT INTO listing_texts (
+            candidate_id, title, tags, description, disclosure_text,
+            who_made, production_partner_ids, taxonomy_id, shipping_profile_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            candidate_id, draft["title"], json.dumps(draft["tags"]), draft["description"], DISCLOSURE_TEXT,
+            metadata["who_made"], json.dumps(metadata["production_partner_ids"]),
+            metadata["taxonomy_id"], metadata["shipping_profile_id"], timestamp,
+        ),
+    )
+    conn.commit()
+    return cursor.lastrowid
