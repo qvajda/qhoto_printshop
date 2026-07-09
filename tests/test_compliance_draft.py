@@ -305,3 +305,77 @@ def test_build_compliance_draft_happy_path_writes_listing_text_and_alt_text(tmp_
     candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert candidate_row["status"] == "generating"
     conn.close()
+
+
+def test_build_compliance_draft_marks_compliance_failed_when_claude_call_raises(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=RuntimeError("Anthropic 500")):
+        with pytest.raises(RuntimeError, match="Anthropic 500"):
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "compliance_failed"
+    assert "Anthropic 500" in candidate_row["failed_reason"]
+
+    listing_rows = conn.execute(
+        "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchall()
+    assert listing_rows == []
+    conn.close()
+
+
+def test_build_compliance_draft_marks_compliance_failed_on_validation_error(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+    over_limit_title = "x" * 141
+    fake_response = {
+        "text": _json.dumps({
+            "title": over_limit_title, "tags": ["botanical"], "description": "desc",
+            "alt_texts": ["alt one", "alt two"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_response):
+        with pytest.raises(ValueError, match="140"):
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "compliance_failed"
+    conn.close()
+
+
+def test_build_compliance_draft_marks_compliance_failed_on_alt_text_mismatch_but_keeps_listing_text(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value=_fake_draft_response(2)), \
+         patch("pipeline.compliance_draft.update_gallery_alt_text",
+               side_effect=ValueError("alt_texts count mismatch")):
+        with pytest.raises(ValueError, match="alt_texts count mismatch"):
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "compliance_failed"
+
+    # Known accepted limitation (see plan's Global Constraints): write_listing_texts already
+    # committed before update_gallery_alt_text raised, so the row persists.
+    listing_rows = conn.execute(
+        "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchall()
+    assert len(listing_rows) == 1
+    conn.close()
