@@ -212,3 +212,54 @@ def test_create_primary_mockup_dry_run_skips_polling(tmp_path):
     gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
     assert gp_row["status"] == "created"
     conn.close()
+
+
+def test_create_primary_mockup_marks_mockup_failed_when_create_call_raises(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="saturated term")
+
+    def fake_create_product_from_template(*args, **kwargs):
+        raise RuntimeError("Gelato 500")
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template):
+        with pytest.raises(RuntimeError, match="Gelato 500"):
+            primary_mockup.create_primary_mockup(
+                conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+                now=datetime(2026, 7, 9, 12, 0, 0),
+            )
+
+    gp_row = conn.execute(
+        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
+        "WHERE g.candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    assert gp_row["status"] == "mockup_failed"
+    conn.close()
+
+
+def test_create_primary_mockup_marks_mockup_failed_on_poll_timeout(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="fern print")
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_2", "isReadyToPublish": False, "productImages": []}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": False, "productImages": []}
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        with pytest.raises(primary_mockup.GelatoMockupTimeoutError):
+            primary_mockup.create_primary_mockup(
+                conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+                poll_interval=0, poll_timeout=0,
+                now=datetime(2026, 7, 9, 12, 0, 0),
+            )
+
+    gp_row = conn.execute(
+        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
+        "WHERE g.candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    assert gp_row["status"] == "mockup_failed"
+    conn.close()

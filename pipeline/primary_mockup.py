@@ -79,28 +79,36 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
     conn.commit()
     group_product_id = cursor.lastrowid
 
-    response = gelato_client.create_product_from_template(
-        template["template_id"], template["template_variant_id"],
-        template["image_placeholder_name"], candidate["base_image_url"],
-        build_mockup_title(candidate), store_id=store_id, api_key=api_key,
-    )
-    gelato_product_id = response["id"]
-    conn.execute(
-        "UPDATE group_products SET gelato_product_id = ?, updated_at = ? WHERE id = ?",
-        (gelato_product_id, timestamp, group_product_id),
-    )
-    conn.commit()
-
-    if response.get("_dry_run"):
-        # In dry-run mode, synthesize a single flat mockup placeholder
-        preview_url = response.get("previewUrl") or "placeholder://dry-run-image"
-        images = [{"fileUrl": preview_url, "isPrimary": True}]
-    else:
-        product = poll_until_ready(
-            gelato_product_id, store_id=store_id, api_key=api_key,
-            poll_interval=poll_interval, timeout=poll_timeout,
+    try:
+        response = gelato_client.create_product_from_template(
+            template["template_id"], template["template_variant_id"],
+            template["image_placeholder_name"], candidate["base_image_url"],
+            build_mockup_title(candidate), store_id=store_id, api_key=api_key,
         )
-        images = product["productImages"]
+        gelato_product_id = response["id"]
+        conn.execute(
+            "UPDATE group_products SET gelato_product_id = ?, updated_at = ? WHERE id = ?",
+            (gelato_product_id, timestamp, group_product_id),
+        )
+        conn.commit()
+
+        if response.get("_dry_run"):
+            # In dry-run mode, synthesize a single flat mockup placeholder
+            preview_url = response.get("previewUrl") or "placeholder://dry-run-image"
+            images = [{"fileUrl": preview_url, "isPrimary": True}]
+        else:
+            product = poll_until_ready(
+                gelato_product_id, store_id=store_id, api_key=api_key,
+                poll_interval=poll_interval, timeout=poll_timeout,
+            )
+            images = product["productImages"]
+    except Exception:
+        conn.execute(
+            "UPDATE group_products SET status = 'mockup_failed', updated_at = ? WHERE id = ?",
+            (timestamp, group_product_id),
+        )
+        conn.commit()
+        raise
 
     ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
     for order, image in enumerate(ordered_images):
