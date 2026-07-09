@@ -260,3 +260,48 @@ def test_update_gallery_alt_text_raises_on_count_mismatch(tmp_path):
     ).fetchall()
     assert all(row["alt_text"] == "" for row in gallery)
     conn.close()
+
+
+def _fake_draft_response(alt_text_count=2):
+    return {
+        "text": _json.dumps({
+            "title": "Monstera Line Art Botanical Print",
+            "tags": ["botanical", "wall art"],
+            "description": "A minimalist botanical print.",
+            "alt_texts": [f"alt text {i}" for i in range(alt_text_count)],
+        })
+    }
+
+
+def test_build_compliance_draft_happy_path_writes_listing_text_and_alt_text(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value=_fake_draft_response(2)):
+        result = compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    listing_row = conn.execute(
+        "SELECT * FROM listing_texts WHERE id = ?", (result["listing_text_id"],)
+    ).fetchone()
+    assert listing_row["candidate_id"] == candidate_id
+    assert listing_row["title"] == "Monstera Line Art Botanical Print"
+    assert listing_row["who_made"] == "i_did"
+
+    gallery = conn.execute(
+        """
+        SELECT pi.alt_text FROM product_images pi
+        JOIN group_products gp ON gp.id = pi.group_product_id
+        JOIN groups g ON g.id = gp.group_id
+        WHERE g.candidate_id = ? ORDER BY pi.gallery_order
+        """,
+        (candidate_id,),
+    ).fetchall()
+    assert [row["alt_text"] for row in gallery] == ["alt text 0", "alt text 1"]
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
+    conn.close()

@@ -123,3 +123,33 @@ def update_gallery_alt_text(conn, candidate_id: int, alt_texts: list) -> None:
             (alt_text, image["id"]),
         )
     conn.commit()
+
+
+def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = None,
+                            anthropic_api_key: str = None, now=None) -> dict:
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"No candidate with id {candidate_id}")
+    candidate = dict(row)
+
+    static_config = static_config if static_config is not None else config.load_static_config()
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    gallery = get_primary_gallery(conn, candidate_id)
+    image_types = [image["image_type"] for image in gallery]
+    metadata = resolve_compliance_metadata(static_config)
+
+    try:
+        draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key)
+        validate_listing_text(draft["title"], draft["tags"])
+        listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
+        update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
+    except Exception as exc:
+        conn.execute(
+            "UPDATE candidates SET status = 'compliance_failed', failed_reason = ?, updated_at = ? WHERE id = ?",
+            (str(exc), timestamp, candidate_id),
+        )
+        conn.commit()
+        raise
+
+    return {"listing_text_id": listing_text_id, "candidate_id": candidate_id}
