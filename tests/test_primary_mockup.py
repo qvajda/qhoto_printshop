@@ -1,4 +1,7 @@
 from datetime import datetime
+from unittest.mock import patch
+
+import pytest
 
 import pipeline.db as db
 import pipeline.primary_mockup as primary_mockup
@@ -66,3 +69,44 @@ def test_get_or_create_primary_group_returns_existing_row(tmp_path):
     ).fetchall()
     assert len(rows) == 1
     conn.close()
+
+
+def test_poll_until_ready_returns_product_once_ready():
+    call_count = {"n": 0}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            return {"id": product_id, "isReadyToPublish": False, "productImages": []}
+        return {
+            "id": product_id, "isReadyToPublish": True,
+            "productImages": [{"fileUrl": "https://img/1.jpg", "isPrimary": True}],
+        }
+
+    sleeps = []
+
+    with patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        result = primary_mockup.poll_until_ready(
+            "prod_1", store_id="store1", api_key="key1",
+            poll_interval=3.0, timeout=90.0,
+            sleep_fn=sleeps.append, now_fn=lambda: 0.0,
+        )
+
+    assert result["isReadyToPublish"] is True
+    assert call_count["n"] == 3
+    assert sleeps == [3.0, 3.0]
+
+
+def test_poll_until_ready_raises_after_timeout():
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": False, "productImages": []}
+
+    now_values = iter([0.0, 10.0, 95.0])
+
+    with patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        with pytest.raises(primary_mockup.GelatoMockupTimeoutError, match="prod_1"):
+            primary_mockup.poll_until_ready(
+                "prod_1", store_id="store1", api_key="key1",
+                poll_interval=3.0, timeout=90.0,
+                sleep_fn=lambda seconds: None, now_fn=lambda: next(now_values),
+            )
