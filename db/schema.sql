@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS group_products (
   price_eur REAL NOT NULL,
   title TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending','created','publish_failed','published','deleted'
+    'pending','created','mockup_failed','publish_failed','published','deleted'
   )),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

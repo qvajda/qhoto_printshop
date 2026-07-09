@@ -69,3 +69,28 @@ def test_groups_unique_constraint_on_candidate_and_group_type(tmp_path):
             "VALUES (1, 'primary', 'pending_generation', '2026-07-06', '2026-07-06')"
         )
     conn.close()
+
+
+def test_group_products_accepts_mockup_failed_status(tmp_path):
+    db_path = tmp_path / "test.sqlite3"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+
+    conn.execute(
+        "INSERT INTO candidates (id, created_at, niche, go_hold_kill, status, updated_at) "
+        "VALUES (1, '2026-07-06', 'botanical', 'go', 'pending', '2026-07-06')"
+    )
+    conn.execute(
+        "INSERT INTO groups (id, candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (1, 1, 'primary', 'pending_generation', '2026-07-06', '2026-07-06')"
+    )
+    conn.execute(
+        "INSERT INTO group_products "
+        "(group_id, size, orientation, gelato_template_id, price_eur, status, created_at, updated_at) "
+        "VALUES (1, '8x12', 'portrait', 'tpl_1', 24, 'mockup_failed', '2026-07-06', '2026-07-06')"
+    )
+    conn.commit()
+
+    row = conn.execute("SELECT status FROM group_products WHERE group_id = 1").fetchone()
+    assert row["status"] == "mockup_failed"
+    conn.close()
