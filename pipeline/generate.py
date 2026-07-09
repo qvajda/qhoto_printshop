@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pipeline.replicate_client as replicate_client
 
@@ -27,6 +27,9 @@ def build_prompt(candidate: dict, *, correction_note: str = None) -> str:
 
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
                             api_token: str = None, now=None) -> dict:
+    """Generate a base image for a candidate, always overwriting base_image_url/
+    base_replicate_prediction_id on its row (even on retry); `now` is only for test
+    determinism."""
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
@@ -34,7 +37,7 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     prompt = build_prompt(dict(row), correction_note=correction_note)
     result = replicate_client.generate_image(prompt, api_token=api_token)
 
-    timestamp = (now or datetime.utcnow()).isoformat()
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     conn.execute(
         """
         UPDATE candidates
@@ -47,12 +50,18 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     return result
 
 
-def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list:
+def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list[int]:
     pending_ids = [
         row["id"] for row in conn.execute(
             "SELECT id FROM candidates WHERE status = 'pending' ORDER BY id"
         ).fetchall()
     ]
+    processed_ids = []
     for candidate_id in pending_ids:
-        generate_for_candidate(conn, candidate_id, api_token=api_token, now=now)
-    return pending_ids
+        try:
+            generate_for_candidate(conn, candidate_id, api_token=api_token, now=now)
+        except Exception as exc:
+            print(f"generate_for_candidate failed for candidate {candidate_id}: {exc}")
+            continue
+        processed_ids.append(candidate_id)
+    return processed_ids

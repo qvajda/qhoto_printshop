@@ -144,6 +144,32 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
     conn.close()
 
 
+def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    failing_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
+    succeeding_id = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
+
+    def fake_generate_image(prompt, *, api_token=None):
+        if "monstera line art" in prompt:
+            raise RuntimeError("Replicate throttled")
+        return {"image_url": "https://replicate.delivery/out2.png", "prediction_id": "pred2"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+        processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
+
+    assert processed_ids == [succeeding_id]
+
+    failing_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (failing_id,)).fetchone()
+    succeeding_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (succeeding_id,)).fetchone()
+
+    assert failing_row["status"] == "pending"
+    assert failing_row["base_image_url"] is None
+
+    assert succeeding_row["status"] == "generating"
+    assert succeeding_row["base_image_url"] == "https://replicate.delivery/out2.png"
+    conn.close()
+
+
 def test_run_generate_cycle_returns_empty_list_when_no_pending_candidates(tmp_path):
     conn = _fresh_conn(tmp_path)
     _insert_pending_candidate(conn, niche="saturated term", status="abandoned")
