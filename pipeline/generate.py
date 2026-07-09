@@ -45,3 +45,14 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     )
     conn.commit()
     return result
+
+
+def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list:
+    pending_ids = [
+        row["id"] for row in conn.execute(
+            "SELECT id FROM candidates WHERE status = 'pending' ORDER BY id"
+        ).fetchall()
+    ]
+    for candidate_id in pending_ids:
+        generate_for_candidate(conn, candidate_id, api_token=api_token, now=now)
+    return pending_ids

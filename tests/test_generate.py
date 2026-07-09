@@ -111,3 +111,44 @@ def test_generate_for_candidate_raises_on_unknown_candidate_id(tmp_path):
         generate.generate_for_candidate(conn, 999)
 
     conn.close()
+
+
+def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    pending_id_1 = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
+    pending_id_2 = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
+    abandoned_id = _insert_pending_candidate(conn, niche="saturated term", status="abandoned")
+
+    call_count = {"n": 0}
+
+    def fake_generate_image(prompt, *, api_token=None):
+        call_count["n"] += 1
+        return {"image_url": f"https://replicate.delivery/out{call_count['n']}.png", "prediction_id": f"pred{call_count['n']}"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+        processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
+
+    assert sorted(processed_ids) == sorted([pending_id_1, pending_id_2])
+    assert call_count["n"] == 2
+
+    row_1 = conn.execute("SELECT * FROM candidates WHERE id = ?", (pending_id_1,)).fetchone()
+    row_2 = conn.execute("SELECT * FROM candidates WHERE id = ?", (pending_id_2,)).fetchone()
+    abandoned_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (abandoned_id,)).fetchone()
+
+    assert row_1["status"] == "generating"
+    assert row_1["base_image_url"] is not None
+    assert row_2["status"] == "generating"
+    assert row_2["base_image_url"] is not None
+    assert abandoned_row["status"] == "abandoned"
+    assert abandoned_row["base_image_url"] is None
+    conn.close()
+
+
+def test_run_generate_cycle_returns_empty_list_when_no_pending_candidates(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_pending_candidate(conn, niche="saturated term", status="abandoned")
+
+    processed_ids = generate.run_generate_cycle(conn)
+
+    assert processed_ids == []
+    conn.close()
