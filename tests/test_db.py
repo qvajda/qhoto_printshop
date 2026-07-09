@@ -94,3 +94,19 @@ def test_group_products_accepts_mockup_failed_status(tmp_path):
     row = conn.execute("SELECT status FROM group_products WHERE group_id = 1").fetchone()
     assert row["status"] == "mockup_failed"
     conn.close()
+
+
+def test_candidates_accepts_compliance_failed_status(tmp_path):
+    db_path = tmp_path / "test.sqlite3"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+
+    conn.execute(
+        "INSERT INTO candidates (id, created_at, niche, go_hold_kill, status, updated_at) "
+        "VALUES (1, '2026-07-10', 'botanical', 'go', 'compliance_failed', '2026-07-10')"
+    )
+    conn.commit()
+
+    row = conn.execute("SELECT status FROM candidates WHERE id = 1").fetchone()
+    assert row["status"] == "compliance_failed"
+    conn.close()

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS candidates (
   base_image_url TEXT,
   base_replicate_prediction_id TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending','generating','primary_review','failed','abandoned','completed'
+    'pending','generating','primary_review','compliance_failed','failed','abandoned','completed'
   )),
   failed_reason TEXT,
   updated_at TEXT NOT NULL
