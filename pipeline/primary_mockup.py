@@ -132,3 +132,35 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
     conn.commit()
 
     return {"group_id": group_id, "group_product_id": group_product_id, "gelato_product_id": gelato_product_id}
+
+
+def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str = None,
+                              api_key: str = None, poll_interval: float = 3.0,
+                              poll_timeout: float = 90.0, now=None) -> list:
+    candidate_ids = [
+        row["id"] for row in conn.execute(
+            """
+            SELECT id FROM candidates
+            WHERE status = 'generating'
+              AND base_image_url IS NOT NULL
+              AND id NOT IN (
+                SELECT g.candidate_id FROM groups g
+                JOIN group_products gp ON gp.group_id = g.id
+                WHERE g.group_type = 'primary'
+              )
+            ORDER BY id
+            """
+        ).fetchall()
+    ]
+    processed_ids = []
+    for candidate_id in candidate_ids:
+        try:
+            create_primary_mockup(
+                conn, candidate_id, static_config=static_config, store_id=store_id,
+                api_key=api_key, poll_interval=poll_interval, poll_timeout=poll_timeout, now=now,
+            )
+        except Exception as exc:
+            print(f"create_primary_mockup failed for candidate {candidate_id}: {exc}")
+            continue
+        processed_ids.append(candidate_id)
+    return processed_ids

@@ -237,6 +237,107 @@ def test_create_primary_mockup_marks_mockup_failed_when_create_call_raises(tmp_p
     conn.close()
 
 
+def test_run_primary_mockup_cycle_processes_ready_candidates_and_skips_others(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ready_id = _insert_candidate(conn, niche="monstera line art", status="generating",
+                                  base_image_url="https://replicate.delivery/a.png")
+    _insert_candidate(conn, niche="pending one", status="pending", base_image_url=None)
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_x", "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        processed_ids = primary_mockup.run_primary_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 9, 12, 0, 0),
+        )
+
+    assert processed_ids == [ready_id]
+    conn.close()
+
+
+def test_run_primary_mockup_cycle_skips_candidates_already_mocked_up(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="monstera line art", status="generating")
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_y", "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        first_run = primary_mockup.run_primary_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 9, 12, 0, 0),
+        )
+        second_run = primary_mockup.run_primary_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 9, 13, 0, 0),
+        )
+
+    assert first_run == [candidate_id]
+    assert second_run == []
+    conn.close()
+
+
+def test_run_primary_mockup_cycle_isolates_per_candidate_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    failing_id = _insert_candidate(conn, niche="monstera line art", status="generating",
+                                    base_image_url="https://replicate.delivery/fail.png")
+    succeeding_id = _insert_candidate(conn, niche="moon phase print", status="generating",
+                                       base_image_url="https://replicate.delivery/ok.png")
+
+    def fake_create_product_from_template(template_id, template_variant_id, image_placeholder_name,
+                                           image_url, title, *, store_id=None, api_key=None, **kwargs):
+        if image_url == "https://replicate.delivery/fail.png":
+            raise RuntimeError("Gelato throttled")
+        return {"id": "gelato_prod_ok", "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+        processed_ids = primary_mockup.run_primary_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 9, 12, 0, 0),
+        )
+
+    assert processed_ids == [succeeding_id]
+
+    failing_gp = conn.execute(
+        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
+        "WHERE g.candidate_id = ?", (failing_id,)
+    ).fetchone()
+    assert failing_gp["status"] == "mockup_failed"
+    conn.close()
+
+
+def test_run_primary_mockup_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn, niche="pending one", status="pending", base_image_url=None)
+
+    processed_ids = primary_mockup.run_primary_mockup_cycle(conn, static_config=STATIC_CONFIG)
+
+    assert processed_ids == []
+    conn.close()
+
+
 def test_create_primary_mockup_marks_mockup_failed_on_poll_timeout(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, niche="fern print")
