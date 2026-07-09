@@ -37,3 +37,18 @@ def validate_listing_text(title: str, tags: list) -> None:
             raise ValueError(
                 f"tag {tag!r} is {len(tag)} chars, exceeds Etsy's {MAX_TAG_LENGTH}-char limit"
             )
+
+
+def get_primary_gallery(conn, candidate_id: int) -> list:
+    rows = conn.execute(
+        """
+        SELECT pi.id, pi.gallery_order, pi.image_type
+        FROM product_images pi
+        JOIN group_products gp ON gp.id = pi.group_product_id
+        JOIN groups g ON g.id = gp.group_id
+        WHERE g.candidate_id = ? AND g.group_type = 'primary'
+        ORDER BY pi.gallery_order
+        """,
+        (candidate_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
