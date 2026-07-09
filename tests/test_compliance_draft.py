@@ -379,3 +379,98 @@ def test_build_compliance_draft_marks_compliance_failed_on_alt_text_mismatch_but
     ).fetchall()
     assert len(listing_rows) == 1
     conn.close()
+
+
+def test_run_compliance_draft_cycle_processes_ready_candidates_and_skips_others(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ready_id = _insert_ready_candidate(conn, niche="monstera line art")
+    not_yet_mocked_id = _insert_candidate(conn, niche="pending one", status="generating")
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value=_fake_draft_response(2)):
+        processed_ids = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    assert processed_ids == [ready_id]
+    assert not_yet_mocked_id not in processed_ids
+    conn.close()
+
+
+def test_run_compliance_draft_cycle_skips_already_drafted_candidates(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value=_fake_draft_response(2)):
+        first_run = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+        second_run = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 11, 0, 0),
+        )
+
+    assert first_run == [candidate_id]
+    assert second_run == []
+    conn.close()
+
+
+def test_run_compliance_draft_cycle_skips_already_failed_candidates_on_next_run(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=RuntimeError("Anthropic 500")):
+        first_run = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value=_fake_draft_response(2)):
+        second_run = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 11, 0, 0),
+        )
+
+    assert first_run == []
+    assert second_run == []  # candidate stayed 'compliance_failed', not auto-retried
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "compliance_failed"
+    conn.close()
+
+
+def test_run_compliance_draft_cycle_isolates_per_candidate_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    failing_id = _insert_ready_candidate(conn, niche="saturated term")
+    succeeding_id = _insert_ready_candidate(conn, niche="moon phase print")
+
+    def fake_complete(prompt, *, api_key=None, max_tokens=1024):
+        if "saturated term" in prompt:
+            raise RuntimeError("Anthropic throttled")
+        return _fake_draft_response(2)
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", side_effect=fake_complete):
+        processed_ids = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    assert processed_ids == [succeeding_id]
+
+    failing_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (failing_id,)).fetchone()
+    assert failing_row["status"] == "compliance_failed"
+    conn.close()
+
+
+def test_run_compliance_draft_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn, niche="pending one", status="pending")
+
+    processed_ids = compliance_draft.run_compliance_draft_cycle(conn, static_config=STATIC_CONFIG)
+
+    assert processed_ids == []
+    conn.close()

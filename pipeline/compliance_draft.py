@@ -153,3 +153,32 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
         raise
 
     return {"listing_text_id": listing_text_id, "candidate_id": candidate_id}
+
+
+def run_compliance_draft_cycle(conn, *, static_config: dict = None,
+                                anthropic_api_key: str = None, now=None) -> list:
+    candidate_ids = [
+        row["id"] for row in conn.execute(
+            """
+            SELECT DISTINCT c.id FROM candidates c
+            JOIN groups g ON g.candidate_id = c.id AND g.group_type = 'primary'
+            JOIN group_products gp ON gp.group_id = g.id
+            WHERE c.status = 'generating'
+              AND gp.status = 'created'
+              AND c.id NOT IN (SELECT candidate_id FROM listing_texts)
+            ORDER BY c.id
+            """
+        ).fetchall()
+    ]
+    processed_ids = []
+    for candidate_id in candidate_ids:
+        try:
+            build_compliance_draft(
+                conn, candidate_id, static_config=static_config,
+                anthropic_api_key=anthropic_api_key, now=now,
+            )
+        except Exception as exc:
+            print(f"build_compliance_draft failed for candidate {candidate_id}: {exc}")
+            continue
+        processed_ids.append(candidate_id)
+    return processed_ids
