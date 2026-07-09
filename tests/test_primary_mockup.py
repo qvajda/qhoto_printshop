@@ -179,3 +179,36 @@ def test_create_primary_mockup_happy_path_writes_group_product_and_images(tmp_pa
     assert images[0]["alt_text"] == ""
     assert [img["image_type"] for img in images[1:]] == ["lifestyle", "lifestyle"]
     conn.close()
+
+
+def test_create_primary_mockup_dry_run_skips_polling(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="moon phase print")
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {
+            "id": "DRY_RUN_PRODUCT_ID", "previewUrl": None, "productImages": [],
+            "_dry_run": True,
+        }
+
+    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product") as mock_get_product:
+        result = primary_mockup.create_primary_mockup(
+            conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 9, 12, 0, 0),
+        )
+
+    mock_get_product.assert_not_called()
+
+    images = conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ?",
+        (result["group_product_id"],),
+    ).fetchall()
+    assert len(images) == 1
+    assert images[0]["image_type"] == "flat_mockup"
+    assert images[0]["gallery_order"] == 0
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
+    assert gp_row["status"] == "created"
+    conn.close()

@@ -92,7 +92,9 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
     conn.commit()
 
     if response.get("_dry_run"):
-        images = [{"fileUrl": response.get("previewUrl"), "isPrimary": True}]
+        # In dry-run mode, synthesize a single flat mockup placeholder
+        preview_url = response.get("previewUrl") or "placeholder://dry-run-image"
+        images = [{"fileUrl": preview_url, "isPrimary": True}]
     else:
         product = poll_until_ready(
             gelato_product_id, store_id=store_id, api_key=api_key,
