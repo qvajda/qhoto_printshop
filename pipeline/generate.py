@@ -1,3 +1,8 @@
+from datetime import datetime
+
+import pipeline.replicate_client as replicate_client
+
+
 NICHE_STYLE_SCAFFOLD = (
     "A minimalist botanical/nature wall art print: {niche}. Clean composition, soft "
     "muted natural color palette, print-ready poster art, no text or watermarks."
@@ -18,3 +23,25 @@ def build_prompt(candidate: dict, *, correction_note: str = None) -> str:
     if correction_note:
         prompt += f" Previous attempt was rejected for: {correction_note}. Avoid this issue in the new image."
     return prompt
+
+
+def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
+                            api_token: str = None, now=None) -> dict:
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"No candidate with id {candidate_id}")
+
+    prompt = build_prompt(dict(row), correction_note=correction_note)
+    result = replicate_client.generate_image(prompt, api_token=api_token)
+
+    timestamp = (now or datetime.utcnow()).isoformat()
+    conn.execute(
+        """
+        UPDATE candidates
+        SET base_image_url = ?, base_replicate_prediction_id = ?, status = 'generating', updated_at = ?
+        WHERE id = ?
+        """,
+        (result["image_url"], result["prediction_id"], timestamp, candidate_id),
+    )
+    conn.commit()
+    return result
