@@ -229,3 +229,28 @@ def test_discard_superseded_attempt_skips_gelato_call_when_no_product_id(tmp_pat
         "SELECT * FROM group_products WHERE id = ?", (group_product_id,)
     ).fetchone() is None
     conn.close()
+
+
+def test_abandon_candidate_marks_candidate_and_group_failed(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, _ = _insert_primary_gallery(conn, candidate_id)
+
+    critic_pass.abandon_candidate(
+        conn, candidate_id, group_id, "exhausted 3 attempts: off-center composition",
+        now=datetime(2026, 7, 10, 12, 30, 0),
+    )
+
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason, updated_at FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "failed"
+    assert candidate_row["failed_reason"] == "exhausted 3 attempts: off-center composition"
+    assert candidate_row["updated_at"] == "2026-07-10T12:30:00"
+
+    group_row = conn.execute(
+        "SELECT status, failed_reason FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()
+    assert group_row["status"] == "failed_abandoned"
+    assert group_row["failed_reason"] == "exhausted 3 attempts: off-center composition"
+    conn.close()

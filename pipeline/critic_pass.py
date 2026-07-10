@@ -113,3 +113,16 @@ def discard_superseded_attempt(conn, group_product_id: int, *, store_id: str = N
     conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
     conn.execute("DELETE FROM group_products WHERE id = ?", (group_product_id,))
     conn.commit()
+
+
+def abandon_candidate(conn, candidate_id: int, group_id: int, reason: str, *, now=None) -> None:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "UPDATE candidates SET status = 'failed', failed_reason = ?, updated_at = ? WHERE id = ?",
+        (reason, timestamp, candidate_id),
+    )
+    conn.execute(
+        "UPDATE groups SET status = 'failed_abandoned', failed_reason = ?, updated_at = ? WHERE id = ?",
+        (reason, timestamp, group_id),
+    )
+    conn.commit()
