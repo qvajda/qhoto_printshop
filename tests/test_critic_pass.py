@@ -128,3 +128,30 @@ def test_get_primary_group_state_raises_when_no_listing_text(tmp_path):
     with pytest.raises(ValueError, match="listing_texts"):
         critic_pass.get_primary_group_state(conn, candidate_id)
     conn.close()
+
+
+def test_evaluate_critic_pass_returns_parsed_result():
+    listing_text = {"title": "Monstera Line Art Botanical Print", "description": "A minimalist botanical print."}
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               return_value=fake_response) as mock_call:
+        result = critic_pass.evaluate_critic_pass(
+            ["https://gelato/a.jpg", "https://gelato/b.jpg"], listing_text, api_key="key1"
+        )
+
+    mock_call.assert_called_once()
+    called_prompt, called_images = mock_call.call_args.args
+    assert "Monstera Line Art Botanical Print" in called_prompt
+    assert called_images == ["https://gelato/a.jpg", "https://gelato/b.jpg"]
+    assert mock_call.call_args.kwargs["api_key"] == "key1"
+    assert result == {"passed": True, "reason": "meets rubric"}
+
+
+def test_evaluate_critic_pass_raises_on_missing_key():
+    listing_text = {"title": "A title", "description": "A description."}
+    fake_response = {"text": _json.dumps({"passed": False})}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        with pytest.raises(ValueError, match="reason"):
+            critic_pass.evaluate_critic_pass(["https://gelato/a.jpg"], listing_text, api_key="key1")

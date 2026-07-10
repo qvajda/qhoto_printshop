@@ -35,6 +35,16 @@ def build_critic_prompt(listing_text: dict, image_count: int) -> str:
     )
 
 
+def evaluate_critic_pass(gallery_image_urls: list, listing_text: dict, *, api_key: str = None) -> dict:
+    prompt = build_critic_prompt(listing_text, len(gallery_image_urls))
+    result = anthropic_client.complete_with_images(prompt, gallery_image_urls, api_key=api_key)
+    parsed = json.loads(result["text"])
+    for key in ("passed", "reason"):
+        if key not in parsed:
+            raise ValueError(f"Claude critic response missing required key {key!r}: {parsed!r}")
+    return {"passed": parsed["passed"], "reason": parsed["reason"]}
+
+
 def get_primary_group_state(conn, candidate_id: int) -> dict:
     group_row = conn.execute(
         "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'",
