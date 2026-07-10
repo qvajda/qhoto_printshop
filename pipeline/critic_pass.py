@@ -33,3 +33,41 @@ def build_critic_prompt(listing_text: dict, image_count: int) -> str:
         title=listing_text["title"],
         description=listing_text["description"],
     )
+
+
+def get_primary_group_state(conn, candidate_id: int) -> dict:
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'",
+        (candidate_id,),
+    ).fetchone()
+    if group_row is None:
+        raise ValueError(f"No primary group for candidate {candidate_id}")
+    group_id = group_row["id"]
+
+    group_product_row = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ? AND status = 'created'",
+        (group_id,),
+    ).fetchone()
+    if group_product_row is None:
+        raise ValueError(f"No live group_products row for candidate {candidate_id}'s primary group")
+    group_product_id = group_product_row["id"]
+
+    image_rows = conn.execute(
+        "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
+        (group_product_id,),
+    ).fetchall()
+    image_urls = [row["image_url"] for row in image_rows]
+
+    listing_row = conn.execute(
+        "SELECT title, tags, description FROM listing_texts WHERE candidate_id = ?",
+        (candidate_id,),
+    ).fetchone()
+    if listing_row is None:
+        raise ValueError(f"No listing_texts row for candidate {candidate_id}")
+
+    return {
+        "group_id": group_id,
+        "group_product_id": group_product_id,
+        "image_urls": image_urls,
+        "listing_text": dict(listing_row),
+    }
