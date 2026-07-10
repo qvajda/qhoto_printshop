@@ -364,3 +364,69 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
     assert attempts[0]["failure_reason"] == "composition is off-center"
     assert attempts[1]["passed"] == 1
     conn.close()
+
+
+def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    critic_responses = iter([
+        {"text": _json.dumps({"passed": False, "reason": "reason one"})},
+        {"text": _json.dumps({"passed": False, "reason": "reason two"})},
+        {"text": _json.dumps({"passed": False, "reason": "reason three"})},
+    ])
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_new", "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat_new.jpg", "isPrimary": True}]}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat_new.jpg", "isPrimary": True}]}
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred_retry"}
+
+    fake_draft_response = {
+        "text": _json.dumps({
+            "title": "Retried Title", "tags": ["botanical"], "description": "Retried description.",
+            "alt_texts": ["retry alt"],
+        })
+    }
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               side_effect=lambda *a, **k: next(critic_responses)), \
+         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product), \
+         patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_draft_response):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert result == {"candidate_id": candidate_id, "passed": False, "attempts": 3}
+    assert mock_delete.call_count == 3
+
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "failed"
+    assert candidate_row["failed_reason"] == "reason three"
+
+    group_row = conn.execute(
+        "SELECT status, failed_reason FROM groups WHERE candidate_id = ? AND group_type = 'primary'",
+        (candidate_id,),
+    ).fetchone()
+    assert group_row["status"] == "failed_abandoned"
+    assert group_row["failed_reason"] == "reason three"
+
+    fallback_row = conn.execute(
+        "SELECT * FROM candidates WHERE trend_source LIKE 'safe_evergreen_fallback:%'"
+    ).fetchone()
+    assert fallback_row is not None
+    assert fallback_row["status"] == "pending"
+    conn.close()
