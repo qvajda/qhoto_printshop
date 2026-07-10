@@ -77,3 +77,40 @@ def test_complete_concatenates_multiple_text_blocks():
         result = anthropic_client.complete("prompt", api_key="key1")
 
     assert result["text"] == "line one\nline two"
+
+
+def test_complete_with_images_builds_correct_request_with_image_blocks_before_text():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["body"] = json.loads(request.data)
+        return {"content": [{"type": "text", "text": '{"passed": true, "reason": "ok"}'}]}
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+        result = anthropic_client.complete_with_images(
+            "review these images", ["https://gelato/a.jpg", "https://gelato/b.jpg"], api_key="key1"
+        )
+
+    assert captured["url"] == "https://api.anthropic.com/v1/messages"
+    assert captured["method"] == "POST"
+    assert captured["body"]["model"] == anthropic_client.ANTHROPIC_MODEL
+    assert captured["body"]["max_tokens"] == 1024
+    content = captured["body"]["messages"][0]["content"]
+    assert content == [
+        {"type": "image", "source": {"type": "url", "url": "https://gelato/a.jpg"}},
+        {"type": "image", "source": {"type": "url", "url": "https://gelato/b.jpg"}},
+        {"type": "text", "text": "review these images"},
+    ]
+    assert result["text"] == '{"passed": true, "reason": "ok"}'
+
+
+def test_complete_with_images_concatenates_multiple_text_blocks():
+    def fake_send(request, timeout=30):
+        return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+        result = anthropic_client.complete_with_images("prompt", ["https://gelato/a.jpg"], api_key="key1")
+
+    assert result["text"] == "line one\nline two"

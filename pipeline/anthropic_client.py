@@ -46,3 +46,21 @@ def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024) -> dic
     result = http.send(request, timeout=60)
     text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
     return {"text": "\n".join(text_blocks), "raw": result}
+
+
+def complete_with_images(prompt: str, image_urls: list, *, api_key: str = None, max_tokens: int = 1024) -> dict:
+    api_key = api_key or config.require_env("ANTHROPIC_API_KEY")
+    content = [
+        {"type": "image", "source": {"type": "url", "url": image_url}}
+        for image_url in image_urls
+    ]
+    content.append({"type": "text", "text": prompt})
+    body = json.dumps({
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": content}],
+    }).encode("utf-8")
+    request = urllib.request.Request(ANTHROPIC_API_BASE, data=body, headers=_headers(api_key), method="POST")
+    result = http.send(request, timeout=60)
+    text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
+    return {"text": "\n".join(text_blocks), "raw": result}
