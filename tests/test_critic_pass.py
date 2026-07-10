@@ -191,3 +191,41 @@ def test_record_critic_attempt_stores_failure_with_reason_and_correction_notes(t
     assert row["failure_reason"] == "composition is off-center"
     assert row["correction_notes"] == "composition is off-center"
     conn.close()
+
+
+def test_discard_superseded_attempt_deletes_gelato_product_and_rows(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _group_id, group_product_id = _insert_primary_gallery(conn, candidate_id)
+
+    with patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete:
+        critic_pass.discard_superseded_attempt(
+            conn, group_product_id, store_id="store1", api_key="key2"
+        )
+
+    mock_delete.assert_called_once_with("gelato_prod_1", store_id="store1", api_key="key2")
+
+    assert conn.execute(
+        "SELECT * FROM group_products WHERE id = ?", (group_product_id,)
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ?", (group_product_id,)
+    ).fetchall() == []
+    conn.close()
+
+
+def test_discard_superseded_attempt_skips_gelato_call_when_no_product_id(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _group_id, group_product_id = _insert_primary_gallery(
+        conn, candidate_id, gelato_product_id=None, group_product_status="pending"
+    )
+
+    with patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete:
+        critic_pass.discard_superseded_attempt(conn, group_product_id, store_id="store1", api_key="key2")
+
+    mock_delete.assert_not_called()
+    assert conn.execute(
+        "SELECT * FROM group_products WHERE id = ?", (group_product_id,)
+    ).fetchone() is None
+    conn.close()

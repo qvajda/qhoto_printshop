@@ -100,3 +100,16 @@ def record_critic_attempt(conn, group_id: int, attempt_number: int, result: dict
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def discard_superseded_attempt(conn, group_product_id: int, *, store_id: str = None, api_key: str = None) -> None:
+    row = conn.execute(
+        "SELECT gelato_product_id FROM group_products WHERE id = ?", (group_product_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"No group_products row with id {group_product_id}")
+    if row["gelato_product_id"]:
+        gelato_client.delete_product(row["gelato_product_id"], store_id=store_id, api_key=api_key)
+    conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
+    conn.execute("DELETE FROM group_products WHERE id = ?", (group_product_id,))
+    conn.commit()
