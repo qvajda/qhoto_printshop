@@ -176,3 +176,33 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
             anthropic_api_key=anthropic_api_key, now=now,
         )
         attempt_number += 1
+
+
+def run_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_api_key: str = None,
+                           store_id: str = None, gelato_api_key: str = None,
+                           replicate_api_token: str = None, now=None) -> list:
+    candidate_ids = [
+        row["id"] for row in conn.execute(
+            """
+            SELECT DISTINCT c.id FROM candidates c
+            JOIN groups g ON g.candidate_id = c.id AND g.group_type = 'primary'
+            JOIN listing_texts lt ON lt.candidate_id = c.id
+            WHERE c.status = 'generating'
+              AND g.id NOT IN (SELECT group_id FROM critic_pass_attempts WHERE passed = 1)
+            ORDER BY c.id
+            """
+        ).fetchall()
+    ]
+    processed_ids = []
+    for candidate_id in candidate_ids:
+        try:
+            run_critic_pass(
+                conn, candidate_id, static_config=static_config, anthropic_api_key=anthropic_api_key,
+                store_id=store_id, gelato_api_key=gelato_api_key,
+                replicate_api_token=replicate_api_token, now=now,
+            )
+        except Exception as exc:
+            print(f"run_critic_pass failed for candidate {candidate_id}: {exc}")
+            continue
+        processed_ids.append(candidate_id)
+    return processed_ids

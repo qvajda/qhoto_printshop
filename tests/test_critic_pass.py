@@ -430,3 +430,75 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
     assert fallback_row is not None
     assert fallback_row["status"] == "pending"
     conn.close()
+
+
+def test_run_critic_pass_cycle_processes_ready_candidates_and_skips_undrafted(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ready_id = _insert_ready_candidate(conn, niche="monstera line art")
+    undrafted_id = _insert_candidate(conn, niche="pending one", status="generating")
+    _insert_primary_gallery(conn, undrafted_id)  # gallery exists but no listing_texts row yet
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        processed_ids = critic_pass.run_critic_pass_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert processed_ids == [ready_id]
+    assert undrafted_id not in processed_ids
+    conn.close()
+
+
+def test_run_critic_pass_cycle_skips_candidates_already_passed(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        first_run = critic_pass.run_critic_pass_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+        second_run = critic_pass.run_critic_pass_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 13, 0, 0),
+        )
+
+    assert first_run == [candidate_id]
+    assert second_run == []
+    conn.close()
+
+
+def test_run_critic_pass_cycle_isolates_per_candidate_operational_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    failing_id = _insert_ready_candidate(conn, niche="saturated term")
+    succeeding_id = _insert_ready_candidate(conn, niche="moon phase print")
+
+    def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024):
+        if "saturated term" in prompt:
+            raise RuntimeError("Anthropic throttled")
+        return {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               side_effect=fake_complete_with_images):
+        processed_ids = critic_pass.run_critic_pass_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert processed_ids == [succeeding_id]
+
+    failing_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (failing_id,)).fetchone()
+    assert failing_row["status"] == "generating"  # exception happened before any status write
+    conn.close()
+
+
+def test_run_critic_pass_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn, niche="pending one", status="pending")
+
+    processed_ids = critic_pass.run_critic_pass_cycle(conn, static_config=STATIC_CONFIG)
+
+    assert processed_ids == []
+    conn.close()
