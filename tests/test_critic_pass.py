@@ -155,3 +155,39 @@ def test_evaluate_critic_pass_raises_on_missing_key():
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         with pytest.raises(ValueError, match="reason"):
             critic_pass.evaluate_critic_pass(["https://gelato/a.jpg"], listing_text, api_key="key1")
+
+
+def test_record_critic_attempt_stores_pass(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, _ = _insert_primary_gallery(conn, candidate_id)
+
+    attempt_id = critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": True, "reason": "meets rubric"},
+        now=datetime(2026, 7, 10, 12, 0, 0),
+    )
+
+    row = conn.execute("SELECT * FROM critic_pass_attempts WHERE id = ?", (attempt_id,)).fetchone()
+    assert row["group_id"] == group_id
+    assert row["attempt_number"] == 1
+    assert row["passed"] == 1
+    assert row["failure_reason"] is None
+    assert row["created_at"] == "2026-07-10T12:00:00"
+    conn.close()
+
+
+def test_record_critic_attempt_stores_failure_with_reason_and_correction_notes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, _ = _insert_primary_gallery(conn, candidate_id)
+
+    attempt_id = critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": False, "reason": "composition is off-center"},
+        correction_notes="composition is off-center", now=datetime(2026, 7, 10, 12, 0, 0),
+    )
+
+    row = conn.execute("SELECT * FROM critic_pass_attempts WHERE id = ?", (attempt_id,)).fetchone()
+    assert row["passed"] == 0
+    assert row["failure_reason"] == "composition is off-center"
+    assert row["correction_notes"] == "composition is off-center"
+    conn.close()

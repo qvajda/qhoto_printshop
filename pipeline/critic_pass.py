@@ -81,3 +81,22 @@ def get_primary_group_state(conn, candidate_id: int) -> dict:
         "image_urls": image_urls,
         "listing_text": dict(listing_row),
     }
+
+
+def record_critic_attempt(conn, group_id: int, attempt_number: int, result: dict,
+                           correction_notes: str = None, *, now=None) -> int:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    cursor = conn.execute(
+        """
+        INSERT INTO critic_pass_attempts (
+            group_id, attempt_number, passed, failure_reason, correction_notes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            group_id, attempt_number, 1 if result["passed"] else 0,
+            None if result["passed"] else result["reason"],
+            correction_notes, timestamp,
+        ),
+    )
+    conn.commit()
+    return cursor.lastrowid
