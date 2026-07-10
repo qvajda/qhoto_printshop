@@ -296,3 +296,71 @@ def test_abandon_candidate_marks_candidate_and_group_failed(tmp_path):
     assert group_row["status"] == "failed_abandoned"
     assert group_row["failed_reason"] == "exhausted 3 attempts: off-center composition"
     conn.close()
+
+
+def test_run_critic_pass_retries_once_then_passes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    critic_responses = iter([
+        {"text": _json.dumps({"passed": False, "reason": "composition is off-center"})},
+        {"text": _json.dumps({"passed": True, "reason": "meets rubric"})},
+    ])
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_retry", "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat_v2.jpg", "isPrimary": True}]}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {"id": product_id, "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato/flat_v2.jpg", "isPrimary": True}]}
+
+    def fake_generate_image(prompt, *, api_token=None):
+        assert "composition is off-center" in prompt
+        return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred_retry"}
+
+    fake_draft_response = {
+        "text": _json.dumps({
+            "title": "Monstera Line Art Botanical Print v2",
+            "tags": ["botanical"], "description": "Retried description.",
+            "alt_texts": ["retry alt one"],
+        })
+    }
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               side_effect=lambda *a, **k: next(critic_responses)), \
+         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product), \
+         patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_draft_response):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 2}
+    mock_delete.assert_called_once_with("gelato_prod_1", store_id="store1", api_key="key2")
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "primary_review"
+
+    listing_rows = conn.execute(
+        "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchall()
+    assert len(listing_rows) == 1
+    assert listing_rows[0]["title"] == "Monstera Line Art Botanical Print v2"
+
+    attempts = conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = "
+        "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary') "
+        "ORDER BY attempt_number",
+        (candidate_id,),
+    ).fetchall()
+    assert len(attempts) == 2
+    assert attempts[0]["passed"] == 0
+    assert attempts[0]["failure_reason"] == "composition is off-center"
+    assert attempts[1]["passed"] == 1
+    conn.close()
