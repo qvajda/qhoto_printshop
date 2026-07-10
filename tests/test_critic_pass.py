@@ -231,6 +231,48 @@ def test_discard_superseded_attempt_skips_gelato_call_when_no_product_id(tmp_pat
     conn.close()
 
 
+STATIC_CONFIG = {
+    "gelato_templates": {
+        "8x12_portrait": {
+            "template_id": "tpl_real_8x12",
+            "template_variant_id": "variant_real_8x12",
+            "image_placeholder_name": "real_image_slot.jpg",
+        }
+    },
+    "prices_eur": {"8x12": 24},
+    "etsy_who_made": "i_did",
+    "etsy_production_partner_ids": [5717252],
+    "etsy_taxonomy_id": "1027",
+    "etsy_shipping_profile_id": "",
+}
+
+
+def test_run_critic_pass_happy_path_sets_primary_review_on_first_pass(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 1}
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "primary_review"
+
+    attempts = conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = "
+        "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary')",
+        (candidate_id,),
+    ).fetchall()
+    assert len(attempts) == 1
+    assert attempts[0]["passed"] == 1
+    conn.close()
+
+
 def test_abandon_candidate_marks_candidate_and_group_failed(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

@@ -126,3 +126,53 @@ def abandon_candidate(conn, candidate_id: int, group_id: int, reason: str, *, no
         (reason, timestamp, group_id),
     )
     conn.commit()
+
+
+def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
+                     anthropic_api_key: str = None, store_id: str = None,
+                     gelato_api_key: str = None, replicate_api_token: str = None,
+                     now=None) -> dict:
+    static_config = static_config if static_config is not None else config.load_static_config()
+
+    attempt_number = 1
+    while True:
+        state = get_primary_group_state(conn, candidate_id)
+        result = evaluate_critic_pass(
+            state["image_urls"], state["listing_text"], api_key=anthropic_api_key
+        )
+        record_critic_attempt(conn, state["group_id"], attempt_number, result, now=now)
+
+        if result["passed"]:
+            timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+            conn.execute(
+                "UPDATE candidates SET status = 'primary_review', updated_at = ? WHERE id = ?",
+                (timestamp, candidate_id),
+            )
+            conn.commit()
+            return {"candidate_id": candidate_id, "passed": True, "attempts": attempt_number}
+
+        discard_superseded_attempt(
+            conn, state["group_product_id"], store_id=store_id, api_key=gelato_api_key
+        )
+
+        if attempt_number >= 3:
+            abandon_candidate(conn, candidate_id, state["group_id"], result["reason"], now=now)
+            research.trigger_fallback_if_needed(conn, now=now)
+            return {"candidate_id": candidate_id, "passed": False, "attempts": attempt_number}
+
+        conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+        conn.commit()
+
+        generate.generate_for_candidate(
+            conn, candidate_id, correction_note=result["reason"],
+            api_token=replicate_api_token, now=now,
+        )
+        primary_mockup.create_primary_mockup(
+            conn, candidate_id, static_config=static_config, store_id=store_id,
+            api_key=gelato_api_key, now=now,
+        )
+        compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=static_config,
+            anthropic_api_key=anthropic_api_key, now=now,
+        )
+        attempt_number += 1
