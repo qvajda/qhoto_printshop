@@ -254,3 +254,36 @@ def test_run_research_cycle_falls_back_to_safe_evergreen_when_nothing_goes(tmp_p
     assert rows[0]["trend_source"].startswith("safe_evergreen_fallback:")
     assert len(inserted_ids) == len(research.EVENT_WINDOWS_2026) + 1  # events (all hold) + 1 fallback
     conn.close()
+
+
+def test_trigger_fallback_if_needed_noops_when_another_candidate_is_alive(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    conn.execute(
+        "INSERT INTO candidates (created_at, niche, go_hold_kill, status, updated_at) "
+        "VALUES ('2026-07-10T09:00:00', 'moon phase print', 'go', 'generating', '2026-07-10T09:00:00')"
+    )
+    conn.commit()
+
+    result = research.trigger_fallback_if_needed(conn, now=datetime(2026, 7, 10, 12, 0, 0))
+
+    assert result is None
+    rows = conn.execute("SELECT * FROM candidates").fetchall()
+    assert len(rows) == 1  # no fallback candidate inserted
+    conn.close()
+
+
+def test_trigger_fallback_if_needed_inserts_fallback_when_nothing_alive(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    conn.execute(
+        "INSERT INTO candidates (created_at, niche, go_hold_kill, status, updated_at) "
+        "VALUES ('2026-07-10T09:00:00', 'saturated term', 'go', 'failed', '2026-07-10T09:00:00')"
+    )
+    conn.commit()
+
+    new_id = research.trigger_fallback_if_needed(conn, now=datetime(2026, 7, 10, 12, 0, 0))
+
+    assert new_id is not None
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (new_id,)).fetchone()
+    assert row["status"] == "pending"
+    assert row["trend_source"].startswith("safe_evergreen_fallback:")
+    conn.close()

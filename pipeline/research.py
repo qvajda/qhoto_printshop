@@ -238,3 +238,15 @@ def run_research_cycle(conn, static_config, *, on_demand_topics=None, now=None) 
         inserted_ids.append(_insert_candidate(conn, fallback_raw, fallback_classification, now=now_dt))
 
     return inserted_ids
+
+
+def trigger_fallback_if_needed(conn, *, now=None) -> int:
+    other_alive = conn.execute(
+        "SELECT 1 FROM candidates WHERE status NOT IN ('failed', 'abandoned', 'completed') LIMIT 1"
+    ).fetchone()
+    if other_alive is not None:
+        return None
+
+    fallback_raw = pick_safe_evergreen_fallback()
+    classification = classify(fallback_raw, now=(now.date() if now else date.today()))
+    return _insert_candidate(conn, fallback_raw, classification, now=now)
