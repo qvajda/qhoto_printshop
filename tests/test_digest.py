@@ -139,3 +139,31 @@ def test_get_listing_text_raises_when_missing(tmp_path):
     with pytest.raises(ValueError, match="listing_texts"):
         digest.get_listing_text(conn, candidate_id)
     conn.close()
+
+
+def test_build_digest_message_text_includes_ids_title_tags_price_disclosure():
+    listing_text = {
+        "title": "Monstera Line Art Botanical Print",
+        "tags": _json.dumps(["botanical", "wall art"]),
+        "description": "A minimalist botanical print.",
+        "disclosure_text": "AI disclosure text.",
+    }
+
+    text = digest.build_digest_message_text(7, 42, listing_text, 24)
+
+    assert "Candidate #7" in text
+    assert "#42" in text
+    assert "Monstera Line Art Botanical Print" in text
+    assert "A minimalist botanical print." in text
+    assert "botanical, wall art" in text
+    assert "AI disclosure text." in text
+    assert "24" in text
+
+
+def test_build_digest_keyboard_has_three_buttons_with_group_id_callback_data():
+    keyboard = digest.build_digest_keyboard(42)
+
+    buttons = keyboard["inline_keyboard"][0]
+    assert len(buttons) == 3
+    callback_data = [button["callback_data"] for button in buttons]
+    assert callback_data == ["approve:42", "edit:42", "reject:42"]

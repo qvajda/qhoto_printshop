@@ -43,3 +43,25 @@ def get_listing_text(conn, candidate_id: int) -> dict:
     if row is None:
         raise ValueError(f"No listing_texts row for candidate {candidate_id}")
     return dict(row)
+
+
+def build_digest_message_text(candidate_id: int, group_id: int, listing_text: dict, price_eur: float) -> str:
+    tags = ", ".join(json.loads(listing_text["tags"]))
+    return (
+        f"Candidate #{candidate_id} — Primary group (#{group_id})\n\n"
+        f"{listing_text['title']}\n\n"
+        f"{listing_text['description']}\n\n"
+        f"Tags: {tags}\n\n"
+        f"{listing_text['disclosure_text']}\n\n"
+        f"Price: €{price_eur}"
+    )
+
+
+def build_digest_keyboard(group_id: int) -> dict:
+    return {
+        "inline_keyboard": [[
+            {"text": "✅ Approve", "callback_data": f"approve:{group_id}"},
+            {"text": "✏️ Edit", "callback_data": f"edit:{group_id}"},
+            {"text": "❌ Reject", "callback_data": f"reject:{group_id}"},
+        ]]
+    }
