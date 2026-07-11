@@ -90,3 +90,30 @@ def send_primary_digest(conn, candidate_id: int, *, static_config: dict = None,
 
     return {"candidate_id": candidate_id, "group_id": group["group_id"],
             "telegram_message_id": telegram_message_id}
+
+
+def run_digest_cycle(conn, *, static_config: dict = None, bot_token: str = None,
+                      chat_id: str = None, now=None) -> list:
+    candidate_ids = [
+        row["id"] for row in conn.execute(
+            """
+            SELECT DISTINCT c.id FROM candidates c
+            JOIN groups g ON g.candidate_id = c.id AND g.group_type = 'primary'
+            WHERE c.status = 'primary_review'
+              AND g.id NOT IN (SELECT group_id FROM group_messages)
+            ORDER BY c.id
+            """
+        ).fetchall()
+    ]
+    processed_ids = []
+    for candidate_id in candidate_ids:
+        try:
+            send_primary_digest(
+                conn, candidate_id, static_config=static_config,
+                bot_token=bot_token, chat_id=chat_id, now=now,
+            )
+        except Exception as exc:
+            print(f"send_primary_digest failed for candidate {candidate_id}: {exc}")
+            continue
+        processed_ids.append(candidate_id)
+    return processed_ids

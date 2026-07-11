@@ -244,3 +244,81 @@ def test_send_primary_digest_raises_and_writes_no_row_when_listing_text_missing(
     mock_message.assert_not_called()
     assert conn.execute("SELECT * FROM group_messages").fetchall() == []
     conn.close()
+
+
+def test_run_digest_cycle_processes_primary_review_candidates(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ready_id = _insert_ready_candidate(conn, niche="monstera line art")
+    not_ready_id = _insert_candidate(conn, niche="pending one", status="generating")
+    _insert_primary_gallery(conn, not_ready_id)
+    _insert_listing_text(conn, not_ready_id, niche="pending one")
+
+    with patch("pipeline.digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.digest.telegram_client.send_message",
+               return_value={"ok": True, "result": {"message_id": 1}}):
+        processed_ids = digest.run_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 11, 9, 30, 0),
+        )
+
+    assert processed_ids == [ready_id]
+    assert not_ready_id not in processed_ids
+    conn.close()
+
+
+def test_run_digest_cycle_skips_candidates_already_digested(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    with patch("pipeline.digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.digest.telegram_client.send_message",
+               return_value={"ok": True, "result": {"message_id": 1}}):
+        first_run = digest.run_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 11, 9, 30, 0),
+        )
+        second_run = digest.run_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 11, 10, 0, 0),
+        )
+
+    assert first_run == [candidate_id]
+    assert second_run == []
+    conn.close()
+
+
+def test_run_digest_cycle_isolates_per_candidate_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    failing_id = _insert_ready_candidate(conn, niche="saturated term")
+    succeeding_id = _insert_ready_candidate(conn, niche="moon phase print")
+
+    def fake_send_message(chat_id, text, reply_markup=None, *, bot_token=None):
+        if "saturated term" in text:
+            raise RuntimeError("Telegram throttled")
+        return {"ok": True, "result": {"message_id": 1}}
+
+    with patch("pipeline.digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.digest.telegram_client.send_message", side_effect=fake_send_message):
+        processed_ids = digest.run_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 11, 9, 30, 0),
+        )
+
+    assert processed_ids == [succeeding_id]
+
+    failing_group_id = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (failing_id,)
+    ).fetchone()["id"]
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (failing_group_id,)
+    ).fetchone() is None
+    conn.close()
+
+
+def test_run_digest_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn, niche="pending one", status="generating")
+
+    processed_ids = digest.run_digest_cycle(conn, bot_token="test-token", chat_id="admin-chat")
+
+    assert processed_ids == []
+    conn.close()
