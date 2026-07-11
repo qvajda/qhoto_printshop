@@ -273,6 +273,81 @@ def test_run_critic_pass_happy_path_sets_primary_review_on_first_pass(tmp_path):
     conn.close()
 
 
+def test_run_critic_pass_resumes_attempt_count_after_crash_before_regenerate(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'",
+        (candidate_id,),
+    ).fetchone()
+    group_id = group_row["id"]
+
+    # Reproduce the exact post-crash DB state: attempt 1 failed and was recorded,
+    # its group_products/product_images were discarded, its listing_texts row was
+    # deleted, then generate.generate_for_candidate raised before attempt 2 could
+    # be set up. candidate is still 'generating', with one attempt row recorded.
+    critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": False, "reason": "reason one"},
+        now=datetime(2026, 7, 10, 12, 0, 0),
+    )
+    old_group_product_id = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ?", (group_id,)
+    ).fetchone()["id"]
+    with patch("pipeline.critic_pass.gelato_client.delete_product"):
+        critic_pass.discard_superseded_attempt(
+            conn, old_group_product_id, store_id="store1", api_key="key2"
+        )
+    conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+    conn.commit()
+
+    # A later batch cycle re-processed the candidate: run_primary_mockup_cycle's
+    # get_or_create_primary_group finds the *same* group_id (idempotent design) and
+    # just adds a fresh group_products/product_images row to it; run_compliance_draft_cycle
+    # adds a fresh listing_texts row.
+    timestamp = "2026-07-10T12:30:00"
+    new_gp_cursor = conn.execute(
+        "INSERT INTO group_products "
+        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
+        "status, created_at, updated_at) "
+        "VALUES (?, '8x12', 'portrait', 'tpl_1', 'gelato_prod_resumed', 24, 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    new_group_product_id = new_gp_cursor.lastrowid
+    for order, image_url in enumerate(
+        ("https://gelato/flat_resumed.jpg", "https://gelato/life_resumed.jpg")
+    ):
+        image_type = "flat_mockup" if order == 0 else "lifestyle"
+        conn.execute(
+            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, 'placeholder alt', ?, ?)",
+            (new_group_product_id, image_url, order, image_type),
+        )
+    conn.commit()
+    _insert_listing_text(conn, candidate_id, niche="monstera line art")
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 13, 0, 0),
+        )
+
+    assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 2}
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "primary_review"
+
+    attempts = conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ? ORDER BY attempt_number",
+        (group_id,),
+    ).fetchall()
+    assert len(attempts) == 2
+    assert attempts[0]["attempt_number"] == 1
+    assert attempts[1]["attempt_number"] == 2
+    conn.close()
+
+
 def test_abandon_candidate_marks_candidate_and_group_failed(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

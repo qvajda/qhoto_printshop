@@ -134,7 +134,18 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                      now=None) -> dict:
     static_config = static_config if static_config is not None else config.load_static_config()
 
-    attempt_number = 1
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'",
+        (candidate_id,),
+    ).fetchone()
+    if group_row is None:
+        raise ValueError(f"No primary group for candidate {candidate_id}")
+    max_attempt_row = conn.execute(
+        "SELECT MAX(attempt_number) AS max_attempt FROM critic_pass_attempts WHERE group_id = ?",
+        (group_row["id"],),
+    ).fetchone()
+    attempt_number = (max_attempt_row["max_attempt"] or 0) + 1
+
     while True:
         state = get_primary_group_state(conn, candidate_id)
         result = evaluate_critic_pass(

@@ -161,7 +161,13 @@ mid-way through a partially-completed manual run.
 critic-pass rubric fail):** propagate the exception — `run_critic_pass_cycle` isolates it per
 candidate, same as the other `*_cycle` functions. The candidate is left at `status='generating'`
 mid-retry; a subsequent manual/batch run can pick it back up, since the selection predicate only
-excludes candidates with a recorded pass.
+excludes candidates with a recorded pass. `run_critic_pass` derives its starting
+`attempt_number` from the group's persisted `critic_pass_attempts` history
+(`MAX(attempt_number)` for that `group_id`, plus one, defaulting to 1 when no rows exist yet)
+rather than always starting at 1, specifically so a crash-and-resume continues the real attempt
+count instead of restarting it — which is what makes the recovery described above actually safe:
+without it, the resumed run would re-insert `attempt_number = 1` and collide with the row already
+recorded for the failed attempt before the crash.
 
 ## 4. Two bugs found while tracing this through already-merged code
 
