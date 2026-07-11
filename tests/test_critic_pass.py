@@ -394,6 +394,9 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
         assert "composition is off-center" in prompt
         return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred_retry"}
 
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry-upscaled.png", "prediction_id": "pred_retry_up"}
+
     fake_draft_response = {
         "text": _json.dumps({
             "title": "Monstera Line Art Botanical Print v2",
@@ -406,6 +409,7 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
                side_effect=lambda *a, **k: next(critic_responses)), \
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product), \
@@ -462,6 +466,9 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
     def fake_generate_image(prompt, *, api_token=None):
         return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred_retry"}
 
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry-upscaled.png", "prediction_id": "pred_retry_up"}
+
     fake_draft_response = {
         "text": _json.dumps({
             "title": "Retried Title", "tags": ["botanical"], "description": "Retried description.",
@@ -473,6 +480,7 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
                side_effect=lambda *a, **k: next(critic_responses)), \
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product), \

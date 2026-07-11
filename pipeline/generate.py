@@ -27,27 +27,35 @@ def build_prompt(candidate: dict, *, correction_note: str = None) -> str:
 
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
                             api_token: str = None, now=None) -> dict:
-    """Generate a base image for a candidate, always overwriting base_image_url/
-    base_replicate_prediction_id on its row (even on retry); `now` is only for test
-    determinism."""
+    """Generate a base image for a candidate, then upscale it to a 300-DPI-capable master.
+    Always overwrites base_image_url/base_replicate_prediction_id/base_upscale_prediction_id
+    on its row (even on retry). If upscaling fails, no write happens - the row is left exactly
+    as it was, so the caller's existing per-candidate retry handling picks it up again unchanged.
+    `now` is only for test determinism."""
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
 
     prompt = build_prompt(dict(row), correction_note=correction_note)
-    result = replicate_client.generate_image(prompt, api_token=api_token)
+    generated = replicate_client.generate_image(prompt, api_token=api_token)
+    upscaled = replicate_client.upscale_image(generated["image_url"], api_token=api_token)
 
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     conn.execute(
         """
         UPDATE candidates
-        SET base_image_url = ?, base_replicate_prediction_id = ?, status = 'generating', updated_at = ?
+        SET base_image_url = ?, base_replicate_prediction_id = ?,
+            base_upscale_prediction_id = ?, status = 'generating', updated_at = ?
         WHERE id = ?
         """,
-        (result["image_url"], result["prediction_id"], timestamp, candidate_id),
+        (upscaled["image_url"], generated["prediction_id"], upscaled["prediction_id"], timestamp, candidate_id),
     )
     conn.commit()
-    return result
+    return {
+        "image_url": upscaled["image_url"],
+        "prediction_id": generated["prediction_id"],
+        "upscale_prediction_id": upscaled["prediction_id"],
+    }
 
 
 def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list[int]:

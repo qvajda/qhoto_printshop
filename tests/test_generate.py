@@ -63,20 +63,31 @@ def test_generate_for_candidate_calls_replicate_and_writes_image_back(tmp_path):
     def fake_generate_image(prompt, *, api_token=None):
         captured["prompt"] = prompt
         captured["api_token"] = api_token
-        return {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred123"}
+        return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred123"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+    def fake_upscale_image(image_url, *, api_token=None):
+        captured["upscale_input_url"] = image_url
+        return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
         result = generate.generate_for_candidate(
             conn, candidate_id, api_token="test-token", now=datetime(2026, 7, 9, 10, 0, 0)
         )
 
-    assert result == {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred123"}
+    assert result == {
+        "image_url": "https://replicate.delivery/upscaled.png",
+        "prediction_id": "pred123",
+        "upscale_prediction_id": "pred-up1",
+    }
     assert "monstera line art" in captured["prompt"]
     assert captured["api_token"] == "test-token"
+    assert captured["upscale_input_url"] == "https://replicate.delivery/raw.png"
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
-    assert row["base_image_url"] == "https://replicate.delivery/out.png"
+    assert row["base_image_url"] == "https://replicate.delivery/upscaled.png"
     assert row["base_replicate_prediction_id"] == "pred123"
+    assert row["base_upscale_prediction_id"] == "pred-up1"
     assert row["status"] == "generating"
     assert row["updated_at"] == "2026-07-09T10:00:00"
     conn.close()
@@ -91,7 +102,11 @@ def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
         captured["prompt"] = prompt
         return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred456"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry-upscaled.png", "prediction_id": "pred-up2"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
         generate.generate_for_candidate(
             conn, candidate_id, correction_note="composition was off-center",
             now=datetime(2026, 7, 9, 11, 0, 0),
@@ -100,7 +115,30 @@ def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
     assert "Previous attempt was rejected for: composition was off-center" in captured["prompt"]
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
-    assert row["base_image_url"] == "https://replicate.delivery/retry.png"
+    assert row["base_image_url"] == "https://replicate.delivery/retry-upscaled.png"
+    conn.close()
+
+
+def test_generate_for_candidate_leaves_row_untouched_when_upscale_fails(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred-raw"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        raise RuntimeError("Replicate upscale throttled")
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
+        with pytest.raises(RuntimeError, match="Replicate upscale throttled"):
+            generate.generate_for_candidate(conn, candidate_id, api_token="test-token")
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["status"] == "pending"
+    assert row["base_image_url"] is None
+    assert row["base_replicate_prediction_id"] is None
+    assert row["base_upscale_prediction_id"] is None
     conn.close()
 
 
@@ -125,7 +163,11 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
         call_count["n"] += 1
         return {"image_url": f"https://replicate.delivery/out{call_count['n']}.png", "prediction_id": f"pred{call_count['n']}"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": image_url.replace("out", "upscaled"), "prediction_id": "pred-up"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
         processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
 
     assert sorted(processed_ids) == sorted([pending_id_1, pending_id_2])
@@ -154,7 +196,11 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
             raise RuntimeError("Replicate throttled")
         return {"image_url": "https://replicate.delivery/out2.png", "prediction_id": "pred2"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/upscaled2.png", "prediction_id": "pred-up2"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
         processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
 
     assert processed_ids == [succeeding_id]
@@ -166,7 +212,7 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
     assert failing_row["base_image_url"] is None
 
     assert succeeding_row["status"] == "generating"
-    assert succeeding_row["base_image_url"] == "https://replicate.delivery/out2.png"
+    assert succeeding_row["base_image_url"] == "https://replicate.delivery/upscaled2.png"
     conn.close()
 
 

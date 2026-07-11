@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS candidates (
   kill_reason TEXT,
   base_image_url TEXT,
   base_replicate_prediction_id TEXT,
+  base_upscale_prediction_id TEXT,
   status TEXT NOT NULL CHECK(status IN (
     'pending','generating','primary_review','compliance_failed','failed','abandoned','completed'
   )),
