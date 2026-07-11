@@ -65,3 +65,28 @@ def build_digest_keyboard(group_id: int) -> dict:
             {"text": "❌ Reject", "callback_data": f"reject:{group_id}"},
         ]]
     }
+
+
+def send_primary_digest(conn, candidate_id: int, *, static_config: dict = None,
+                         bot_token: str = None, chat_id: str = None, now=None) -> dict:
+    group = get_primary_group(conn, candidate_id)
+    photo_urls = get_primary_gallery_urls(conn, candidate_id)
+    listing_text = get_listing_text(conn, candidate_id)
+    chat_id = chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")
+
+    telegram_client.send_media_group(chat_id, photo_urls, bot_token=bot_token)
+
+    text = build_digest_message_text(candidate_id, group["group_id"], listing_text, group["price_eur"])
+    reply_markup = build_digest_keyboard(group["group_id"])
+    response = telegram_client.send_message(chat_id, text, reply_markup, bot_token=bot_token)
+    telegram_message_id = response["result"]["message_id"]
+
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) VALUES (?, ?, ?, ?)",
+        (group["group_id"], telegram_message_id, chat_id, timestamp),
+    )
+    conn.commit()
+
+    return {"candidate_id": candidate_id, "group_id": group["group_id"],
+            "telegram_message_id": telegram_message_id}
