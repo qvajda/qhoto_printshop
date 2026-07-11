@@ -24,6 +24,10 @@ def test_generate_image_builds_correct_request_and_parses_response():
     assert captured["auth_header"] == "Bearer test-token"
     assert captured["prefer_header"] == "wait"
     assert captured["body"]["input"]["prompt"] == "a botanical watercolor poster"
+    # Portrait primary template is 8x12 (2:3) - FLUX schnell defaults to square 1:1 and
+    # ~1MP unless told otherwise; megapixels="1" is schnell's max native resolution.
+    assert captured["body"]["input"]["aspect_ratio"] == "2:3"
+    assert captured["body"]["input"]["megapixels"] == "1"
     assert result == {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred123"}
     # Replicate's Prefer: wait can hold the connection open up to 60s server-side;
     # the client-side socket timeout must be at least that long or the raw

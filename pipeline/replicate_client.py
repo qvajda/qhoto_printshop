@@ -16,7 +16,9 @@ class ReplicatePredictionTimeoutError(Exception):
 def generate_image(prompt: str, *, api_token: str = None) -> dict:
     api_token = api_token or config.require_env("REPLICATE_API_TOKEN")
     url = f"{REPLICATE_API_BASE}/{FLUX_SCHNELL_MODEL}/predictions"
-    body = json.dumps({"input": {"prompt": prompt}}).encode("utf-8")
+    body = json.dumps({
+        "input": {"prompt": prompt, "aspect_ratio": "2:3", "megapixels": "1"}
+    }).encode("utf-8")
     request = urllib.request.Request(
         url,
         data=body,
