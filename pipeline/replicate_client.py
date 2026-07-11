@@ -15,7 +15,7 @@ class ReplicatePredictionTimeoutError(Exception):
 
 UPSCALE_MODEL = "nightmareai/real-esrgan"  # pure super-resolution GAN, no diffusion/hallucinated
 # content - safer for compliance than a diffusion-based upscaler. A single scale=4 pass covers
-# the 8x12 primary size and A3 at 300 DPI; A2/A1/10x24 need more linear scale (see plan notes).
+# the 8x12 primary size and closely covers A3; A2/A1/10x24 need more linear scale (see plan notes).
 
 
 def _predict(model: str, input_body: dict, *, api_token: str) -> dict:
@@ -31,6 +31,11 @@ def _predict(model: str, input_body: dict, *, api_token: str) -> dict:
         },
         method="POST",
     )
+    # The 60s "Prefer: wait" window (timeout=65 for HTTP overhead) was sized for FLUX
+    # schnell's typical 1-2s generate latency. real-esrgan's actual latency - especially
+    # a cold boot - hasn't been measured against it; if upscale calls routinely exceed
+    # this window, they'll need either a longer timeout or a polling fallback instead of
+    # synchronous "Prefer: wait".
     result = http.send(request, timeout=65)
 
     if result.get("status") != "succeeded":
