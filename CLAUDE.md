@@ -68,7 +68,7 @@ pipeline stage — don't guess at behavior that's already specified.
   clear error — never silently skip the size or proceed with a fake ID.
 
 ## Static config values (fill in template IDs as each is resolved — see
-SPEC_v4.9.md section 4 for the full cost/price table and per-size notes;
+SPEC_v4.10.md section 4 for the full cost/price table and per-size notes;
 prices below are final, not placeholders)
 - Telegram admin/allowlist user ID: **not listed here** — read from
   `TELEGRAM_ADMIN_CHAT_ID` in `.env` (git-ignored), same as the bot token.
@@ -83,10 +83,37 @@ prices below are final, not placeholders)
     "10x24_portrait": "", "10x24_landscape": "",   // price: €45
     "A1_portrait": "", "A1_landscape": ""           // price: €49
   }
-- Etsy taxonomy_id:
-- Etsy shipping_profile_id:
-- Etsy production_partner_ids (Gelato):
-- Etsy who_made value:
+- Etsy taxonomy_id: **1027** ("Home & Living > Home Decor > Wall Decor" —
+  resolved via live `getSellerTaxonomyNodes`; Etsy has no plain
+  "Posters"/"Wall Art" leaf, this parent node was chosen over
+  "Art & Collectibles > Prints > Giclée" (id 121) as the better fit)
+- Etsy shipping_profile_id: **not filled yet — needs a per-size mapping,
+  not a single ID.** Gelato auto-created ~49 shipping profiles on
+  connecting to the shop; product line is confirmed **unframed** premium
+  matte posters (matches the cost-reference CSV and business layer — the
+  earlier framed_poster_mounted Gelato test call in
+  `docs/gelato_call_response_example_from_manual_tests.txt` was an early
+  exploratory API test, not the real product). The matching family is
+  plain **"Posters"**, but it only has two size tiers, not six or three:
+  `287910553824` ("Small Posters", €12.44 shipping) and `287910565714`
+  ("Large Posters", €14.55 shipping) — no Medium tier exists for this
+  family. Coding-session TODO: restructure `etsy_shipping_profile_id` in
+  `config/static_config.json` into a per-size mapping (same shape as
+  `gelato_templates`), decide which of the 6 sizes (5x7, 8x12, A3, A2,
+  10x24, A1) map to Small vs Large, and update `pipeline/config.py`'s
+  reader to match.
+- Etsy production_partner_ids (Gelato): **[5717252]** — resolved via live
+  `getShopProductionPartners` after Gelato was manually added as a
+  production partner in Shop Manager → Settings → Partners you work
+  with (listed there as "A print shop", Brussels, Belgium).
+- Etsy who_made value: **"i_did"** — verified live: the API's `who_made`
+  enum has only 3 raw values (`i_did`/`someone_else`/`collective`), no
+  separate AI-disclosure field exists anywhere in the spec. Etsy's
+  "Designed by a seller" AI-context label is just the display name for
+  `i_did`, not a distinct value. Must be paired with `is_supply: false`
+  and `when_made: "made_to_order"` on every `createDraftListing` call
+  (required together, not stored here since they're fixed per-call
+  values, not IDs to resolve).
 - Shop listing currency: **EUR** (resolved, spec section 1)
 
 ## Conventions

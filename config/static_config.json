@@ -75,8 +75,8 @@
     "10x24": ["10x24"]
   },
   "primary_size": "8x12",
-  "etsy_taxonomy_id": "",
+  "etsy_taxonomy_id": 1027,
   "etsy_shipping_profile_id": "",
-  "etsy_production_partner_ids": [],
-  "etsy_who_made": ""
+  "etsy_production_partner_ids": [5717252],
+  "etsy_who_made": "i_did"
 }
