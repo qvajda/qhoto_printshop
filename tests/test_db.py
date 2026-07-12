@@ -11,6 +11,7 @@ EXPECTED_TABLES = {
     "group_messages",
     "telegram_events_log",
     "listing_metrics_snapshots",
+    "telegram_offset",
 }
 
 
