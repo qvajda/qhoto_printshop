@@ -355,3 +355,93 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         return {"action": "reject"}
 
     raise ValueError(f"Unknown action {action!r}")
+
+
+def get_telegram_offset(conn) -> int | None:
+    row = conn.execute("SELECT last_update_id FROM telegram_offset WHERE id = 1").fetchone()
+    return row["last_update_id"] if row is not None else None
+
+
+def set_telegram_offset(conn, last_update_id: int) -> None:
+    conn.execute(
+        "INSERT INTO telegram_offset (id, last_update_id) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET last_update_id = excluded.last_update_id",
+        (last_update_id,),
+    )
+    conn.commit()
+
+
+def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_config=None,
+                    store_id=None, gelato_api_key=None, shop_id=None, etsy_api_key=None,
+                    etsy_api_secret=None, etsy_access_token=None, replicate_api_token=None,
+                    anthropic_api_key=None, dry_run=None, now=None) -> dict | None:
+    admin_chat_id = admin_chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")
+    parsed = resolve_callback(update)
+    if parsed is None:
+        return None
+
+    if not is_admin(parsed["telegram_user_id"], admin_chat_id):
+        log_telegram_event(conn, parsed["telegram_user_id"], update, False,
+                            "discarded: not admin", now=now)
+        return None
+
+    message_row = conn.execute(
+        "SELECT chat_id, telegram_message_id FROM group_messages WHERE group_id = ?",
+        (parsed["group_id"],),
+    ).fetchone()
+    if message_row is None or str(message_row["chat_id"]) != str(parsed["chat_id"]) \
+            or message_row["telegram_message_id"] != parsed["message_id"]:
+        log_telegram_event(conn, parsed["telegram_user_id"], update, False,
+                            "discarded: callback does not match a known group_messages row", now=now)
+        return None
+
+    group_row = conn.execute(
+        "SELECT candidate_id FROM groups WHERE id = ?", (parsed["group_id"],)
+    ).fetchone()
+    candidate_id = group_row["candidate_id"]
+
+    log_telegram_event(conn, parsed["telegram_user_id"], update, True, parsed["action"], now=now)
+    telegram_client.answer_callback_query(parsed["callback_query_id"], bot_token=bot_token)
+
+    result = handle_decision(
+        conn, candidate_id, parsed["group_id"], parsed["action"], static_config=static_config,
+        store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+        etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+        replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
+        dry_run=dry_run, now=now,
+    )
+    return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
+
+
+def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None, static_config=None,
+                                     store_id=None, gelato_api_key=None, shop_id=None,
+                                     etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
+                                     replicate_api_token=None, anthropic_api_key=None,
+                                     dry_run=None, now=None) -> list:
+    last_offset = get_telegram_offset(conn)
+    offset = last_offset + 1 if last_offset is not None else None
+    updates = telegram_client.get_updates(offset=offset, bot_token=bot_token)
+
+    processed = []
+    max_update_id = last_offset
+    for update in updates:
+        update_id = update["update_id"]
+        max_update_id = update_id if max_update_id is None else max(max_update_id, update_id)
+        try:
+            result = process_update(
+                conn, update, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config,
+                store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+                etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+                replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
+                dry_run=dry_run, now=now,
+            )
+        except Exception as exc:
+            print(f"process_update failed for update {update_id}: {exc}")
+            continue
+        if result is not None:
+            processed.append(result)
+
+    if max_update_id is not None:
+        set_telegram_offset(conn, max_update_id)
+
+    return processed

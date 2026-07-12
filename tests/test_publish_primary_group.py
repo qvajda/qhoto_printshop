@@ -800,3 +800,161 @@ def test_handle_decision_raises_on_unknown_action(tmp_path):
     with pytest.raises(ValueError, match="Unknown action"):
         publish_primary_group.handle_decision(conn, candidate_id, group_id, "snooze")
     conn.close()
+
+
+def _insert_group_message(conn, group_id, chat_id, telegram_message_id, sent_at="2026-07-12T09:15:00"):
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) VALUES (?, ?, ?, ?)",
+        (group_id, telegram_message_id, chat_id, sent_at),
+    )
+    conn.commit()
+
+
+def test_get_and_set_telegram_offset_round_trip(tmp_path):
+    conn = _fresh_conn(tmp_path)
+
+    assert publish_primary_group.get_telegram_offset(conn) is None
+
+    publish_primary_group.set_telegram_offset(conn, 100)
+    assert publish_primary_group.get_telegram_offset(conn) == 100
+
+    publish_primary_group.set_telegram_offset(conn, 105)
+    assert publish_primary_group.get_telegram_offset(conn) == 105
+    conn.close()
+
+
+def test_process_update_discards_non_admin_sender(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(user_id=111111111, data=f"approve:{group_id}", message_id=202, chat_id=987654321)
+
+    with patch("pipeline.publish_primary_group.handle_decision") as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query") as mock_answer:
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result is None
+    mock_handle.assert_not_called()
+    mock_answer.assert_not_called()
+    log_row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
+    assert log_row["accepted"] == 0
+    assert log_row["telegram_user_id"] == "111111111"
+    conn.close()
+
+
+def test_process_update_discards_callback_not_matching_group_messages(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    # message_id 999 does not match the group_messages row (202)
+    update = _callback_update(user_id=987654321, data=f"approve:{group_id}", message_id=999, chat_id=987654321)
+
+    with patch("pipeline.publish_primary_group.handle_decision") as mock_handle:
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result is None
+    mock_handle.assert_not_called()
+    conn.close()
+
+
+def test_process_update_accepts_admin_callback_and_calls_handle_decision(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(
+        user_id=987654321, data=f"approve:{group_id}", message_id=202, chat_id=987654321, callback_id="cbq1",
+    )
+
+    with patch("pipeline.publish_primary_group.handle_decision",
+               return_value={"action": "approve", "results": {"8x12": "published"}}) as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query") as mock_answer:
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result == {"candidate_id": candidate_id, "group_id": group_id,
+                       "action": "approve", "results": {"8x12": "published"}}
+    mock_handle.assert_called_once()
+    assert mock_handle.call_args.args[:3] == (conn, candidate_id, group_id)
+    assert mock_handle.call_args.args[3] == "approve"
+    mock_answer.assert_called_once_with("cbq1", bot_token="tok1")
+
+    log_row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
+    assert log_row["accepted"] == 1
+    assert log_row["action_taken"] == "approve"
+    conn.close()
+
+
+def test_process_update_returns_none_for_non_callback_update(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    update = {"update_id": 1, "message": {"text": "/research botanical"}}
+
+    result = publish_primary_group.process_update(conn, update, admin_chat_id="987654321")
+
+    assert result is None
+    assert conn.execute("SELECT * FROM telegram_events_log").fetchall() == []
+    conn.close()
+
+
+def test_run_publish_primary_group_cycle_processes_and_advances_offset(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    updates = [_callback_update(update_id=500, user_id=987654321, data=f"approve:{group_id}",
+                                 message_id=202, chat_id=987654321, callback_id="cbq1")]
+
+    with patch("pipeline.publish_primary_group.telegram_client.get_updates",
+               return_value=updates) as mock_get_updates, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"), \
+         patch("pipeline.publish_primary_group.handle_decision",
+               return_value={"action": "approve", "results": {"8x12": "published"}}):
+        processed = publish_primary_group.run_publish_primary_group_cycle(
+            conn, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert len(processed) == 1
+    assert mock_get_updates.call_args.kwargs["offset"] is None
+    assert publish_primary_group.get_telegram_offset(conn) == 500
+    conn.close()
+
+
+def test_run_publish_primary_group_cycle_uses_persisted_offset_on_next_call(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    publish_primary_group.set_telegram_offset(conn, 500)
+
+    with patch("pipeline.publish_primary_group.telegram_client.get_updates", return_value=[]) as mock_get_updates:
+        publish_primary_group.run_publish_primary_group_cycle(conn, admin_chat_id="987654321", bot_token="tok1")
+
+    assert mock_get_updates.call_args.kwargs["offset"] == 501
+    conn.close()
+
+
+def test_run_publish_primary_group_cycle_isolates_per_update_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    updates = [
+        _callback_update(update_id=600, user_id=987654321, data=f"approve:{group_id}",
+                          message_id=202, chat_id=987654321, callback_id="cbq_bad"),
+        {"update_id": 601, "message": {"text": "not a callback"}},
+    ]
+
+    with patch("pipeline.publish_primary_group.telegram_client.get_updates", return_value=updates), \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"), \
+         patch("pipeline.publish_primary_group.handle_decision", side_effect=RuntimeError("boom")):
+        processed = publish_primary_group.run_publish_primary_group_cycle(
+            conn, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert processed == []
+    assert publish_primary_group.get_telegram_offset(conn) == 601
+    conn.close()
