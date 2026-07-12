@@ -140,3 +140,34 @@ def test_find_all_listings_active_includes_optional_params_when_given():
     assert "limit=10" in captured["url"]
     assert "sort_on=favorites" in captured["url"]
     assert "sort_order=desc" in captured["url"]
+
+
+def test_update_listing_state_dry_run_makes_no_network_call():
+    with patch("pipeline.etsy_client.http.send") as mock_send:
+        result = etsy_client.update_listing_state(
+            "shop1", "listing1", "active", api_key="key1", access_token="token1", dry_run=True
+        )
+
+    mock_send.assert_not_called()
+    assert result == {"listing_id": "listing1", "state": "active", "_dry_run": True}
+
+
+def test_update_listing_state_sends_patch_with_state_body_when_live():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["body"] = json.loads(request.data)
+        return {"listing_id": 999, "state": "active"}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        result = etsy_client.update_listing_state(
+            "shop1", "listing1", "active",
+            api_key="key1", api_secret="secret1", access_token="token1", dry_run=False,
+        )
+
+    assert captured["url"] == "https://openapi.etsy.com/v3/application/shops/shop1/listings/listing1"
+    assert captured["method"] == "PATCH"
+    assert captured["body"] == {"state": "active"}
+    assert result == {"listing_id": 999, "state": "active"}

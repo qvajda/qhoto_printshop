@@ -81,6 +81,27 @@ def upload_listing_image(
     return http.send(request)
 
 
+def update_listing_state(
+    shop_id: str, listing_id: str, state: str, *, api_key: str = None, api_secret: str = None,
+    access_token: str = None, dry_run: bool = None
+) -> dict:
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    if dry_run:
+        return {"listing_id": listing_id, "state": state, "_dry_run": True}
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/shops/{shop_id}/listings/{listing_id}"
+    body = json.dumps({"state": state}).encode("utf-8")
+    headers = _headers(api_key, api_secret, access_token)
+    headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=body, headers=headers, method="PATCH")
+    return http.send(request)
+
+
 def find_all_listings_active(
     keywords: str,
     *,
