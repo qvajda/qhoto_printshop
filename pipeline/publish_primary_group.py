@@ -30,3 +30,25 @@ def resolve_callback(update: dict) -> dict | None:
 
 def is_admin(telegram_user_id, admin_chat_id) -> bool:
     return str(telegram_user_id) == str(admin_chat_id)
+
+
+def log_telegram_event(conn, telegram_user_id, raw_payload, accepted, action_taken=None, *, now=None) -> int:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    cursor = conn.execute(
+        """
+        INSERT INTO telegram_events_log (received_at, telegram_user_id, raw_payload, accepted, action_taken)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (timestamp, str(telegram_user_id), json.dumps(raw_payload), 1 if accepted else 0, action_taken),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def record_decision(conn, group_id, decision, decision_notes=None, *, now=None) -> None:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "UPDATE groups SET decision = ?, decision_notes = ?, decided_at = ?, updated_at = ? WHERE id = ?",
+        (decision, decision_notes, timestamp, timestamp, group_id),
+    )
+    conn.commit()
