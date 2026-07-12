@@ -160,14 +160,29 @@ def publish_to_etsy(conn, group_product_id, candidate_id, size, price_eur, *, sh
     ).fetchone()
     if listing_text_row is None:
         raise ValueError(f"No listing_texts row for candidate {candidate_id}")
-    listing_data = build_size_listing_data(dict(listing_text_row), size, price_eur)
 
     shop_id = shop_id or config.require_env("ETSY_SHOP_ID")
-    draft = etsy_client.create_draft_listing(
-        shop_id, listing_data, api_key=etsy_api_key, api_secret=etsy_api_secret,
-        access_token=etsy_access_token, dry_run=dry_run,
-    )
-    listing_id = draft["listing_id"]
+
+    # Reuse an already-created draft on retry instead of calling create_draft_listing again —
+    # otherwise a retry after create_draft_listing succeeded but update_listing_state failed
+    # would leave an orphaned duplicate Etsy draft behind on every retry.
+    existing_row = conn.execute(
+        "SELECT etsy_listing_id FROM group_products WHERE id = ?", (group_product_id,)
+    ).fetchone()
+    if existing_row is not None and existing_row["etsy_listing_id"] is not None:
+        listing_id = existing_row["etsy_listing_id"]
+    else:
+        listing_data = build_size_listing_data(dict(listing_text_row), size, price_eur)
+        draft = etsy_client.create_draft_listing(
+            shop_id, listing_data, api_key=etsy_api_key, api_secret=etsy_api_secret,
+            access_token=etsy_access_token, dry_run=dry_run,
+        )
+        listing_id = draft["listing_id"]
+        conn.execute(
+            "UPDATE group_products SET etsy_listing_id = ?, updated_at = ? WHERE id = ?",
+            (str(listing_id), timestamp, group_product_id),
+        )
+        conn.commit()
 
     image_rows = conn.execute(
         "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
@@ -243,32 +258,45 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
         raise ValueError(f"No primary group for candidate {candidate_id}")
     group_id = group_row["id"]
 
+    # status IN ('created', 'published') rather than just 'created': a re-run after a crash
+    # (e.g. process died between 8x12 and the other sizes finishing) must still pass this
+    # guard even though 8x12 already made it all the way to 'published'.
     existing_8x12 = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12' AND status = 'created'",
+        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12' AND status IN ('created', 'published')",
         (group_id,),
     ).fetchone()
     if existing_8x12 is None:
         raise ValueError(f"No live 8x12 group_product for candidate {candidate_id}'s primary group")
 
+    # Only create rows for sizes that don't have one yet, so re-running this function after a
+    # partial failure doesn't spawn duplicate group_products/Gelato products/Etsy drafts for
+    # sizes that already succeeded or are mid-retry.
     secondary_sizes = [s for s in static_config["aspect_ratio_groups"]["primary"] if s != "8x12"]
     for size in secondary_sizes:
-        template = config.get_template_variant(static_config, size, "portrait")
-        create_group_product_row(
-            conn, group_id, size, "portrait", template["template_id"],
-            static_config["prices_eur"][size], now=now,
-        )
+        existing_row = conn.execute(
+            "SELECT id FROM group_products WHERE group_id = ? AND size = ? AND status != 'deleted'",
+            (group_id, size),
+        ).fetchone()
+        if existing_row is None:
+            template = config.get_template_variant(static_config, size, "portrait")
+            create_group_product_row(
+                conn, group_id, size, "portrait", template["template_id"],
+                static_config["prices_eur"][size], now=now,
+            )
 
-    group_product_ids = [
-        row["id"] for row in conn.execute(
-            "SELECT id FROM group_products WHERE group_id = ? AND status != 'deleted' ORDER BY id",
-            (group_id,),
-        ).fetchall()
-    ]
+    group_products = conn.execute(
+        "SELECT id, size, status FROM group_products WHERE group_id = ? AND status != 'deleted' ORDER BY id",
+        (group_id,),
+    ).fetchall()
 
     results = {}
     any_published = False
-    for gp_id in group_product_ids:
-        size = conn.execute("SELECT size FROM group_products WHERE id = ?", (gp_id,)).fetchone()["size"]
+    for row in group_products:
+        gp_id, size, status = row["id"], row["size"], row["status"]
+        if status == "published":
+            results[size] = "published"
+            any_published = True
+            continue
         try:
             publish_group_product(
                 conn, gp_id, candidate, static_config, store_id=store_id, gelato_api_key=gelato_api_key,
@@ -325,6 +353,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
             )
         conn.execute("DELETE FROM critic_pass_attempts WHERE group_id = ?", (group_id,))
         conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM group_messages WHERE group_id = ?", (group_id,))
         conn.commit()
 
         generate.generate_for_candidate(
@@ -436,6 +465,13 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
                 dry_run=dry_run, now=now,
             )
         except Exception as exc:
+            # process_update can raise after resolve_callback succeeds but before/during
+            # handle_decision — this cron has no console to watch, so a print() alone leaves
+            # no durable trace that the admin's tap was dropped. accepted=True distinguishes
+            # "this was a real event that failed" from the accepted=False discard-path rows
+            # log_telegram_event already writes for non-admin/unknown-group callbacks.
+            telegram_user_id = update.get("callback_query", {}).get("from", {}).get("id")
+            log_telegram_event(conn, telegram_user_id, update, True, f"error: {exc}", now=now)
             print(f"process_update failed for update {update_id}: {exc}")
             continue
         if result is not None:

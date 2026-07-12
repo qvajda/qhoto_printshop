@@ -413,6 +413,49 @@ def test_publish_to_etsy_live_downloads_images_and_activates_listing(tmp_path):
     conn.close()
 
 
+def test_publish_to_etsy_reuses_existing_listing_on_retry_instead_of_creating_duplicate(tmp_path):
+    # Simulates a retry after create_draft_listing succeeded but update_listing_state failed
+    # on the first attempt: etsy_listing_id is already set on the row.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    _insert_listing_text(conn, candidate_id)
+    gp_id = _insert_group_product_with_images(conn, group_id)
+    conn.execute("UPDATE group_products SET etsy_listing_id = '555' WHERE id = ?", (gp_id,))
+    conn.commit()
+
+    calls = []
+
+    def fake_upload(shop_id, listing_id, image_bytes, **kwargs):
+        calls.append(("upload", listing_id))
+        return {"listing_image_id": 1}
+
+    def fake_update_state(shop_id, listing_id, state, **kwargs):
+        calls.append(("activate", listing_id, state))
+        return {"state": "active"}
+
+    with patch("pipeline.publish_primary_group.etsy_client.create_draft_listing") as mock_draft, \
+         patch("pipeline.publish_primary_group.etsy_client.upload_listing_image",
+               side_effect=fake_upload), \
+         patch("pipeline.publish_primary_group.etsy_client.update_listing_state",
+               side_effect=fake_update_state), \
+         patch("pipeline.publish_primary_group.http.fetch_bytes", return_value=b"bytes"):
+        listing_id = publish_primary_group.publish_to_etsy(
+            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1",
+            dry_run=False, now=datetime(2026, 7, 12, 10, 10, 0),
+        )
+
+    mock_draft.assert_not_called()
+    assert listing_id == "555"
+    assert calls[0] == ("upload", "555")
+    assert calls[-1] == ("activate", "555", "active")
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["etsy_listing_id"] == "555"
+    assert gp_row["status"] == "published"
+    conn.close()
+
+
 def test_publish_to_etsy_raises_when_no_listing_text(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
@@ -651,6 +694,50 @@ def test_publish_primary_group_isolates_per_size_failures(tmp_path):
     conn.close()
 
 
+def test_publish_primary_group_is_idempotent_on_reentry_after_partial_crash(tmp_path):
+    # Simulates the process crashing/being re-invoked after 8x12 and A3 already published but
+    # before A2/A1 ran — a re-run must not re-publish the already-published sizes or spawn
+    # duplicate group_products rows for them.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    conn.execute(
+        "UPDATE group_products SET status = 'published', etsy_listing_id = 'listing_8x12' "
+        "WHERE group_id = ? AND size = '8x12'", (group_id,),
+    )
+    _insert_group_product_with_images(conn, group_id, size="A3", gelato_product_id="gelato_a3")
+    conn.execute(
+        "UPDATE group_products SET status = 'published', etsy_listing_id = 'listing_a3' "
+        "WHERE group_id = ? AND size = 'A3'", (group_id,),
+    )
+    conn.commit()
+
+    called_for = []
+
+    def fake_publish_group_product(conn, group_product_id, candidate, static_config, **kwargs):
+        row = conn.execute("SELECT size FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+        called_for.append(row["size"])
+        return f"listing_{row['size']}"
+
+    with patch("pipeline.publish_primary_group.publish_group_product",
+               side_effect=fake_publish_group_product):
+        result = publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
+            now=datetime(2026, 7, 12, 11, 0, 0),
+        )
+
+    assert sorted(called_for) == ["A1", "A2"]
+    assert result == {"8x12": "published", "A3": "published", "A2": "published", "A1": "published"}
+
+    sizes_in_db = [
+        row["size"] for row in conn.execute(
+            "SELECT size FROM group_products WHERE group_id = ?", (group_id,)
+        ).fetchall()
+    ]
+    assert sorted(sizes_in_db) == ["8x12", "A1", "A2", "A3"]
+    conn.close()
+
+
 def test_publish_primary_group_raises_when_no_live_8x12_product(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
@@ -789,6 +876,29 @@ def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
     group_row = conn.execute("SELECT decision, decision_notes FROM groups WHERE id = ?", (group_id,)).fetchone()
     assert group_row["decision"] == "edited"
     assert group_row["decision_notes"] == "make it more pastel"
+    conn.close()
+
+
+def test_handle_decision_edit_clears_group_messages_so_digest_can_resend(tmp_path):
+    # get_or_create_primary_group reuses the same group_id across an edit cycle, and
+    # digest.py's query excludes any group already present in group_messages — so if this
+    # row survives an edit, the regenerated design can never be re-sent for review.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+
+    with patch("pipeline.publish_primary_group.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.publish_primary_group.generate.generate_for_candidate"), \
+         patch("pipeline.publish_primary_group.primary_mockup.create_primary_mockup"), \
+         patch("pipeline.publish_primary_group.compliance_draft.build_compliance_draft"):
+        publish_primary_group.handle_decision(
+            conn, candidate_id, group_id, "edit", now=datetime(2026, 7, 12, 12, 0, 0),
+        )
+
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
     conn.close()
 
 
@@ -957,4 +1067,14 @@ def test_run_publish_primary_group_cycle_isolates_per_update_failures(tmp_path):
 
     assert processed == []
     assert publish_primary_group.get_telegram_offset(conn) == 601
+
+    # A real admin tap that blew up mid-processing must leave a durable trace, not just a
+    # print() an unattended hourly cron has no one watching.
+    error_log_row = conn.execute(
+        "SELECT * FROM telegram_events_log WHERE action_taken LIKE 'error:%'"
+    ).fetchone()
+    assert error_log_row is not None
+    assert error_log_row["accepted"] == 1
+    assert error_log_row["telegram_user_id"] == "987654321"
+    assert "boom" in error_log_row["action_taken"]
     conn.close()
