@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 import pipeline.db as db
+import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
 
 
@@ -282,6 +283,7 @@ def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
 
     gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
     assert gp_row["gelato_product_id"] == "gelato_prod_a3"
+    assert gp_row["status"] == "created"
 
     images = conn.execute(
         "SELECT * FROM product_images WHERE group_product_id = ? ORDER BY gallery_order", (gp_id,)
@@ -290,6 +292,40 @@ def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
     assert images[0]["image_type"] == "flat_mockup"
     assert images[0]["image_url"] == "https://gelato/a3_flat.jpg"
     assert images[1]["image_type"] == "lifestyle"
+    conn.close()
+
+
+def test_create_gelato_product_marks_mockup_failed_on_poll_timeout(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    gp_id = publish_primary_group.create_group_product_row(
+        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
+    )
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_a3_stuck", "isReadyToPublish": False, "productImages": []}
+
+    def fake_poll_until_ready(*args, **kwargs):
+        raise primary_mockup.GelatoMockupTimeoutError("gelato_prod_a3_stuck did not become ready")
+
+    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.publish_primary_group.primary_mockup.poll_until_ready",
+               side_effect=fake_poll_until_ready):
+        with pytest.raises(primary_mockup.GelatoMockupTimeoutError):
+            publish_primary_group.create_gelato_product(
+                conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
+                store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
+            )
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["status"] == "mockup_failed"
+    assert gp_row["gelato_product_id"] == "gelato_prod_a3_stuck"
+    assert conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)
+    ).fetchall() == []
     conn.close()
 
 
@@ -317,4 +353,6 @@ def test_create_gelato_product_dry_run_skips_polling(tmp_path):
     images = conn.execute("SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)).fetchall()
     assert len(images) == 1
     assert images[0]["image_type"] == "flat_mockup"
+    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["status"] == "created"
     conn.close()

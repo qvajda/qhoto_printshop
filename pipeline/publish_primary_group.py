@@ -116,19 +116,32 @@ def create_gelato_product(conn, group_product_id, candidate, static_config, size
     )
     conn.commit()
 
-    if response.get("_dry_run"):
-        images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
-    else:
-        product = primary_mockup.poll_until_ready(gelato_product_id, store_id=store_id, api_key=api_key)
-        images = product["productImages"]
+    try:
+        if response.get("_dry_run"):
+            images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
+        else:
+            product = primary_mockup.poll_until_ready(gelato_product_id, store_id=store_id, api_key=api_key)
+            images = product["productImages"]
 
-    ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
-    for order, image in enumerate(ordered_images):
-        image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"
+        ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
+        for order, image in enumerate(ordered_images):
+            image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"
+            conn.execute(
+                "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+                "VALUES (?, ?, '', ?, ?)",
+                (group_product_id, image.get("fileUrl"), order, image_type),
+            )
+    except Exception:
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, '', ?, ?)",
-            (group_product_id, image.get("fileUrl"), order, image_type),
+            "UPDATE group_products SET status = 'mockup_failed', updated_at = ? WHERE id = ?",
+            (timestamp, group_product_id),
         )
+        conn.commit()
+        raise
+
+    conn.execute(
+        "UPDATE group_products SET status = 'created', updated_at = ? WHERE id = ?",
+        (timestamp, group_product_id),
+    )
     conn.commit()
     return gelato_product_id
