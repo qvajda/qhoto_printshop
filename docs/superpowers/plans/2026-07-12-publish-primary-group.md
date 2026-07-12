@@ -665,7 +665,7 @@ git commit -m "feat: add per-size Etsy listing data builder with title-cap reval
 - Consumes: `config.get_template_variant(static_config, size, orientation) -> dict`, `gelato_client.create_product_from_template(...)`, `primary_mockup.poll_until_ready(product_id, *, store_id=None, api_key=None, poll_interval=3.0, timeout=90.0, ...) -> dict`.
 - Produces:
   - `create_group_product_row(conn, group_id, size, orientation, template_id, price_eur, *, now=None) -> int` — inserts a `group_products` row with `status='pending'`, no `gelato_product_id` yet.
-  - `create_gelato_product(conn, group_product_id, candidate, static_config, size, orientation, *, store_id=None, api_key=None, now=None) -> str` — creates the Gelato product, writes `gelato_product_id`, fetches/orders the gallery, inserts `product_images` rows (same ordering as `primary_mockup.py`).
+  - `create_gelato_product(conn, group_product_id, candidate, static_config, size, orientation, *, store_id=None, api_key=None, now=None) -> str` — creates the Gelato product, writes `gelato_product_id`, fetches/orders the gallery, inserts `product_images` rows (same ordering as `primary_mockup.py`). Wraps the create-then-poll-then-insert sequence in try/except exactly like `primary_mockup.create_primary_mockup` does: `status='created'` on success, `status='mockup_failed'` on any exception (re-raised) — this matters because `gelato_product_id` gets written to the row *before* polling, so a poll timeout would otherwise leave a row that looks like it has a live Gelato product but has zero `product_images` rows. Task 9's retry-once wrapper checks this row's `status` (not just whether `gelato_product_id` is set) before deciding whether to re-create it, so a timed-out row is correctly discarded and retried from scratch rather than resumed into a broken zero-image Etsy publish.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -755,6 +755,7 @@ def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
 
     gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
     assert gp_row["gelato_product_id"] == "gelato_prod_a3"
+    assert gp_row["status"] == "created"
 
     images = conn.execute(
         "SELECT * FROM product_images WHERE group_product_id = ? ORDER BY gallery_order", (gp_id,)
@@ -763,6 +764,40 @@ def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
     assert images[0]["image_type"] == "flat_mockup"
     assert images[0]["image_url"] == "https://gelato/a3_flat.jpg"
     assert images[1]["image_type"] == "lifestyle"
+    conn.close()
+
+
+def test_create_gelato_product_marks_mockup_failed_on_poll_timeout(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    gp_id = publish_primary_group.create_group_product_row(
+        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
+    )
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_a3_stuck", "isReadyToPublish": False, "productImages": []}
+
+    def fake_poll_until_ready(*args, **kwargs):
+        raise primary_mockup.GelatoMockupTimeoutError("gelato_prod_a3_stuck did not become ready")
+
+    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.publish_primary_group.primary_mockup.poll_until_ready",
+               side_effect=fake_poll_until_ready):
+        with pytest.raises(primary_mockup.GelatoMockupTimeoutError):
+            publish_primary_group.create_gelato_product(
+                conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
+                store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
+            )
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["status"] == "mockup_failed"
+    assert gp_row["gelato_product_id"] == "gelato_prod_a3_stuck"
+    assert conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)
+    ).fetchall() == []
     conn.close()
 
 
@@ -790,6 +825,8 @@ def test_create_gelato_product_dry_run_skips_polling(tmp_path):
     images = conn.execute("SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)).fetchall()
     assert len(images) == 1
     assert images[0]["image_type"] == "flat_mockup"
+    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["status"] == "created"
     conn.close()
 ```
 
@@ -834,20 +871,33 @@ def create_gelato_product(conn, group_product_id, candidate, static_config, size
     )
     conn.commit()
 
-    if response.get("_dry_run"):
-        images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
-    else:
-        product = primary_mockup.poll_until_ready(gelato_product_id, store_id=store_id, api_key=api_key)
-        images = product["productImages"]
+    try:
+        if response.get("_dry_run"):
+            images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
+        else:
+            product = primary_mockup.poll_until_ready(gelato_product_id, store_id=store_id, api_key=api_key)
+            images = product["productImages"]
 
-    ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
-    for order, image in enumerate(ordered_images):
-        image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"
+        ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
+        for order, image in enumerate(ordered_images):
+            image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"
+            conn.execute(
+                "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+                "VALUES (?, ?, '', ?, ?)",
+                (group_product_id, image.get("fileUrl"), order, image_type),
+            )
+    except Exception:
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, '', ?, ?)",
-            (group_product_id, image.get("fileUrl"), order, image_type),
+            "UPDATE group_products SET status = 'mockup_failed', updated_at = ? WHERE id = ?",
+            (timestamp, group_product_id),
         )
+        conn.commit()
+        raise
+
+    conn.execute(
+        "UPDATE group_products SET status = 'created', updated_at = ? WHERE id = ?",
+        (timestamp, group_product_id),
+    )
     conn.commit()
     return gelato_product_id
 ```
@@ -1290,7 +1340,7 @@ def publish_group_product(conn, group_product_id, candidate, static_config, *, s
 
     def attempt():
         row = conn.execute("SELECT * FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
-        if row["gelato_product_id"] is None:
+        if row["status"] != "created":
             create_gelato_product(
                 conn, group_product_id, candidate, static_config, row["size"], row["orientation"],
                 store_id=store_id, api_key=gelato_api_key, now=now,
