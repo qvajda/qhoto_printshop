@@ -15,6 +15,19 @@ isolation, mirroring `primary_mockup.run_primary_mockup_cycle`).
 
 **Tech Stack:** Python, sqlite3 (stdlib), pytest, `unittest.mock.patch`. No new dependencies.
 
+## Post-Task-2-review correction
+
+Task 2's review (see `.superpowers/sdd/progress.md`) found every `fake_create_product_from_template`
+fixture below that returns `"isReadyToPublish": True` directly from the *create* call is wrong —
+the real Gelato create-from-template response never reports ready immediately (see
+`docs/gelato_call_response_example_from_manual_tests.txt`); `create_group_mockup` always polls via
+`primary_mockup.poll_until_ready` for non-dry-run responses, matching `create_primary_mockup`
+exactly (no short-circuit). Every task below whose fixture returns `isReadyToPublish: True` from
+`create_product_from_template` must instead return `isReadyToPublish: False, productImages: []`
+from create, and separately mock `pipeline.group_mockup.primary_mockup.poll_until_ready` to supply
+the ready state and gallery. This was corrected in the Task 3 dispatch brief directly; this note
+exists so the plan file itself isn't misleading if read later.
+
 ## Global Constraints
 
 - Image generation happens once per design — this stage never calls Replicate/FLUX; it only
