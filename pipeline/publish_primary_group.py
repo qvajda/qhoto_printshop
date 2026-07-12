@@ -191,3 +191,105 @@ def publish_to_etsy(conn, group_product_id, candidate_id, size, price_eur, *, sh
     )
     conn.commit()
     return str(listing_id)
+
+
+def publish_group_product(conn, group_product_id, candidate, static_config, *, store_id=None,
+                           gelato_api_key=None, shop_id=None, etsy_api_key=None,
+                           etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> str:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    def attempt():
+        row = conn.execute("SELECT * FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+        if row["status"] != "created":
+            create_gelato_product(
+                conn, group_product_id, candidate, static_config, row["size"], row["orientation"],
+                store_id=store_id, api_key=gelato_api_key, now=now,
+            )
+        return publish_to_etsy(
+            conn, group_product_id, candidate["id"], row["size"], row["price_eur"],
+            shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+            etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
+        )
+
+    try:
+        return attempt()
+    except Exception:
+        try:
+            return attempt()
+        except Exception:
+            conn.execute(
+                "UPDATE group_products SET status = 'publish_failed', updated_at = ? WHERE id = ?",
+                (timestamp, group_product_id),
+            )
+            conn.commit()
+            raise
+
+
+def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=None,
+                           gelato_api_key=None, shop_id=None, etsy_api_key=None,
+                           etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> dict:
+    static_config = static_config if static_config is not None else config.load_static_config()
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    candidate_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if candidate_row is None:
+        raise ValueError(f"No candidate with id {candidate_id}")
+    candidate = dict(candidate_row)
+
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,)
+    ).fetchone()
+    if group_row is None:
+        raise ValueError(f"No primary group for candidate {candidate_id}")
+    group_id = group_row["id"]
+
+    existing_8x12 = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12' AND status = 'created'",
+        (group_id,),
+    ).fetchone()
+    if existing_8x12 is None:
+        raise ValueError(f"No live 8x12 group_product for candidate {candidate_id}'s primary group")
+
+    secondary_sizes = [s for s in static_config["aspect_ratio_groups"]["primary"] if s != "8x12"]
+    for size in secondary_sizes:
+        template = config.get_template_variant(static_config, size, "portrait")
+        create_group_product_row(
+            conn, group_id, size, "portrait", template["template_id"],
+            static_config["prices_eur"][size], now=now,
+        )
+
+    group_product_ids = [
+        row["id"] for row in conn.execute(
+            "SELECT id FROM group_products WHERE group_id = ? AND status != 'deleted' ORDER BY id",
+            (group_id,),
+        ).fetchall()
+    ]
+
+    results = {}
+    any_published = False
+    for gp_id in group_product_ids:
+        size = conn.execute("SELECT size FROM group_products WHERE id = ?", (gp_id,)).fetchone()["size"]
+        try:
+            publish_group_product(
+                conn, gp_id, candidate, static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+                shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
+            )
+            results[size] = "published"
+            any_published = True
+        except Exception as exc:
+            results[size] = "publish_failed"
+            print(f"publish_group_product failed for candidate {candidate_id} size {size}: {exc}")
+
+    if any_published:
+        conn.execute(
+            "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",
+            (timestamp, group_id),
+        )
+        conn.execute(
+            "UPDATE candidates SET status = 'completed', updated_at = ? WHERE id = ?",
+            (timestamp, candidate_id),
+        )
+        conn.commit()
+
+    return results

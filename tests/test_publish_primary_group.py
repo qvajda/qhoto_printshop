@@ -487,3 +487,178 @@ def test_create_gelato_product_dry_run_skips_polling(tmp_path):
     gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
     assert gp_row["status"] == "created"
     conn.close()
+
+
+def _insert_ready_primary_group(conn, candidate_id, niche="monstera line art"):
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_group_product_with_images(
+        conn, group_id, size="8x12", gelato_product_id="gelato_prod_1",
+        image_urls=("https://gelato/flat.jpg", "https://gelato/life.jpg"),
+    )
+    _insert_listing_text(conn, candidate_id, niche=niche)
+    return group_id
+
+
+def test_publish_group_product_succeeds_first_try(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    gp_id = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
+    ).fetchone()["id"]
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    with patch("pipeline.publish_primary_group.publish_to_etsy",
+               return_value="listing_1") as mock_publish:
+        result = publish_primary_group.publish_group_product(
+            conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
+        )
+
+    assert result == "listing_1"
+    mock_publish.assert_called_once()
+    conn.close()
+
+
+def test_publish_group_product_creates_gelato_product_when_missing(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    _insert_listing_text(conn, candidate_id)
+    gp_id = publish_primary_group.create_group_product_row(
+        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
+    )
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    with patch("pipeline.publish_primary_group.create_gelato_product",
+               return_value="gelato_prod_new") as mock_create, \
+         patch("pipeline.publish_primary_group.publish_to_etsy",
+               return_value="listing_2") as mock_publish:
+        result = publish_primary_group.publish_group_product(
+            conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
+        )
+
+    assert result == "listing_2"
+    mock_create.assert_called_once()
+    mock_publish.assert_called_once()
+    conn.close()
+
+
+def test_publish_group_product_retries_once_then_succeeds(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    gp_id = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
+    ).fetchone()["id"]
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    attempts = {"n": 0}
+
+    def flaky_publish(*args, **kwargs):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("Etsy throttled")
+        return "listing_after_retry"
+
+    with patch("pipeline.publish_primary_group.publish_to_etsy", side_effect=flaky_publish):
+        result = publish_primary_group.publish_group_product(
+            conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
+        )
+
+    assert result == "listing_after_retry"
+    assert attempts["n"] == 2
+    conn.close()
+
+
+def test_publish_group_product_marks_publish_failed_after_second_failure(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    gp_id = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
+    ).fetchone()["id"]
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    with patch("pipeline.publish_primary_group.publish_to_etsy",
+               side_effect=RuntimeError("Etsy down")):
+        with pytest.raises(RuntimeError, match="Etsy down"):
+            publish_primary_group.publish_group_product(
+                conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
+            )
+
+    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["status"] == "publish_failed"
+    conn.close()
+
+
+def test_publish_primary_group_publishes_all_four_sizes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+
+    published_sizes = []
+
+    def fake_publish_group_product(conn, group_product_id, candidate, static_config, **kwargs):
+        row = conn.execute("SELECT size FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+        published_sizes.append(row["size"])
+        return f"listing_{row['size']}"
+
+    with patch("pipeline.publish_primary_group.publish_group_product",
+               side_effect=fake_publish_group_product):
+        result = publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
+            now=datetime(2026, 7, 12, 11, 0, 0),
+        )
+
+    assert result == {"8x12": "published", "A3": "published", "A2": "published", "A1": "published"}
+    assert sorted(published_sizes) == ["8x12", "A1", "A2", "A3"]
+
+    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["status"] == "approved_published"
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "completed"
+
+    sizes_in_db = {
+        row["size"] for row in conn.execute(
+            "SELECT size FROM group_products WHERE group_id = ?", (group_id,)
+        ).fetchall()
+    }
+    assert sizes_in_db == {"8x12", "A3", "A2", "A1"}
+    conn.close()
+
+
+def test_publish_primary_group_isolates_per_size_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+
+    def fake_publish_group_product(conn, group_product_id, candidate, static_config, **kwargs):
+        row = conn.execute("SELECT size FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+        if row["size"] == "A2":
+            raise RuntimeError("A2 template placeholder")
+        return f"listing_{row['size']}"
+
+    with patch("pipeline.publish_primary_group.publish_group_product",
+               side_effect=fake_publish_group_product):
+        result = publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
+            now=datetime(2026, 7, 12, 11, 0, 0),
+        )
+
+    assert result == {"8x12": "published", "A3": "published", "A2": "publish_failed", "A1": "published"}
+    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["status"] == "approved_published"
+    conn.close()
+
+
+def test_publish_primary_group_raises_when_no_live_8x12_product(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id)
+    _insert_listing_text(conn, candidate_id)
+
+    with pytest.raises(ValueError, match="8x12"):
+        publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
+        )
+    conn.close()
