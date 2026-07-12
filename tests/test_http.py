@@ -57,3 +57,32 @@ def test_send_respects_custom_timeout():
         http.send(request, timeout=5)
 
     mock_urlopen.assert_called_once_with(request, timeout=5)
+
+
+def test_fetch_bytes_returns_raw_bytes_on_success():
+    captured = {}
+
+    def fake_urlopen(request, timeout=30):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        return _mock_response(b"\x89PNG raw bytes")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = http.fetch_bytes("https://gelato/flat.jpg")
+
+    assert result == b"\x89PNG raw bytes"
+    assert captured["url"] == "https://gelato/flat.jpg"
+    assert captured["method"] == "GET"
+
+
+def test_fetch_bytes_raises_http_error_on_non_2xx():
+    error = urllib.error.HTTPError(
+        url="https://gelato/missing.jpg", code=404, msg="Not Found",
+        hdrs=None, fp=io.BytesIO(b"not found"),
+    )
+
+    with patch("urllib.request.urlopen", side_effect=error):
+        with pytest.raises(http.HTTPError) as exc_info:
+            http.fetch_bytes("https://gelato/missing.jpg")
+
+    assert exc_info.value.status_code == 404

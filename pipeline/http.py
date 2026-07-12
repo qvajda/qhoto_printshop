@@ -20,3 +20,12 @@ def send(request: urllib.request.Request, timeout: int = 30) -> dict:
     if not raw_body:
         return {}
     return json.loads(raw_body)
+
+
+def fetch_bytes(url: str, timeout: int = 30) -> bytes:
+    request = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read()
+    except urllib.error.HTTPError as e:
+        raise HTTPError(e.code, e.read().decode("utf-8")) from e
