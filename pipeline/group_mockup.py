@@ -87,10 +87,6 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
 
         if response.get("_dry_run"):
             images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
-        elif response.get("isReadyToPublish"):
-            # ponytail: create call already reports ready (as in tests / fast Gelato
-            # responses) - skip the extra poll round-trip rather than always polling once.
-            images = response["productImages"]
         else:
             product = primary_mockup.poll_until_ready(
                 gelato_product_id, store_id=store_id, api_key=api_key,

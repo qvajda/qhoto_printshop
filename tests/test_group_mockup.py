@@ -115,14 +115,17 @@ def test_create_group_mockup_happy_path_writes_group_product_and_images(tmp_path
         assert template_variant_id == "variant_5x7"
         assert image_placeholder_name == "slot_5x7.jpg"
         assert image_url == "https://replicate.delivery/out.png"
-        return {"id": "gelato_prod_5x7", "isReadyToPublish": True,
-                "productImages": [
-                    {"fileUrl": "https://gelato/flat.jpg", "isPrimary": True},
-                    {"fileUrl": "https://gelato/lifestyle.jpg", "isPrimary": False},
-                ]}
+        return {"id": "gelato_prod_5x7", "isReadyToPublish": False, "productImages": []}
+
+    ready_product = {"isReadyToPublish": True,
+                      "productImages": [
+                          {"fileUrl": "https://gelato/flat.jpg", "isPrimary": True},
+                          {"fileUrl": "https://gelato/lifestyle.jpg", "isPrimary": False},
+                      ]}
 
     with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template):
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
         result = group_mockup.create_group_mockup(
             conn, candidate_id, "5x7", static_config=STATIC_CONFIG, store_id="store1",
             api_key="key1", poll_interval=0, poll_timeout=10, now=datetime(2026, 7, 12, 18, 0, 0),
@@ -183,11 +186,14 @@ def test_create_group_mockup_skips_when_already_created(tmp_path):
     _insert_published_primary_group(conn, candidate_id)
 
     def fake_create_product_from_template(*args, **kwargs):
-        return {"id": "gelato_prod_once", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+        return {"id": "gelato_prod_once", "isReadyToPublish": False, "productImages": []}
+
+    ready_product = {"isReadyToPublish": True,
+                      "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
 
     with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template) as mock_create:
+               side_effect=fake_create_product_from_template) as mock_create, \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
         first = group_mockup.create_group_mockup(
             conn, candidate_id, "5x7", static_config=STATIC_CONFIG,
             poll_interval=0, poll_timeout=10, now=datetime(2026, 7, 12, 18, 0, 0),
@@ -214,11 +220,14 @@ def test_create_group_mockup_retries_once_then_succeeds(tmp_path):
         attempts["n"] += 1
         if attempts["n"] == 1:
             raise RuntimeError("Gelato throttled")
-        return {"id": "gelato_prod_retry", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+        return {"id": "gelato_prod_retry", "isReadyToPublish": False, "productImages": []}
+
+    ready_product = {"isReadyToPublish": True,
+                      "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
 
     with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
-               side_effect=flaky_create):
+               side_effect=flaky_create), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
         result = group_mockup.create_group_mockup(
             conn, candidate_id, "5x7", static_config=STATIC_CONFIG,
             poll_interval=0, poll_timeout=10, now=datetime(2026, 7, 12, 18, 0, 0),
