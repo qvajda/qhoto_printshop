@@ -12,6 +12,7 @@ import pipeline.primary_mockup as primary_mockup
 import pipeline.telegram_client as telegram_client
 
 
+
 # Etsy has no "unlimited stock" flag for made-to-order POD items; 999 is the
 # conventional large-placeholder quantity for this listing style.
 LISTING_QUANTITY = 999
@@ -145,3 +146,48 @@ def create_gelato_product(conn, group_product_id, candidate, static_config, size
     )
     conn.commit()
     return gelato_product_id
+
+
+def publish_to_etsy(conn, group_product_id, candidate_id, size, price_eur, *, shop_id=None,
+                     etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
+                     dry_run=None, now=None) -> str:
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    listing_text_row = conn.execute(
+        "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    if listing_text_row is None:
+        raise ValueError(f"No listing_texts row for candidate {candidate_id}")
+    listing_data = build_size_listing_data(dict(listing_text_row), size, price_eur)
+
+    shop_id = shop_id or config.require_env("ETSY_SHOP_ID")
+    draft = etsy_client.create_draft_listing(
+        shop_id, listing_data, api_key=etsy_api_key, api_secret=etsy_api_secret,
+        access_token=etsy_access_token, dry_run=dry_run,
+    )
+    listing_id = draft["listing_id"]
+
+    image_rows = conn.execute(
+        "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
+        (group_product_id,),
+    ).fetchall()
+    for row in image_rows:
+        image_bytes = b"" if dry_run else http.fetch_bytes(row["image_url"])
+        etsy_client.upload_listing_image(
+            shop_id, listing_id, image_bytes, api_key=etsy_api_key, api_secret=etsy_api_secret,
+            access_token=etsy_access_token, dry_run=dry_run,
+        )
+
+    etsy_client.update_listing_state(
+        shop_id, listing_id, "active", api_key=etsy_api_key, api_secret=etsy_api_secret,
+        access_token=etsy_access_token, dry_run=dry_run,
+    )
+
+    conn.execute(
+        "UPDATE group_products SET etsy_listing_id = ?, status = 'published', updated_at = ? WHERE id = ?",
+        (str(listing_id), timestamp, group_product_id),
+    )
+    conn.commit()
+    return str(listing_id)

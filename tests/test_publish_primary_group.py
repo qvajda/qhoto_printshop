@@ -295,6 +295,137 @@ def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
     conn.close()
 
 
+def _insert_listing_text(conn, candidate_id, niche="monstera line art"):
+    timestamp = "2026-07-12T09:10:00"
+    conn.execute(
+        """
+        INSERT INTO listing_texts (
+            candidate_id, title, tags, description, disclosure_text,
+            who_made, production_partner_ids, taxonomy_id, shipping_profile_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            candidate_id, f"{niche} print", _json.dumps(["botanical", "wall art"]),
+            f"A print of {niche}.", "AI disclosure text.",
+            "i_did", _json.dumps([5717252]), "1027", "", timestamp,
+        ),
+    )
+    conn.commit()
+
+
+def _insert_group_product_with_images(conn, group_id, size="A3", *, gelato_product_id="gelato_a3",
+                                       image_urls=("https://gelato/a3_flat.jpg", "https://gelato/a3_life.jpg")):
+    timestamp = "2026-07-12T10:00:00"
+    cursor = conn.execute(
+        "INSERT INTO group_products "
+        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
+        "status, created_at, updated_at) "
+        "VALUES (?, ?, 'portrait', 'tpl_x', ?, 35, 'created', ?, ?)",
+        (group_id, size, gelato_product_id, timestamp, timestamp),
+    )
+    gp_id = cursor.lastrowid
+    for order, url in enumerate(image_urls):
+        image_type = "flat_mockup" if order == 0 else "lifestyle"
+        conn.execute(
+            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, '', ?, ?)",
+            (gp_id, url, order, image_type),
+        )
+    conn.commit()
+    return gp_id
+
+
+def test_publish_to_etsy_dry_run_skips_image_download_and_writes_published(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    _insert_listing_text(conn, candidate_id)
+    gp_id = _insert_group_product_with_images(conn, group_id)
+
+    with patch("pipeline.publish_primary_group.etsy_client.create_draft_listing",
+               return_value={"listing_id": "DRY_RUN_LISTING_ID", "_dry_run": True}) as mock_draft, \
+         patch("pipeline.publish_primary_group.etsy_client.upload_listing_image",
+               return_value={"_dry_run": True}) as mock_upload, \
+         patch("pipeline.publish_primary_group.etsy_client.update_listing_state",
+               return_value={"_dry_run": True}) as mock_state, \
+         patch("pipeline.publish_primary_group.http.fetch_bytes") as mock_fetch:
+        listing_id = publish_primary_group.publish_to_etsy(
+            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1",
+            dry_run=True, now=datetime(2026, 7, 12, 10, 10, 0),
+        )
+
+    mock_fetch.assert_not_called()
+    assert mock_upload.call_count == 2
+    for call in mock_upload.call_args_list:
+        assert call.args[2] == b""
+    assert listing_id == "DRY_RUN_LISTING_ID"
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["etsy_listing_id"] == "DRY_RUN_LISTING_ID"
+    assert gp_row["status"] == "published"
+    conn.close()
+
+
+def test_publish_to_etsy_live_downloads_images_and_activates_listing(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    _insert_listing_text(conn, candidate_id)
+    gp_id = _insert_group_product_with_images(conn, group_id)
+
+    calls = []
+
+    def fake_create_draft_listing(shop_id, listing_data, **kwargs):
+        calls.append(("draft", shop_id, listing_data["title"]))
+        return {"listing_id": 555}
+
+    def fake_upload(shop_id, listing_id, image_bytes, **kwargs):
+        calls.append(("upload", shop_id, listing_id, image_bytes))
+        return {"listing_image_id": 1}
+
+    def fake_update_state(shop_id, listing_id, state, **kwargs):
+        calls.append(("activate", shop_id, listing_id, state))
+        return {"state": "active"}
+
+    with patch("pipeline.publish_primary_group.etsy_client.create_draft_listing",
+               side_effect=fake_create_draft_listing), \
+         patch("pipeline.publish_primary_group.etsy_client.upload_listing_image",
+               side_effect=fake_upload), \
+         patch("pipeline.publish_primary_group.etsy_client.update_listing_state",
+               side_effect=fake_update_state), \
+         patch("pipeline.publish_primary_group.http.fetch_bytes",
+               return_value=b"real-image-bytes") as mock_fetch:
+        listing_id = publish_primary_group.publish_to_etsy(
+            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1",
+            dry_run=False, now=datetime(2026, 7, 12, 10, 10, 0),
+        )
+
+    assert listing_id == "555"
+    assert calls[0] == ("draft", "shop1", "monstera line art print - A3 Print")
+    assert calls[1] == ("upload", "shop1", 555, b"real-image-bytes")
+    assert calls[2] == ("upload", "shop1", 555, b"real-image-bytes")
+    assert calls[3] == ("activate", "shop1", 555, "active")
+    assert mock_fetch.call_count == 2
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["etsy_listing_id"] == "555"
+    assert gp_row["status"] == "published"
+    conn.close()
+
+
+def test_publish_to_etsy_raises_when_no_listing_text(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    gp_id = _insert_group_product_with_images(conn, group_id)
+
+    with pytest.raises(ValueError, match="listing_texts"):
+        publish_primary_group.publish_to_etsy(
+            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1", dry_run=True,
+        )
+    conn.close()
+
+
 def test_create_gelato_product_marks_mockup_failed_on_poll_timeout(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
