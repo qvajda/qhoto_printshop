@@ -662,3 +662,141 @@ def test_publish_primary_group_raises_when_no_live_8x12_product(tmp_path):
             conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
         )
     conn.close()
+
+
+def test_handle_decision_approve_records_decision_and_publishes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+
+    with patch("pipeline.publish_primary_group.publish_primary_group",
+               return_value={"8x12": "published", "A3": "published", "A2": "published", "A1": "published"}
+               ) as mock_publish:
+        result = publish_primary_group.handle_decision(
+            conn, candidate_id, group_id, "approve", static_config=STATIC_CONFIG, dry_run=True,
+            now=datetime(2026, 7, 12, 12, 0, 0),
+        )
+
+    mock_publish.assert_called_once()
+    assert result["action"] == "approve"
+    group_row = conn.execute("SELECT decision, decided_at FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["decision"] == "approved"
+    assert group_row["decided_at"] == "2026-07-12T12:00:00"
+    conn.close()
+
+
+def test_handle_decision_reject_marks_group_and_candidate(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+
+    result = publish_primary_group.handle_decision(
+        conn, candidate_id, group_id, "reject", static_config=STATIC_CONFIG,
+        now=datetime(2026, 7, 12, 12, 0, 0),
+    )
+
+    assert result["action"] == "reject"
+    group_row = conn.execute("SELECT decision, status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["decision"] == "rejected"
+    assert group_row["status"] == "rejected"
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "failed"
+    assert candidate_row["failed_reason"] == "primary group rejected"
+    conn.close()
+
+
+def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    old_gp_id = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
+    ).fetchone()["id"]
+    publish_primary_group.critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": True, "reason": "meets rubric"}, now=datetime(2026, 7, 12, 9, 20, 0),
+    )
+
+    def fake_generate_for_candidate(conn, candidate_id, *, correction_note=None, api_token=None, now=None):
+        timestamp = now.isoformat() if now else "2026-07-12T12:05:00"
+        conn.execute(
+            "UPDATE candidates SET base_image_url = 'https://replicate.delivery/v2.png', "
+            "status = 'generating', updated_at = ? WHERE id = ?",
+            (timestamp, candidate_id),
+        )
+        conn.commit()
+
+    def fake_create_primary_mockup(conn, candidate_id, *, static_config=None, store_id=None,
+                                    api_key=None, now=None, **kwargs):
+        timestamp = now.isoformat() if now else "2026-07-12T12:06:00"
+        cursor = conn.execute(
+            "INSERT INTO group_products "
+            "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
+            "status, created_at, updated_at) "
+            "VALUES (?, '8x12', 'portrait', 'tpl_1', 'gelato_prod_v2', 24, 'created', ?, ?)",
+            (group_id, timestamp, timestamp),
+        )
+        conn.execute(
+            "UPDATE groups SET status = 'pending_review', updated_at = ? WHERE id = ?",
+            (timestamp, group_id),
+        )
+        conn.commit()
+        return {"group_id": group_id, "group_product_id": cursor.lastrowid}
+
+    def fake_build_compliance_draft(conn, candidate_id, *, static_config=None,
+                                     anthropic_api_key=None, now=None):
+        _insert_listing_text(conn, candidate_id, niche="monstera line art v2")
+
+    with patch("pipeline.publish_primary_group.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.publish_primary_group.generate.generate_for_candidate",
+               side_effect=fake_generate_for_candidate), \
+         patch("pipeline.publish_primary_group.primary_mockup.create_primary_mockup",
+               side_effect=fake_create_primary_mockup), \
+         patch("pipeline.publish_primary_group.compliance_draft.build_compliance_draft",
+               side_effect=fake_build_compliance_draft):
+        result = publish_primary_group.handle_decision(
+            conn, candidate_id, group_id, "edit", "make it more pastel", static_config=STATIC_CONFIG,
+            now=datetime(2026, 7, 12, 12, 0, 0),
+        )
+
+    assert result["action"] == "edit"
+    mock_delete.assert_called_once_with("gelato_prod_1", store_id=None, api_key=None)
+
+    # Not asserting "row fetched by old_gp_id is None" here: group_products.id is a plain
+    # `INTEGER PRIMARY KEY` (no AUTOINCREMENT), and in this test the discarded row is the
+    # table's only row, so SQLite recycles the freed numeric id for the next insert (see
+    # db/schema.sql:62). That's normal SQLite ROWID behavior, not a discard bug — checking
+    # by the superseded gelato_product_id is the assertion that actually reflects intent.
+    assert conn.execute(
+        "SELECT * FROM group_products WHERE gelato_product_id = 'gelato_prod_1'"
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
+
+    candidate_row = conn.execute(
+        "SELECT status, base_image_url FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "generating"
+    assert candidate_row["base_image_url"] == "https://replicate.delivery/v2.png"
+
+    listing_row = conn.execute(
+        "SELECT title FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    assert listing_row["title"] == "monstera line art v2 print"
+
+    group_row = conn.execute("SELECT decision, decision_notes FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["decision"] == "edited"
+    assert group_row["decision_notes"] == "make it more pastel"
+    conn.close()
+
+
+def test_handle_decision_raises_on_unknown_action(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+
+    with pytest.raises(ValueError, match="Unknown action"):
+        publish_primary_group.handle_decision(conn, candidate_id, group_id, "snooze")
+    conn.close()

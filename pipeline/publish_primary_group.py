@@ -293,3 +293,65 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
         conn.commit()
 
     return results
+
+
+def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *,
+                     static_config=None, store_id=None, gelato_api_key=None, shop_id=None,
+                     etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
+                     replicate_api_token=None, anthropic_api_key=None, dry_run=None, now=None) -> dict:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    if action == "approve":
+        record_decision(conn, group_id, "approved", decision_notes, now=now)
+        results = publish_primary_group(
+            conn, candidate_id, static_config=static_config, store_id=store_id,
+            gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            dry_run=dry_run, now=now,
+        )
+        return {"action": "approve", "results": results}
+
+    if action == "edit":
+        record_decision(conn, group_id, "edited", decision_notes, now=now)
+        resolved_static_config = static_config if static_config is not None else config.load_static_config()
+
+        old_gp_row = conn.execute(
+            "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12' AND status = 'created'",
+            (group_id,),
+        ).fetchone()
+        if old_gp_row is not None:
+            critic_pass.discard_superseded_attempt(
+                conn, old_gp_row["id"], store_id=store_id, api_key=gelato_api_key,
+            )
+        conn.execute("DELETE FROM critic_pass_attempts WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+        conn.commit()
+
+        generate.generate_for_candidate(
+            conn, candidate_id, correction_note=decision_notes, api_token=replicate_api_token, now=now,
+        )
+        primary_mockup.create_primary_mockup(
+            conn, candidate_id, static_config=resolved_static_config, store_id=store_id,
+            api_key=gelato_api_key, now=now,
+        )
+        compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=resolved_static_config,
+            anthropic_api_key=anthropic_api_key, now=now,
+        )
+        return {"action": "edit"}
+
+    if action == "reject":
+        record_decision(conn, group_id, "rejected", decision_notes, now=now)
+        conn.execute(
+            "UPDATE groups SET status = 'rejected', updated_at = ? WHERE id = ?",
+            (timestamp, group_id),
+        )
+        conn.execute(
+            "UPDATE candidates SET status = 'failed', failed_reason = 'primary group rejected', "
+            "updated_at = ? WHERE id = ?",
+            (timestamp, candidate_id),
+        )
+        conn.commit()
+        return {"action": "reject"}
+
+    raise ValueError(f"Unknown action {action!r}")
