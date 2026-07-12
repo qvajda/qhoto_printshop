@@ -128,3 +128,44 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
     conn.commit()
 
     return {"group_id": group_id, "group_product_id": group_product_id, "gelato_product_id": gelato_product_id}
+
+
+GROUP_TYPES = ("5x7", "10x24")
+
+
+def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = None,
+                            api_key: str = None, poll_interval: float = 3.0,
+                            poll_timeout: float = 90.0, now=None) -> list:
+    static_config = static_config if static_config is not None else config.load_static_config()
+
+    candidate_ids = [
+        row["id"] for row in conn.execute(
+            """
+            SELECT c.id FROM candidates c
+            JOIN groups g ON g.candidate_id = c.id AND g.group_type = 'primary'
+                          AND g.status = 'approved_published'
+            ORDER BY c.id
+            """
+        ).fetchall()
+    ]
+
+    processed = []
+    for candidate_id in candidate_ids:
+        for group_type in GROUP_TYPES:
+            try:
+                result = create_group_mockup(
+                    conn, candidate_id, group_type, static_config=static_config,
+                    store_id=store_id, api_key=api_key, poll_interval=poll_interval,
+                    poll_timeout=poll_timeout, now=now,
+                )
+            except Exception as exc:
+                print(f"create_group_mockup failed for candidate {candidate_id} "
+                      f"group_type {group_type}: {exc}")
+                continue
+            if result is not None:
+                processed.append({
+                    "candidate_id": candidate_id,
+                    "group_type": group_type,
+                    "gelato_product_id": result["gelato_product_id"],
+                })
+    return processed

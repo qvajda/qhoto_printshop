@@ -262,3 +262,110 @@ def test_create_group_mockup_marks_mockup_failed_after_second_failure(tmp_path):
     ).fetchone()
     assert group_row["status"] == "pending_generation"
     conn.close()
+
+
+GROUP_TYPES = ("5x7", "10x24")
+
+
+def fake_create_pending(template_id, *args, **kwargs):
+    """Real Gelato create-from-template never returns isReadyToPublish=true —
+    see docs/gelato_call_response_example_from_manual_tests.txt. Always pair
+    with a poll_until_ready mock, matching create_primary_mockup's proven
+    always-poll pattern (test_primary_mockup.py's fixture shape)."""
+    return {"id": f"gelato_prod_{template_id}", "isReadyToPublish": False, "productImages": []}
+
+
+def fake_poll_ready(product_id, *, store_id=None, api_key=None, poll_interval=3.0, timeout=90.0):
+    return {"id": product_id, "isReadyToPublish": True,
+            "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+
+
+def test_run_group_mockup_cycle_processes_both_group_types_for_ready_candidate(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="monstera line art")
+    _insert_published_primary_group(conn, candidate_id)
+
+    with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_pending), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready",
+               side_effect=fake_poll_ready):
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+
+    assert {(p["candidate_id"], p["group_type"]) for p in processed} == {
+        (candidate_id, "5x7"), (candidate_id, "10x24"),
+    }
+    conn.close()
+
+
+def test_run_group_mockup_cycle_skips_candidates_without_published_primary(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn, niche="unreviewed one", status="primary_review")
+
+    processed = group_mockup.run_group_mockup_cycle(conn, static_config=STATIC_CONFIG)
+
+    assert processed == []
+    conn.close()
+
+
+def test_run_group_mockup_cycle_skips_group_types_already_created(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_published_primary_group(conn, candidate_id)
+
+    with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_pending), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready",
+               side_effect=fake_poll_ready):
+        first_run = group_mockup.run_group_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+        second_run = group_mockup.run_group_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 21, 0, 0),
+        )
+
+    assert len(first_run) == 2
+    assert second_run == []
+    conn.close()
+
+
+def test_run_group_mockup_cycle_isolates_per_group_type_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_published_primary_group(conn, candidate_id)
+
+    def fake_create_maybe_fail(template_id, *args, **kwargs):
+        if template_id == "tpl_5x7":
+            raise RuntimeError("Gelato throttled")
+        return fake_create_pending(template_id, *args, **kwargs)
+
+    with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_maybe_fail), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready",
+               side_effect=fake_poll_ready):
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+
+    assert [(p["candidate_id"], p["group_type"]) for p in processed] == [(candidate_id, "10x24")]
+
+    failing_gp = conn.execute(
+        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
+        "WHERE g.candidate_id = ? AND g.group_type = '5x7'", (candidate_id,)
+    ).fetchone()
+    assert failing_gp["status"] == "mockup_failed"
+    conn.close()
+
+
+def test_run_group_mockup_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+
+    processed = group_mockup.run_group_mockup_cycle(conn, static_config=STATIC_CONFIG)
+
+    assert processed == []
+    conn.close()
