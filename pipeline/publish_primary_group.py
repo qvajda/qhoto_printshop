@@ -83,3 +83,52 @@ def build_size_listing_data(listing_text: dict, size: str, price_eur: float) -> 
         "production_partner_ids": json.loads(listing_text["production_partner_ids"]),
         "tags": tags,
     }
+
+
+def create_group_product_row(conn, group_id, size, orientation, template_id, price_eur, *, now=None) -> int:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    cursor = conn.execute(
+        """
+        INSERT INTO group_products
+          (group_id, size, orientation, gelato_template_id, price_eur, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+        """,
+        (group_id, size, orientation, template_id, price_eur, timestamp, timestamp),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def create_gelato_product(conn, group_product_id, candidate, static_config, size, orientation, *,
+                           store_id=None, api_key=None, now=None) -> str:
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    template = config.get_template_variant(static_config, size, orientation)
+
+    response = gelato_client.create_product_from_template(
+        template["template_id"], template["template_variant_id"], template["image_placeholder_name"],
+        candidate["base_image_url"], f"{candidate['niche']} - {size} print",
+        store_id=store_id, api_key=api_key,
+    )
+    gelato_product_id = response["id"]
+    conn.execute(
+        "UPDATE group_products SET gelato_product_id = ?, updated_at = ? WHERE id = ?",
+        (gelato_product_id, timestamp, group_product_id),
+    )
+    conn.commit()
+
+    if response.get("_dry_run"):
+        images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
+    else:
+        product = primary_mockup.poll_until_ready(gelato_product_id, store_id=store_id, api_key=api_key)
+        images = product["productImages"]
+
+    ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
+    for order, image in enumerate(ordered_images):
+        image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"
+        conn.execute(
+            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, '', ?, ?)",
+            (group_product_id, image.get("fileUrl"), order, image_type),
+        )
+    conn.commit()
+    return gelato_product_id

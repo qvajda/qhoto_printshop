@@ -1,5 +1,6 @@
 import json as _json
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -196,3 +197,124 @@ def test_build_size_listing_data_raises_when_suffixed_title_exceeds_140_chars():
 
     with pytest.raises(ValueError, match="140"):
         publish_primary_group.build_size_listing_data(listing_text, "A3", 35)
+
+
+STATIC_CONFIG = {
+    "gelato_templates": {
+        "8x12_portrait": {
+            "template_id": "tpl_8x12", "template_variant_id": "variant_8x12",
+            "image_placeholder_name": "slot_8x12.jpg",
+        },
+        "A3_portrait": {
+            "template_id": "tpl_a3", "template_variant_id": "variant_a3",
+            "image_placeholder_name": "slot_a3.jpg",
+        },
+        "A2_portrait": {
+            "template_id": "tpl_a2", "template_variant_id": "variant_a2",
+            "image_placeholder_name": "slot_a2.jpg",
+        },
+        "A1_portrait": {
+            "template_id": "tpl_a1", "template_variant_id": "variant_a1",
+            "image_placeholder_name": "slot_a1.jpg",
+        },
+    },
+    "prices_eur": {"8x12": 24, "A3": 35, "A2": 39, "A1": 49},
+    "aspect_ratio_groups": {"primary": ["8x12", "A3", "A2", "A1"], "5x7": ["5x7"], "10x24": ["10x24"]},
+}
+
+
+def test_create_group_product_row_inserts_pending_row(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+
+    gp_id = publish_primary_group.create_group_product_row(
+        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
+    )
+
+    row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert row["group_id"] == group_id
+    assert row["size"] == "A3"
+    assert row["orientation"] == "portrait"
+    assert row["gelato_template_id"] == "tpl_a3"
+    assert row["price_eur"] == 35
+    assert row["status"] == "pending"
+    assert row["gelato_product_id"] is None
+    conn.close()
+
+
+def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    gp_id = publish_primary_group.create_group_product_row(
+        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
+    )
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    def fake_create_product_from_template(template_id, template_variant_id, image_placeholder_name,
+                                           image_url, title, *, store_id=None, api_key=None, **kwargs):
+        assert template_id == "tpl_a3"
+        assert template_variant_id == "variant_a3"
+        assert image_placeholder_name == "slot_a3.jpg"
+        assert image_url == "https://replicate.delivery/out.png"
+        return {"id": "gelato_prod_a3", "isReadyToPublish": False, "productImages": []}
+
+    def fake_get_product(product_id, *, store_id=None, api_key=None):
+        return {
+            "id": product_id, "isReadyToPublish": True,
+            "productImages": [
+                {"fileUrl": "https://gelato/a3_life.jpg", "isPrimary": False},
+                {"fileUrl": "https://gelato/a3_flat.jpg", "isPrimary": True},
+            ],
+        }
+
+    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.publish_primary_group.primary_mockup.gelato_client.get_product",
+               side_effect=fake_get_product):
+        gelato_product_id = publish_primary_group.create_gelato_product(
+            conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
+            store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
+        )
+
+    assert gelato_product_id == "gelato_prod_a3"
+
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert gp_row["gelato_product_id"] == "gelato_prod_a3"
+
+    images = conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ? ORDER BY gallery_order", (gp_id,)
+    ).fetchall()
+    assert len(images) == 2
+    assert images[0]["image_type"] == "flat_mockup"
+    assert images[0]["image_url"] == "https://gelato/a3_flat.jpg"
+    assert images[1]["image_type"] == "lifestyle"
+    conn.close()
+
+
+def test_create_gelato_product_dry_run_skips_polling(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id)
+    gp_id = publish_primary_group.create_group_product_row(
+        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
+    )
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "DRY_RUN_PRODUCT_ID", "previewUrl": None, "productImages": [], "_dry_run": True}
+
+    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.publish_primary_group.primary_mockup.gelato_client.get_product") as mock_get_product:
+        publish_primary_group.create_gelato_product(
+            conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
+            store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
+        )
+
+    mock_get_product.assert_not_called()
+    images = conn.execute("SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)).fetchall()
+    assert len(images) == 1
+    assert images[0]["image_type"] == "flat_mockup"
+    conn.close()
