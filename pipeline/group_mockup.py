@@ -42,6 +42,13 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
 
     group_id = get_or_create_group(conn, candidate_id, group_type, now=now)
+
+    group_status_row = conn.execute(
+        "SELECT status FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()
+    if group_status_row["status"] in ("failed_abandoned", "rejected"):
+        return None
+
     size = _group_size(static_config, group_type)
 
     existing = conn.execute(

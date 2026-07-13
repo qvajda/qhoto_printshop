@@ -209,6 +209,76 @@ def test_create_group_mockup_skips_when_already_created(tmp_path):
     conn.close()
 
 
+def test_create_group_mockup_returns_none_for_failed_abandoned_group(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_published_primary_group(conn, candidate_id)
+    group_mockup.get_or_create_group(conn, candidate_id, "5x7", now=datetime(2026, 7, 12, 18, 0, 0))
+    conn.execute(
+        "UPDATE groups SET status = 'failed_abandoned' WHERE candidate_id = ? AND group_type = '5x7'",
+        (candidate_id,),
+    )
+    conn.commit()
+
+    with patch("pipeline.group_mockup.gelato_client.create_product_from_template") as mock_create:
+        result = group_mockup.create_group_mockup(
+            conn, candidate_id, "5x7", static_config=STATIC_CONFIG, now=datetime(2026, 7, 12, 19, 0, 0),
+        )
+
+    assert result is None
+    mock_create.assert_not_called()
+    conn.close()
+
+
+def test_create_group_mockup_returns_none_for_rejected_group(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_published_primary_group(conn, candidate_id)
+    group_mockup.get_or_create_group(conn, candidate_id, "10x24", now=datetime(2026, 7, 12, 18, 0, 0))
+    conn.execute(
+        "UPDATE groups SET status = 'rejected' WHERE candidate_id = ? AND group_type = '10x24'",
+        (candidate_id,),
+    )
+    conn.commit()
+
+    with patch("pipeline.group_mockup.gelato_client.create_product_from_template") as mock_create:
+        result = group_mockup.create_group_mockup(
+            conn, candidate_id, "10x24", static_config=STATIC_CONFIG, now=datetime(2026, 7, 12, 19, 0, 0),
+        )
+
+    assert result is None
+    mock_create.assert_not_called()
+    conn.close()
+
+
+def test_run_group_mockup_cycle_does_not_resurrect_abandoned_group(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_published_primary_group(conn, candidate_id)
+    group_mockup.get_or_create_group(conn, candidate_id, "5x7", now=datetime(2026, 7, 12, 18, 0, 0))
+    conn.execute(
+        "UPDATE groups SET status = 'failed_abandoned' WHERE candidate_id = ? AND group_type = '5x7'",
+        (candidate_id,),
+    )
+    conn.commit()
+
+    with patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_pending), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready",
+               side_effect=fake_poll_ready):
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=STATIC_CONFIG, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+
+    assert [(p["candidate_id"], p["group_type"]) for p in processed] == [(candidate_id, "10x24")]
+    group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '5x7'", (candidate_id,)
+    ).fetchone()
+    assert group_row["status"] == "failed_abandoned"
+    conn.close()
+
+
 def test_create_group_mockup_retries_once_then_succeeds(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
