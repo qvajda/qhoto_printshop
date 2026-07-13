@@ -52,3 +52,47 @@ def abandon_group(conn, group_id: int, reason: str, *, now=None) -> None:
         (reason, timestamp, group_id),
     )
     conn.commit()
+
+
+def run_group_critic_pass(conn, candidate_id: int, group_type: str, *, static_config: dict = None,
+                           anthropic_api_key: str = None, store_id: str = None,
+                           gelato_api_key: str = None, now=None) -> dict:
+    static_config = static_config if static_config is not None else config.load_static_config()
+
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = ?",
+        (candidate_id, group_type),
+    ).fetchone()
+    if group_row is None:
+        raise ValueError(f"No {group_type} group for candidate {candidate_id}")
+    group_id = group_row["id"]
+
+    max_attempt_row = conn.execute(
+        "SELECT MAX(attempt_number) AS max_attempt FROM critic_pass_attempts WHERE group_id = ?",
+        (group_id,),
+    ).fetchone()
+    attempt_number = (max_attempt_row["max_attempt"] or 0) + 1
+
+    while True:
+        state = get_group_critic_state(conn, candidate_id, group_type)
+        result = critic_pass.evaluate_critic_pass(
+            state["image_urls"], state["listing_text"], api_key=anthropic_api_key
+        )
+        critic_pass.record_critic_attempt(conn, group_id, attempt_number, result, now=now)
+
+        if result["passed"]:
+            return {"group_id": group_id, "passed": True, "attempts": attempt_number}
+
+        critic_pass.discard_superseded_attempt(
+            conn, state["group_product_id"], store_id=store_id, api_key=gelato_api_key
+        )
+
+        if attempt_number >= 3:
+            abandon_group(conn, group_id, result["reason"], now=now)
+            return {"group_id": group_id, "passed": False, "attempts": attempt_number}
+
+        group_mockup.create_group_mockup(
+            conn, candidate_id, group_type, static_config=static_config,
+            store_id=store_id, api_key=gelato_api_key, now=now,
+        )
+        attempt_number += 1

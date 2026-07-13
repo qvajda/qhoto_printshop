@@ -146,3 +146,152 @@ def test_abandon_group_marks_only_that_group_failed(tmp_path):
     ).fetchone()
     assert candidate_row["status"] == "primary_review"
     conn.close()
+
+
+STATIC_CONFIG = {
+    "gelato_templates": {
+        "5x7_portrait": {
+            "template_id": "tpl_5x7",
+            "template_variant_id": "variant_5x7",
+            "image_placeholder_name": "slot_5x7.jpg",
+        },
+    },
+    "prices_eur": {"5x7": 19},
+    "aspect_ratio_groups": {"5x7": ["5x7"], "10x24": ["10x24"]},
+}
+
+
+def test_run_group_critic_pass_passes_on_first_attempt(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7")
+    _insert_listing_text(conn, candidate_id)
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result = group_critic_pass.run_group_critic_pass(
+            conn, candidate_id, "5x7", static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 13, 12, 0, 0),
+        )
+
+    assert result["passed"] is True
+    assert result["attempts"] == 1
+
+    group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '5x7'", (candidate_id,)
+    ).fetchone()
+    assert group_row["status"] == "pending_review"
+
+    attempts = conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (result["group_id"],)
+    ).fetchall()
+    assert len(attempts) == 1
+    assert attempts[0]["passed"] == 1
+    conn.close()
+
+
+def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
+    _insert_listing_text(conn, candidate_id)
+
+    critic_responses = iter([
+        {"text": _json.dumps({"passed": False, "reason": "crop cuts off the composition"})},
+        {"text": _json.dumps({"passed": True, "reason": "meets rubric"})},
+    ])
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_v2", "isReadyToPublish": False, "productImages": []}
+
+    ready_product = {"isReadyToPublish": True,
+                      "productImages": [{"fileUrl": "https://gelato/flat_v2.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               side_effect=lambda *a, **k: next(critic_responses)), \
+         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
+        result = group_critic_pass.run_group_critic_pass(
+            conn, candidate_id, "5x7", static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 13, 12, 0, 0),
+        )
+
+    assert result["passed"] is True
+    assert result["attempts"] == 2
+    mock_delete.assert_called_once_with("gelato_prod_v1", store_id="store1", api_key="key2")
+
+    group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '5x7'", (candidate_id,)
+    ).fetchone()
+    assert group_row["status"] == "pending_review"
+
+    gp_rows = conn.execute(
+        "SELECT * FROM group_products WHERE group_id = ?", (result["group_id"],)
+    ).fetchall()
+    assert len(gp_rows) == 1
+    assert gp_rows[0]["gelato_product_id"] == "gelato_prod_v2"
+    assert gp_rows[0]["status"] == "created"
+
+    attempts = conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ? ORDER BY attempt_number",
+        (result["group_id"],),
+    ).fetchall()
+    assert len(attempts) == 2
+    assert attempts[0]["passed"] == 0
+    assert attempts[0]["failure_reason"] == "crop cuts off the composition"
+    assert attempts[1]["passed"] == 1
+    conn.close()
+
+
+def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
+    _insert_group_gallery(conn, candidate_id, "10x24", "10x24", gelato_product_id="gelato_prod_other")
+    _insert_listing_text(conn, candidate_id)
+
+    critic_responses = iter([
+        {"text": _json.dumps({"passed": False, "reason": "reason one"})},
+        {"text": _json.dumps({"passed": False, "reason": "reason two"})},
+        {"text": _json.dumps({"passed": False, "reason": "reason three"})},
+    ])
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_retry", "isReadyToPublish": False, "productImages": []}
+
+    ready_product = {"isReadyToPublish": True,
+                      "productImages": [{"fileUrl": "https://gelato/flat_retry.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               side_effect=lambda *a, **k: next(critic_responses)), \
+         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
+        result = group_critic_pass.run_group_critic_pass(
+            conn, candidate_id, "5x7", static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 13, 12, 0, 0),
+        )
+
+    assert result["passed"] is False
+    assert result["attempts"] == 3
+    assert mock_delete.call_count == 3
+
+    group_row = conn.execute(
+        "SELECT status, failed_reason FROM groups WHERE candidate_id = ? AND group_type = '5x7'",
+        (candidate_id,),
+    ).fetchone()
+    assert group_row["status"] == "failed_abandoned"
+    assert group_row["failed_reason"] == "reason three"
+
+    # Untouched: candidate itself, and the sibling 10x24 group.
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "primary_review"
+
+    other_group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '10x24'", (candidate_id,)
+    ).fetchone()
+    assert other_group_row["status"] == "pending_review"
+    conn.close()
