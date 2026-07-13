@@ -96,3 +96,42 @@ def run_group_critic_pass(conn, candidate_id: int, group_type: str, *, static_co
             store_id=store_id, api_key=gelato_api_key, now=now,
         )
         attempt_number += 1
+
+
+GROUP_TYPES = ("5x7", "10x24")
+
+
+def run_group_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_api_key: str = None,
+                                 store_id: str = None, gelato_api_key: str = None, now=None) -> list:
+    static_config = static_config if static_config is not None else config.load_static_config()
+
+    pairs = conn.execute(
+        """
+        SELECT DISTINCT g.candidate_id, g.group_type
+        FROM groups g
+        JOIN group_products gp ON gp.group_id = g.id
+        WHERE g.group_type IN ('5x7', '10x24')
+          AND g.status = 'pending_review'
+          AND gp.status = 'created'
+          AND g.id NOT IN (SELECT group_id FROM critic_pass_attempts WHERE passed = 1)
+        ORDER BY g.candidate_id, g.group_type
+        """
+    ).fetchall()
+
+    processed = []
+    for row in pairs:
+        candidate_id, group_type = row["candidate_id"], row["group_type"]
+        try:
+            result = run_group_critic_pass(
+                conn, candidate_id, group_type, static_config=static_config,
+                anthropic_api_key=anthropic_api_key, store_id=store_id,
+                gelato_api_key=gelato_api_key, now=now,
+            )
+        except Exception as exc:
+            print(f"run_group_critic_pass failed for candidate {candidate_id} "
+                  f"group_type {group_type}: {exc}")
+            continue
+        processed.append({
+            "candidate_id": candidate_id, "group_type": group_type, "passed": result["passed"],
+        })
+    return processed

@@ -295,3 +295,122 @@ def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp
     ).fetchone()
     assert other_group_row["status"] == "pending_review"
     conn.close()
+
+
+def test_run_group_critic_pass_cycle_processes_ready_groups_and_skips_uncreated(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ready_id = _insert_candidate(conn, niche="monstera line art")
+    _insert_group_gallery(conn, ready_id, "5x7", "5x7")
+    _insert_listing_text(conn, ready_id, niche="monstera line art")
+
+    not_ready_id = _insert_candidate(conn, niche="moon phase print")
+    _insert_group_gallery(conn, not_ready_id, "10x24", "10x24", group_product_status="mockup_failed")
+    _insert_listing_text(conn, not_ready_id, niche="moon phase print")
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        processed = group_critic_pass.run_group_critic_pass_cycle(
+            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+            now=datetime(2026, 7, 13, 20, 0, 0),
+        )
+
+    assert processed == [{"candidate_id": ready_id, "group_type": "5x7", "passed": True}]
+    conn.close()
+
+
+def test_run_group_critic_pass_cycle_skips_groups_already_passed(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7")
+    _insert_listing_text(conn, candidate_id)
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        first_run = group_critic_pass.run_group_critic_pass_cycle(
+            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+            now=datetime(2026, 7, 13, 20, 0, 0),
+        )
+        second_run = group_critic_pass.run_group_critic_pass_cycle(
+            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+            now=datetime(2026, 7, 13, 21, 0, 0),
+        )
+
+    assert first_run == [{"candidate_id": candidate_id, "group_type": "5x7", "passed": True}]
+    assert second_run == []
+    conn.close()
+
+
+def test_run_group_critic_pass_cycle_excludes_abandoned_group_from_rerun(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
+    _insert_listing_text(conn, candidate_id)
+
+    fail_response = {"text": _json.dumps({"passed": False, "reason": "reason"})}
+
+    def fake_create_product_from_template(*args, **kwargs):
+        return {"id": "gelato_prod_retry", "isReadyToPublish": False, "productImages": []}
+
+    ready_product = {"isReadyToPublish": True,
+                      "productImages": [{"fileUrl": "https://gelato/flat_retry.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fail_response), \
+         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+               side_effect=fake_create_product_from_template), \
+         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
+        first_run = group_critic_pass.run_group_critic_pass_cycle(
+            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+            now=datetime(2026, 7, 13, 20, 0, 0),
+        )
+        second_run = group_critic_pass.run_group_critic_pass_cycle(
+            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+            now=datetime(2026, 7, 13, 22, 0, 0),
+        )
+
+    assert first_run == [{"candidate_id": candidate_id, "group_type": "5x7", "passed": False}]
+    # After abandonment, groups.status is 'failed_abandoned', not 'pending_review' — excluded.
+    assert second_run == []
+    conn.close()
+
+
+def test_run_group_critic_pass_cycle_isolates_per_group_operational_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    failing_id = _insert_candidate(conn, niche="saturated term")
+    _insert_group_gallery(conn, failing_id, "5x7", "5x7")
+    _insert_listing_text(conn, failing_id, niche="saturated term")
+
+    succeeding_id = _insert_candidate(conn, niche="moon phase print")
+    _insert_group_gallery(conn, succeeding_id, "10x24", "10x24")
+    _insert_listing_text(conn, succeeding_id, niche="moon phase print")
+
+    def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024):
+        if "saturated term" in prompt:
+            raise RuntimeError("Anthropic throttled")
+        return {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               side_effect=fake_complete_with_images):
+        processed = group_critic_pass.run_group_critic_pass_cycle(
+            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+            now=datetime(2026, 7, 13, 20, 0, 0),
+        )
+
+    assert processed == [{"candidate_id": succeeding_id, "group_type": "10x24", "passed": True}]
+
+    failing_group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '5x7'", (failing_id,)
+    ).fetchone()
+    assert failing_group_row["status"] == "pending_review"  # untouched — exception before any write
+    conn.close()
+
+
+def test_run_group_critic_pass_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", group_product_status="mockup_failed")
+
+    processed = group_critic_pass.run_group_critic_pass_cycle(conn)
+
+    assert processed == []
+    conn.close()
