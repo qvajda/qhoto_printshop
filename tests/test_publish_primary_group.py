@@ -185,6 +185,22 @@ def test_build_size_listing_data_appends_size_suffix_for_secondary_sizes():
     assert data["production_partner_ids"] == [5717252]
 
 
+def test_build_size_listing_data_appends_size_suffix_for_5x7_and_10x24():
+    listing_text = {
+        "title": "monstera line art print", "tags": _json.dumps(["botanical", "wall art"]),
+        "description": "desc", "who_made": "i_did", "taxonomy_id": "1027",
+        "shipping_profile_id": "", "production_partner_ids": _json.dumps([5717252]),
+    }
+
+    data_5x7 = publish_primary_group.build_size_listing_data(listing_text, "5x7", 19)
+    data_10x24 = publish_primary_group.build_size_listing_data(listing_text, "10x24", 45)
+
+    assert data_5x7["title"] == "monstera line art print - 5x7 Print"
+    assert data_5x7["price"] == 19
+    assert data_10x24["title"] == "monstera line art print - 10x24 Panoramic Print"
+    assert data_10x24["price"] == 45
+
+
 def test_build_size_listing_data_uses_base_title_unchanged_for_8x12():
     data = publish_primary_group.build_size_listing_data(_listing_text_row(), "8x12", 24)
 

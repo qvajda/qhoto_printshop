@@ -22,6 +22,8 @@ SIZE_TITLE_SUFFIXES = {
     "A3": " - A3 Print",
     "A2": " - A2 Print",
     "A1": " - A1 Print",
+    "5x7": " - 5x7 Print",
+    "10x24": " - 10x24 Panoramic Print",
 }
 
 
