@@ -97,6 +97,7 @@ STATIC_CONFIG = {
     },
     "prices_eur": {"5x7": 19},
     "aspect_ratio_groups": {"primary": ["8x12", "A3", "A2", "A1"], "5x7": ["5x7"], "10x24": ["10x24"]},
+    "etsy_shipping_profile_id": {"primary": "287910565714", "5x7": "287910553824", "10x24": "287910565714"},
 }
 
 

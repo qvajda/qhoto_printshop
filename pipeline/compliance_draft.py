@@ -31,11 +31,13 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
 
 
 def resolve_compliance_metadata(static_config: dict) -> dict:
+    # shipping_profile_id is NOT resolved here: it varies per aspect-ratio group (Etsy allows
+    # only one shipping profile per listing, and a candidate's groups can span both Etsy
+    # shipping tiers), so it's looked up per-size at publish time instead, not stored here.
     return {
         "who_made": static_config["etsy_who_made"],
         "production_partner_ids": static_config["etsy_production_partner_ids"],
         "taxonomy_id": static_config["etsy_taxonomy_id"],
-        "shipping_profile_id": static_config["etsy_shipping_profile_id"],
     }
 
 
@@ -103,7 +105,7 @@ def write_listing_texts(conn, candidate_id: int, draft: dict, metadata: dict, *,
         (
             candidate_id, draft["title"], json.dumps(draft["tags"]), draft["description"], DISCLOSURE_TEXT,
             metadata["who_made"], json.dumps(metadata["production_partner_ids"]),
-            metadata["taxonomy_id"], metadata["shipping_profile_id"], timestamp,
+            metadata["taxonomy_id"], "", timestamp,
         ),
     )
     conn.commit()

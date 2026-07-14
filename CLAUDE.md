@@ -87,21 +87,28 @@ prices below are final, not placeholders)
   resolved via live `getSellerTaxonomyNodes`; Etsy has no plain
   "Posters"/"Wall Art" leaf, this parent node was chosen over
   "Art & Collectibles > Prints > Giclée" (id 121) as the better fit)
-- Etsy shipping_profile_id: **not filled yet — needs a per-size mapping,
-  not a single ID.** Gelato auto-created ~49 shipping profiles on
-  connecting to the shop; product line is confirmed **unframed** premium
-  matte posters (matches the cost-reference CSV and business layer — the
-  earlier framed_poster_mounted Gelato test call in
+- Etsy shipping_profile_id: **resolved, mapped per aspect-ratio group, not
+  per size.** Gelato auto-created ~49 shipping profiles on connecting to
+  the shop; product line is confirmed **unframed** premium matte posters
+  (matches the cost-reference CSV and business layer — the earlier
+  framed_poster_mounted Gelato test call in
   `docs/gelato_call_response_example_from_manual_tests.txt` was an early
   exploratory API test, not the real product). The matching family is
-  plain **"Posters"**, but it only has two size tiers, not six or three:
-  `287910553824` ("Small Posters", €12.44 shipping) and `287910565714`
-  ("Large Posters", €14.55 shipping) — no Medium tier exists for this
-  family. Coding-session TODO: restructure `etsy_shipping_profile_id` in
-  `config/static_config.json` into a per-size mapping (same shape as
-  `gelato_templates`), decide which of the 6 sizes (5x7, 8x12, A3, A2,
-  10x24, A1) map to Small vs Large, and update `pipeline/config.py`'s
-  reader to match.
+  plain **"Posters"**, with two tiers: `287910553824` ("Small Posters",
+  €12.44 shipping) and `287910565714` ("Large Posters", €14.55 shipping)
+  — no Medium tier exists for this family. Etsy allows only **one**
+  shipping profile per listing, and each listing is an aspect-ratio
+  group (not a single size), so the assignment is per-group, rounded up
+  to the group's largest size: Gelato's packaging threshold is A4 (up to
+  A4 ships flat, larger ships in a tube) — only 5x7 (13×18cm) is at/under
+  that, so **5x7 group → Small (`287910553824`)**; **primary group
+  (8x12/A3/A2/A1) → Large (`287910565714`)**; **10x24 group → Large
+  (`287910565714`)**. `config/static_config.json`'s `etsy_shipping_profile_id`
+  is now a per-group-type dict (keys match `aspect_ratio_groups`);
+  `pipeline/config.py` exposes `get_group_type_for_size()` and
+  `get_shipping_profile_id()` to resolve it at publish time (per size,
+  per listing draft), not at compliance-draft time (a candidate's groups
+  can span both tiers, so it's never a single per-candidate value).
 - Etsy production_partner_ids (Gelato): **[5717252]** — resolved via live
   `getShopProductionPartners` after Gelato was manually added as a
   production partner in Shop Manager → Settings → Partners you work
@@ -114,6 +121,12 @@ prices below are final, not placeholders)
   and `when_made: "made_to_order"` on every `createDraftListing` call
   (required together, not stored here since they're fixed per-call
   values, not IDs to resolve).
+- Etsy shop_section_id: **59380312** — manually created "Posters" section
+  in Shop Manager (per spec section 1's dedicated-section note); every
+  `createDraftListing` call sends this via `shop_section_id`, shared
+  across all groups/sizes for a candidate (`config/static_config.json`'s
+  `etsy_shop_section_id`, wired into `build_size_listing_data()` in
+  `pipeline/publish_primary_group.py`, reused by `publish_group.py`).
 - Shop listing currency: **EUR** (resolved, spec section 1)
 
 ## Conventions

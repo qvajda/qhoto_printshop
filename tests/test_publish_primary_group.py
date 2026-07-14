@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+import pipeline.config as config
 import pipeline.db as db
 import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
@@ -183,6 +184,7 @@ def test_build_size_listing_data_appends_size_suffix_for_secondary_sizes():
     assert data["is_supply"] is False
     assert data["taxonomy_id"] == "1027"
     assert data["production_partner_ids"] == [5717252]
+    assert data["shop_section_id"] == config.load_static_config()["etsy_shop_section_id"]
 
 
 def test_build_size_listing_data_appends_size_suffix_for_5x7_and_10x24():
@@ -237,6 +239,7 @@ STATIC_CONFIG = {
     },
     "prices_eur": {"8x12": 24, "A3": 35, "A2": 39, "A1": 49},
     "aspect_ratio_groups": {"primary": ["8x12", "A3", "A2", "A1"], "5x7": ["5x7"], "10x24": ["10x24"]},
+    "etsy_shipping_profile_id": {"primary": "287910565714", "5x7": "287910553824", "10x24": "287910565714"},
 }
 
 

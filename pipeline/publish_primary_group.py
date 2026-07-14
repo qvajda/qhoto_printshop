@@ -70,10 +70,15 @@ def record_decision(conn, group_id, decision, decision_notes=None, *, now=None) 
     conn.commit()
 
 
-def build_size_listing_data(listing_text: dict, size: str, price_eur: float) -> dict:
+def build_size_listing_data(listing_text: dict, size: str, price_eur: float, static_config: dict = None) -> dict:
+    static_config = static_config if static_config is not None else config.load_static_config()
     tags = json.loads(listing_text["tags"])
     title = f"{listing_text['title']}{SIZE_TITLE_SUFFIXES[size]}"
     compliance_draft.validate_listing_text(title, tags)
+    # Etsy allows only one shipping profile per listing, and a size's group can straddle
+    # both Etsy shipping tiers, so this is resolved per aspect-ratio group, not per candidate.
+    group_type = config.get_group_type_for_size(static_config, size)
+    shipping_profile_id = config.get_shipping_profile_id(static_config, group_type)
     return {
         "title": title,
         "description": listing_text["description"],
@@ -83,7 +88,8 @@ def build_size_listing_data(listing_text: dict, size: str, price_eur: float) -> 
         "when_made": "made_to_order",
         "is_supply": False,
         "taxonomy_id": listing_text["taxonomy_id"],
-        "shipping_profile_id": listing_text["shipping_profile_id"],
+        "shipping_profile_id": shipping_profile_id,
+        "shop_section_id": static_config["etsy_shop_section_id"],
         "production_partner_ids": json.loads(listing_text["production_partner_ids"]),
         "tags": tags,
     }
@@ -151,9 +157,10 @@ def create_gelato_product(conn, group_product_id, candidate, static_config, size
     return gelato_product_id
 
 
-def publish_to_etsy(conn, group_product_id, candidate_id, size, price_eur, *, shop_id=None,
-                     etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
+def publish_to_etsy(conn, group_product_id, candidate_id, size, price_eur, *, static_config=None,
+                     shop_id=None, etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
                      dry_run=None, now=None) -> str:
+    static_config = static_config if static_config is not None else config.load_static_config()
     if dry_run is None:
         dry_run = not config.is_live_mode("ETSY")
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
@@ -175,7 +182,7 @@ def publish_to_etsy(conn, group_product_id, candidate_id, size, price_eur, *, sh
     if existing_row is not None and existing_row["etsy_listing_id"] is not None:
         listing_id = existing_row["etsy_listing_id"]
     else:
-        listing_data = build_size_listing_data(dict(listing_text_row), size, price_eur)
+        listing_data = build_size_listing_data(dict(listing_text_row), size, price_eur, static_config)
         draft = etsy_client.create_draft_listing(
             shop_id, listing_data, api_key=etsy_api_key, api_secret=etsy_api_secret,
             access_token=etsy_access_token, dry_run=dry_run,
@@ -225,8 +232,9 @@ def publish_group_product(conn, group_product_id, candidate, static_config, *, s
             )
         return publish_to_etsy(
             conn, group_product_id, candidate["id"], row["size"], row["price_eur"],
-            shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
-            etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
+            static_config=static_config, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            dry_run=dry_run, now=now,
         )
 
     try:

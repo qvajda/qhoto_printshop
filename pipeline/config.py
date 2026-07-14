@@ -56,5 +56,21 @@ def get_template_variant(static_config: dict, size: str, orientation: str) -> di
     return static_config["gelato_templates"][key]
 
 
+def get_group_type_for_size(static_config: dict, size: str) -> str:
+    for group_type, sizes in static_config["aspect_ratio_groups"].items():
+        if size in sizes:
+            return group_type
+    raise MissingConfigError(f"No aspect_ratio_group contains size {size!r}")
+
+
+def get_shipping_profile_id(static_config: dict, group_type: str) -> str:
+    profile_id = static_config["etsy_shipping_profile_id"][group_type]
+    if not profile_id:
+        raise MissingConfigError(
+            f"etsy_shipping_profile_id for group {group_type!r} is not set"
+        )
+    return profile_id
+
+
 def is_live_mode(service: str) -> bool:
     return os.environ.get(f"{service}_LIVE_MODE") == "true"

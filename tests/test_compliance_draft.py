@@ -74,7 +74,6 @@ def test_resolve_compliance_metadata_reads_static_config_fields():
         "who_made": "i_did",
         "production_partner_ids": [5717252],
         "taxonomy_id": "1027",
-        "shipping_profile_id": "",
     }
 
 
