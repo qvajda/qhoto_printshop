@@ -98,9 +98,6 @@ def run_group_critic_pass(conn, candidate_id: int, group_type: str, *, static_co
         attempt_number += 1
 
 
-GROUP_TYPES = ("5x7", "10x24")
-
-
 def run_group_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_api_key: str = None,
                                  store_id: str = None, gelato_api_key: str = None, now=None) -> list:
     static_config = static_config if static_config is not None else config.load_static_config()
