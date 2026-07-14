@@ -159,3 +159,52 @@ def test_handle_decision_approve_leaves_status_pending_review_on_publish_failure
     group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
     assert group_row["status"] == "pending_review"
     conn.close()
+
+
+def test_handle_decision_reject_deletes_product_and_marks_group_rejected(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
+
+    with patch("pipeline.publish_group.critic_pass.gelato_client.delete_product") as mock_delete:
+        result = publish_group.handle_decision(
+            conn, candidate_id, group_id, "reject", "not vibing with this crop",
+            now=datetime(2026, 7, 13, 12, 0, 0),
+        )
+
+    mock_delete.assert_called_once_with("gelato_5x7", store_id=None, api_key=None)
+    assert result["action"] == "reject"
+
+    group_row = conn.execute(
+        "SELECT decision, decision_notes, status FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()
+    assert group_row["decision"] == "rejected"
+    assert group_row["decision_notes"] == "not vibing with this crop"
+    assert group_row["status"] == "rejected"
+
+    assert conn.execute(
+        "SELECT * FROM group_products WHERE id = ?", (gp_id,)
+    ).fetchone() is None
+
+    candidate_row = conn.execute(
+        "SELECT status FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "primary_review"  # untouched
+    conn.close()
+
+
+def test_handle_decision_reject_with_no_live_product_still_marks_rejected(tmp_path):
+    # e.g. the group's product already failed publish earlier and was never recreated —
+    # reject should still record the decision without requiring a live Gelato product to delete.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id, "5x7", status="pending_review")
+
+    with patch("pipeline.publish_group.critic_pass.gelato_client.delete_product") as mock_delete:
+        result = publish_group.handle_decision(conn, candidate_id, group_id, "reject")
+
+    mock_delete.assert_not_called()
+    assert result["action"] == "reject"
+    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["status"] == "rejected"
+    conn.close()
