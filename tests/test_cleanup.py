@@ -103,3 +103,42 @@ def test_cleanup_orphaned_continues_past_delete_failure(tmp_path):
     row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
     assert row["status"] == "created"  # untouched, retried next run
     conn.close()
+
+
+def _insert_telegram_event(conn, *, received_at):
+    cursor = conn.execute(
+        "INSERT INTO telegram_events_log (received_at, telegram_user_id, raw_payload, accepted) "
+        "VALUES (?, '111', '{}', 1)",
+        (received_at,),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def test_prune_telegram_events_log_deletes_rows_older_than_retention(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    old_id = _insert_telegram_event(conn, received_at="2026-06-01T09:00:00")
+    new_id = _insert_telegram_event(conn, received_at="2026-07-10T09:00:00")
+
+    count = cleanup.prune_telegram_events_log(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert count == 1
+    remaining_ids = [
+        row["id"] for row in conn.execute("SELECT id FROM telegram_events_log").fetchall()
+    ]
+    assert remaining_ids == [new_id]
+    conn.close()
+
+
+def test_prune_telegram_events_log_keeps_rows_within_retention(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_telegram_event(conn, received_at="2026-07-01T09:00:00")
+
+    count = cleanup.prune_telegram_events_log(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert count == 0
+    conn.close()

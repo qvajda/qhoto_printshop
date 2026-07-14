@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pipeline.gelato_client as gelato_client
 
@@ -30,3 +30,11 @@ def cleanup_orphaned_gelato_products(conn, *, store_id=None, api_key=None, now=N
         conn.commit()
         deleted.append(row["id"])
     return deleted
+
+
+def prune_telegram_events_log(conn, *, retention_days=30, now=None) -> int:
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = (now - timedelta(days=retention_days)).isoformat()
+    cursor = conn.execute("DELETE FROM telegram_events_log WHERE received_at < ?", (cutoff,))
+    conn.commit()
+    return cursor.rowcount
