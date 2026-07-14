@@ -94,3 +94,16 @@ def prune_stale_candidates(conn, *, retention_days=30, now=None) -> list:
         conn.commit()
         pruned.append(candidate_id)
     return pruned
+
+
+def run_cleanup(conn, *, store_id=None, gelato_api_key=None, retention_days=30, now=None) -> dict:
+    gelato_deleted = cleanup_orphaned_gelato_products(
+        conn, store_id=store_id, api_key=gelato_api_key, now=now
+    )
+    candidates_pruned = prune_stale_candidates(conn, retention_days=retention_days, now=now)
+    events_pruned = prune_telegram_events_log(conn, retention_days=retention_days, now=now)
+    return {
+        "gelato_products_deleted": gelato_deleted,
+        "candidates_pruned": candidates_pruned,
+        "telegram_events_pruned": events_pruned,
+    }

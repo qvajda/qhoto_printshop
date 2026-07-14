@@ -248,3 +248,31 @@ def test_prune_stale_candidates_skips_candidate_newer_than_cutoff(tmp_path):
 
     assert result == []
     conn.close()
+
+
+def test_run_cleanup_calls_all_three_and_returns_summary(tmp_path):
+    conn = _fresh_conn(tmp_path)
+
+    # orphaned Gelato product
+    orphan_candidate_id = _insert_candidate(conn, status="failed", updated_at="2026-07-13T09:00:00")
+    orphan_group_id = _insert_group(conn, orphan_candidate_id, status="rejected")
+    orphan_gp_id = _insert_group_product(conn, orphan_group_id, gelato_product_id="gelato_orphan", status="created")
+
+    # stale candidate eligible for pruning (no live Gelato product)
+    stale_candidate_id, _, _ = _insert_full_candidate_tree(
+        conn, updated_at="2026-06-01T09:00:00", group_product_status="deleted"
+    )
+
+    # stale telegram event
+    _insert_telegram_event(conn, received_at="2026-06-01T09:00:00")
+
+    with patch("pipeline.cleanup.gelato_client.delete_product") as mock_delete:
+        result = cleanup.run_cleanup(conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0))
+
+    mock_delete.assert_called_once_with("gelato_orphan", store_id=None, api_key=None)
+    assert result == {
+        "gelato_products_deleted": [orphan_gp_id],
+        "candidates_pruned": [stale_candidate_id],
+        "telegram_events_pruned": 1,
+    }
+    conn.close()
