@@ -208,3 +208,64 @@ def test_handle_decision_reject_with_no_live_product_still_marks_rejected(tmp_pa
     group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
     assert group_row["status"] == "rejected"
     conn.close()
+
+
+def test_handle_decision_edit_discards_product_and_attempts_leaves_status_alone(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
+    publish_primary_group.critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": True, "reason": "meets rubric"},
+        now=datetime(2026, 7, 13, 9, 20, 0),
+    )
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) "
+        "VALUES (?, 202, '987654321', '2026-07-13T09:15:00')",
+        (group_id,),
+    )
+    conn.commit()
+
+    with patch("pipeline.publish_group.critic_pass.gelato_client.delete_product") as mock_delete:
+        result = publish_group.handle_decision(
+            conn, candidate_id, group_id, "edit", "crop feels too tight",
+            now=datetime(2026, 7, 13, 12, 0, 0),
+        )
+
+    mock_delete.assert_called_once_with("gelato_5x7", store_id=None, api_key=None)
+    assert result["action"] == "edit"
+
+    assert conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
+
+    group_row = conn.execute(
+        "SELECT decision, decision_notes, status FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()
+    assert group_row["decision"] == "edited"
+    assert group_row["decision_notes"] == "crop feels too tight"
+    assert group_row["status"] == "pending_review"  # left as-is, confirmed with user
+    conn.close()
+
+
+def test_handle_decision_edit_with_no_live_product_still_clears_attempts_and_messages(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id, "5x7", status="pending_review")
+    publish_primary_group.critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": False, "reason": "off-center"},
+        now=datetime(2026, 7, 13, 9, 20, 0),
+    )
+
+    with patch("pipeline.publish_group.critic_pass.gelato_client.delete_product") as mock_delete:
+        result = publish_group.handle_decision(conn, candidate_id, group_id, "edit")
+
+    mock_delete.assert_not_called()
+    assert result["action"] == "edit"
+    assert conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
+    conn.close()
