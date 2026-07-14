@@ -9,6 +9,7 @@ import pipeline.gelato_client as gelato_client
 import pipeline.generate as generate
 import pipeline.http as http
 import pipeline.primary_mockup as primary_mockup
+import pipeline.publish_group as publish_group
 import pipeline.telegram_client as telegram_client
 
 
@@ -427,20 +428,28 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
         return None
 
     group_row = conn.execute(
-        "SELECT candidate_id FROM groups WHERE id = ?", (parsed["group_id"],)
+        "SELECT candidate_id, group_type FROM groups WHERE id = ?", (parsed["group_id"],)
     ).fetchone()
     candidate_id = group_row["candidate_id"]
 
     log_telegram_event(conn, parsed["telegram_user_id"], update, True, parsed["action"], now=now)
     telegram_client.answer_callback_query(parsed["callback_query_id"], bot_token=bot_token)
 
-    result = handle_decision(
-        conn, candidate_id, parsed["group_id"], parsed["action"], static_config=static_config,
-        store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
-        etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-        replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
-        dry_run=dry_run, now=now,
-    )
+    if group_row["group_type"] == "primary":
+        result = handle_decision(
+            conn, candidate_id, parsed["group_id"], parsed["action"], static_config=static_config,
+            store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
+            dry_run=dry_run, now=now,
+        )
+    else:
+        result = publish_group.handle_decision(
+            conn, candidate_id, parsed["group_id"], parsed["action"], static_config=static_config,
+            store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            dry_run=dry_run, now=now,
+        )
     return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
 
 

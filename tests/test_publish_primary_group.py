@@ -1018,6 +1018,63 @@ def test_process_update_accepts_admin_callback_and_calls_handle_decision(tmp_pat
     conn.close()
 
 
+def test_process_update_routes_5x7_group_to_publish_group_handle_decision(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (?, '5x7', 'pending_review', '2026-07-13T09:05:00', '2026-07-13T09:05:00')",
+        (candidate_id,),
+    ).lastrowid
+    conn.commit()
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(
+        user_id=987654321, data=f"approve:{group_id}", message_id=202, chat_id=987654321,
+        callback_id="cbq2",
+    )
+
+    with patch("pipeline.publish_group.handle_decision",
+               return_value={"action": "approve", "listing_id": "listing_999"}) as mock_group_handle, \
+         patch("pipeline.publish_primary_group.handle_decision") as mock_primary_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 13, 13, 0, 0),
+        )
+
+    mock_primary_handle.assert_not_called()
+    mock_group_handle.assert_called_once()
+    assert mock_group_handle.call_args.args[:3] == (conn, candidate_id, group_id)
+    assert mock_group_handle.call_args.args[3] == "approve"
+    assert result == {"candidate_id": candidate_id, "group_id": group_id,
+                       "action": "approve", "listing_id": "listing_999"}
+    conn.close()
+
+
+def test_process_update_still_routes_primary_group_to_own_handle_decision(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(
+        user_id=987654321, data=f"approve:{group_id}", message_id=202, chat_id=987654321,
+        callback_id="cbq3",
+    )
+
+    with patch("pipeline.publish_group.handle_decision") as mock_group_handle, \
+         patch("pipeline.publish_primary_group.handle_decision",
+               return_value={"action": "approve", "results": {"8x12": "published"}}) as mock_primary_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 13, 13, 0, 0),
+        )
+
+    mock_group_handle.assert_not_called()
+    mock_primary_handle.assert_called_once()
+    assert result == {"candidate_id": candidate_id, "group_id": group_id,
+                       "action": "approve", "results": {"8x12": "published"}}
+    conn.close()
+
+
 def test_process_update_returns_none_for_non_callback_update(tmp_path):
     conn = _fresh_conn(tmp_path)
     update = {"update_id": 1, "message": {"text": "/research botanical"}}
