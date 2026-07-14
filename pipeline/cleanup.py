@@ -38,3 +38,59 @@ def prune_telegram_events_log(conn, *, retention_days=30, now=None) -> int:
     cursor = conn.execute("DELETE FROM telegram_events_log WHERE received_at < ?", (cutoff,))
     conn.commit()
     return cursor.rowcount
+
+
+def prune_stale_candidates(conn, *, retention_days=30, now=None) -> list:
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = (now - timedelta(days=retention_days)).isoformat()
+    rows = conn.execute(
+        """
+        SELECT id FROM candidates
+        WHERE status IN ('failed', 'abandoned', 'completed')
+          AND updated_at < ?
+          AND id NOT IN (
+            SELECT g.candidate_id
+            FROM groups g
+            JOIN group_products gp ON gp.group_id = g.id
+            WHERE gp.gelato_product_id IS NOT NULL AND gp.status != 'deleted'
+          )
+        """,
+        (cutoff,),
+    ).fetchall()
+
+    pruned = []
+    for row in rows:
+        candidate_id = row["id"]
+        conn.execute(
+            "DELETE FROM listing_metrics_snapshots WHERE group_product_id IN "
+            "(SELECT id FROM group_products WHERE group_id IN "
+            "(SELECT id FROM groups WHERE candidate_id = ?))",
+            (candidate_id,),
+        )
+        conn.execute(
+            "DELETE FROM product_images WHERE group_product_id IN "
+            "(SELECT id FROM group_products WHERE group_id IN "
+            "(SELECT id FROM groups WHERE candidate_id = ?))",
+            (candidate_id,),
+        )
+        conn.execute(
+            "DELETE FROM group_products WHERE group_id IN "
+            "(SELECT id FROM groups WHERE candidate_id = ?)",
+            (candidate_id,),
+        )
+        conn.execute(
+            "DELETE FROM critic_pass_attempts WHERE group_id IN "
+            "(SELECT id FROM groups WHERE candidate_id = ?)",
+            (candidate_id,),
+        )
+        conn.execute(
+            "DELETE FROM group_messages WHERE group_id IN "
+            "(SELECT id FROM groups WHERE candidate_id = ?)",
+            (candidate_id,),
+        )
+        conn.execute("DELETE FROM groups WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM candidates WHERE id = ?", (candidate_id,))
+        conn.commit()
+        pruned.append(candidate_id)
+    return pruned

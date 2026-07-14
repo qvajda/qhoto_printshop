@@ -142,3 +142,109 @@ def test_prune_telegram_events_log_keeps_rows_within_retention(tmp_path):
 
     assert count == 0
     conn.close()
+
+
+def _insert_full_candidate_tree(conn, *, candidate_status="failed", updated_at="2026-06-01T09:00:00",
+                                 group_product_status="deleted", gelato_product_id=None):
+    candidate_id = _insert_candidate(conn, status=candidate_status, updated_at=updated_at)
+    group_id = _insert_group(conn, candidate_id, status="failed_abandoned")
+    gp_id = _insert_group_product(
+        conn, group_id, gelato_product_id=gelato_product_id, status=group_product_status
+    )
+    conn.execute(
+        "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+        "VALUES (?, 'https://x/y.jpg', '', 0, 'flat_mockup')",
+        (gp_id,),
+    )
+    conn.execute(
+        "INSERT INTO listing_metrics_snapshots (group_product_id, snapshot_date, views, num_favorers, orders_count) "
+        "VALUES (?, '2026-06-02', 10, 1, 0)",
+        (gp_id,),
+    )
+    conn.execute(
+        "INSERT INTO critic_pass_attempts (group_id, attempt_number, passed, created_at) "
+        "VALUES (?, 1, 1, '2026-06-01T09:06:00')",
+        (group_id,),
+    )
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) "
+        "VALUES (?, 555, '111', '2026-06-01T09:07:00')",
+        (group_id,),
+    )
+    conn.execute(
+        "INSERT INTO listing_texts (candidate_id, title, tags, description, disclosure_text, "
+        "who_made, production_partner_ids, taxonomy_id, shipping_profile_id, created_at) "
+        "VALUES (?, 't', '[]', 'd', 'disc', 'i_did', '[5717252]', '1027', '', '2026-06-01T09:01:00')",
+        (candidate_id,),
+    )
+    conn.commit()
+    return candidate_id, group_id, gp_id
+
+
+def test_prune_stale_candidates_cascade_deletes_eligible_candidate(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id, group_id, gp_id = _insert_full_candidate_tree(conn)
+
+    result = cleanup.prune_stale_candidates(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert result == [candidate_id]
+    assert conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone() is None
+    assert conn.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone() is None
+    assert conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM listing_metrics_snapshots WHERE group_product_id = ?", (gp_id,)
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (group_id,)
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone() is None
+    conn.close()
+
+
+def test_prune_stale_candidates_skips_candidate_with_live_gelato_product(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id, _, _ = _insert_full_candidate_tree(
+        conn, group_product_status="publish_failed", gelato_product_id="still_live"
+    )
+
+    result = cleanup.prune_stale_candidates(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert result == []
+    assert conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone() is not None
+    conn.close()
+
+
+def test_prune_stale_candidates_skips_non_terminal_status(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="primary_review", updated_at="2026-06-01T09:00:00")
+
+    result = cleanup.prune_stale_candidates(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert result == []
+    conn.close()
+
+
+def test_prune_stale_candidates_skips_candidate_newer_than_cutoff(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="completed", updated_at="2026-07-10T09:00:00")
+
+    result = cleanup.prune_stale_candidates(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert result == []
+    conn.close()
