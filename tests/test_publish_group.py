@@ -269,3 +269,13 @@ def test_handle_decision_edit_with_no_live_product_still_clears_attempts_and_mes
         "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
     ).fetchall() == []
     conn.close()
+
+
+def test_handle_decision_raises_on_unknown_action(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, _ = _insert_ready_5x7_group(conn, candidate_id)
+
+    with pytest.raises(ValueError, match="Unknown action"):
+        publish_group.handle_decision(conn, candidate_id, group_id, "snooze")
+    conn.close()
