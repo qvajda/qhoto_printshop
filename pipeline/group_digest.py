@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pipeline.config as config
@@ -32,3 +33,16 @@ def get_group_gallery_urls(conn, group_id: int) -> list:
         (group_id,),
     ).fetchall()
     return [row["image_url"] for row in rows]
+
+
+def build_group_digest_message_text(candidate_id: int, group_id: int, group_type: str,
+                                     listing_text: dict, price_eur: float) -> str:
+    tags = ", ".join(json.loads(listing_text["tags"]))
+    return (
+        f"Candidate #{candidate_id} — {group_type} group (#{group_id})\n\n"
+        f"{listing_text['title']}\n\n"
+        f"{listing_text['description']}\n\n"
+        f"Tags: {tags}\n\n"
+        f"{listing_text['disclosure_text']}\n\n"
+        f"Price: €{price_eur}"
+    )

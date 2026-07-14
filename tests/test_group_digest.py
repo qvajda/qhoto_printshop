@@ -123,3 +123,23 @@ def test_get_group_gallery_urls_returns_ordered_urls(tmp_path):
         "https://gelato/flat.jpg", "https://gelato/life1.jpg", "https://gelato/life2.jpg",
     ]
     conn.close()
+
+
+def test_build_group_digest_message_text_includes_group_type_and_price():
+    listing_text = {
+        "title": "Monstera Line Art Botanical Print",
+        "tags": _json.dumps(["botanical", "wall art"]),
+        "description": "A minimalist botanical print.",
+        "disclosure_text": "AI disclosure text.",
+    }
+
+    text = group_digest.build_group_digest_message_text(7, 42, "5x7", listing_text, 19)
+
+    assert "Candidate #7" in text
+    assert "5x7 group" in text
+    assert "#42" in text
+    assert "Monstera Line Art Botanical Print" in text
+    assert "A minimalist botanical print." in text
+    assert "botanical, wall art" in text
+    assert "AI disclosure text." in text
+    assert "19" in text
