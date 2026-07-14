@@ -46,3 +46,32 @@ def build_group_digest_message_text(candidate_id: int, group_id: int, group_type
         f"{listing_text['disclosure_text']}\n\n"
         f"Price: €{price_eur}"
     )
+
+
+def send_group_digest(conn, group_id: int, *, static_config: dict = None,
+                       bot_token: str = None, chat_id: str = None, now=None) -> dict:
+    review_group = get_review_group(conn, group_id)
+    candidate_id = review_group["candidate_id"]
+    group_type = review_group["group_type"]
+    price_eur = review_group["price_eur"]
+
+    photo_urls = get_group_gallery_urls(conn, group_id)
+    listing_text = digest.get_listing_text(conn, candidate_id)
+    chat_id = chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")
+
+    telegram_client.send_media_group(chat_id, photo_urls, bot_token=bot_token)
+
+    text = build_group_digest_message_text(candidate_id, group_id, group_type, listing_text, price_eur)
+    reply_markup = digest.build_digest_keyboard(group_id)
+    response = telegram_client.send_message(chat_id, text, reply_markup, bot_token=bot_token)
+    telegram_message_id = response["result"]["message_id"]
+
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) VALUES (?, ?, ?, ?)",
+        (group_id, telegram_message_id, chat_id, timestamp),
+    )
+    conn.commit()
+
+    return {"candidate_id": candidate_id, "group_id": group_id,
+            "telegram_message_id": telegram_message_id}
