@@ -222,3 +222,102 @@ def test_send_group_digest_raises_and_writes_no_row_when_listing_text_missing(tm
     mock_message.assert_not_called()
     assert conn.execute("SELECT * FROM group_messages").fetchall() == []
     conn.close()
+
+
+def _insert_ready_group(conn, niche, group_type, size, *, price_eur=19):
+    candidate_id = _insert_candidate(conn, niche=niche)
+    group_id, _ = _insert_group_gallery(conn, candidate_id, group_type, size, price_eur=price_eur)
+    _insert_listing_text(conn, candidate_id, niche=niche)
+    _insert_critic_pass(conn, group_id, passed=1)
+    return candidate_id, group_id
+
+
+def test_run_group_digest_cycle_processes_critic_passed_groups(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _, ready_group_id = _insert_ready_group(conn, "monstera line art", "5x7", "5x7")
+
+    not_passed_candidate_id = _insert_candidate(conn, niche="pending crop")
+    not_passed_group_id, _ = _insert_group_gallery(conn, not_passed_candidate_id, "10x24", "10x24")
+    _insert_listing_text(conn, not_passed_candidate_id, niche="pending crop")
+    # no critic_pass_attempts row -> not yet critic-passed
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.group_digest.telegram_client.send_message",
+               return_value={"ok": True, "result": {"message_id": 1}}):
+        processed_ids = group_digest.run_group_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 14, 9, 30, 0),
+        )
+
+    assert processed_ids == [ready_group_id]
+    assert not_passed_group_id not in processed_ids
+    conn.close()
+
+
+def test_run_group_digest_cycle_skips_groups_already_digested(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _, group_id = _insert_ready_group(conn, "monstera line art", "5x7", "5x7")
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.group_digest.telegram_client.send_message",
+               return_value={"ok": True, "result": {"message_id": 1}}):
+        first_run = group_digest.run_group_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 14, 9, 30, 0),
+        )
+        second_run = group_digest.run_group_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 14, 10, 0, 0),
+        )
+
+    assert first_run == [group_id]
+    assert second_run == []
+    conn.close()
+
+
+def test_run_group_digest_cycle_isolates_per_group_failures(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _, failing_group_id = _insert_ready_group(conn, "saturated term", "5x7", "5x7")
+    _, succeeding_group_id = _insert_ready_group(conn, "moon phase print", "10x24", "10x24")
+
+    def fake_send_message(chat_id, text, reply_markup=None, *, bot_token=None):
+        if "saturated term" in text:
+            raise RuntimeError("Telegram throttled")
+        return {"ok": True, "result": {"message_id": 1}}
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.group_digest.telegram_client.send_message", side_effect=fake_send_message):
+        processed_ids = group_digest.run_group_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 14, 9, 30, 0),
+        )
+
+    assert processed_ids == [succeeding_group_id]
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (failing_group_id,)
+    ).fetchone() is None
+    conn.close()
+
+
+def test_run_group_digest_cycle_ignores_primary_groups(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    primary_group_id, _ = _insert_group_gallery(conn, candidate_id, "primary", "8x12", price_eur=24)
+    _insert_listing_text(conn, candidate_id)
+    _insert_critic_pass(conn, primary_group_id, passed=1)
+
+    processed_ids = group_digest.run_group_digest_cycle(
+        conn, bot_token="test-token", chat_id="admin-chat",
+    )
+
+    assert processed_ids == []
+    conn.close()
+
+
+def test_run_group_digest_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn, niche="pending one", status="generating")
+
+    processed_ids = group_digest.run_group_digest_cycle(conn, bot_token="test-token", chat_id="admin-chat")
+
+    assert processed_ids == []
+    conn.close()

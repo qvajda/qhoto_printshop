@@ -75,3 +75,33 @@ def send_group_digest(conn, group_id: int, *, static_config: dict = None,
 
     return {"candidate_id": candidate_id, "group_id": group_id,
             "telegram_message_id": telegram_message_id}
+
+
+def run_group_digest_cycle(conn, *, static_config: dict = None, bot_token: str = None,
+                            chat_id: str = None, now=None) -> list:
+    group_ids = [
+        row["id"] for row in conn.execute(
+            """
+            SELECT DISTINCT g.id
+            FROM groups g
+            JOIN group_products gp ON gp.group_id = g.id AND gp.status = 'created'
+            WHERE g.group_type IN ('5x7', '10x24')
+              AND g.status = 'pending_review'
+              AND g.id IN (SELECT group_id FROM critic_pass_attempts WHERE passed = 1)
+              AND g.id NOT IN (SELECT group_id FROM group_messages)
+            ORDER BY g.id
+            """
+        ).fetchall()
+    ]
+    processed_ids = []
+    for group_id in group_ids:
+        try:
+            send_group_digest(
+                conn, group_id, static_config=static_config,
+                bot_token=bot_token, chat_id=chat_id, now=now,
+            )
+        except Exception as exc:
+            print(f"send_group_digest failed for group {group_id}: {exc}")
+            continue
+        processed_ids.append(group_id)
+    return processed_ids
