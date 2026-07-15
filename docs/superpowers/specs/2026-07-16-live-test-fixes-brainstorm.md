@@ -230,28 +230,54 @@ API field to set." Downgraded from a build task to a verify-and-document task.
 - **Idempotency** is a recurring theme (items 3, 4, 7) — make Gelato create
   and Etsy patch safe to re-run; the pipeline is crash-and-retry by design.
 
-## Open questions (verify before/while implementing — do not guess APIs)
-1. **(Highest — gates the whole patch approach.)** How do we get the Etsy
-   `listing_id` after Gelato's async sync? `create_product_from_template`
-   returns only the Gelato product id (`gelato_client.py:88`). Is it
-   `externalId` on `get_product`, and how long until it populates? Items
-   7/8/9/10/11 all depend on this.
-2. Gelato: does `isVisibleInTheOnlineStore:False` prevent the Etsy listing
-   from appearing, or only hide it? What flag actually triggers the Etsy
-   sync/activate? (Gates item 3's approach a vs b.)
-3. **(Load-bearing for the review mechanic.)** Gelato: is there a mockup-
-   preview endpoint that does NOT create a store product? Digest images today
-   come only from creating a store product (`primary_mockup.py:83`,
-   `group_mockup.py:83`). If item 3 takes approach (a) and no such endpoint
-   exists, the review gate has no image to show. Must resolve before
-   committing item 3's direction — not late.
-4. Gelato: does create-from-template accept per-variant prices, or must price
-   be set via Etsy `updateListingInventory` post-sync? (Gates item 6/7 pricing.)
-5. Gelato: can the template placeholder be set to fill/cover in-dashboard,
-   avoiding a code crop step + image hosting entirely? (Gates item 5's laziest
-   path — strongly preferred since the code path needs new image hosting.)
-6. (Low, likely already answered — see item 9.) Confirm Etsy still has no
-   AI-tools API field; expect to keep the description disclosure.
+## Open questions — RESOLVED 2026-07-16 (live probes against real Gelato products from the 2026-07-15 smoke test, read-only GETs, no docs-guessing)
+
+1. **RESOLVED.** `externalId` on `get_product` IS the Etsy listing_id — confirmed
+   live on 3 real products (e.g. `b968d8c0-...` → `externalId: "4538498007"`,
+   `status: "active"`). It populates once the product's Gelato-side `status`
+   flips from `created`/`publishing_queued` to `active` and `publishedAt` is
+   set. **Delay is large: ~8 minutes** observed (`createdAt 20:55:31` →
+   `publishedAt 21:03:36` on one product; the other two matched). The
+   existing poll timeouts (60s, per item 4's root cause) are an order of
+   magnitude too short — this alone explains the create-succeeds/poll-times-
+   out/retry-duplicates bug. Each variant also carries its own `externalId`
+   (Etsy listing_inventory product id, e.g. `"33329749026"`) once connected.
+   Poll `get_product` with a long-backoff loop (minutes, not seconds) for the
+   patch step.
+2. **PARTIALLY RESOLVED, still a gap.** Per Gelato's own help docs: disabling
+   "Show Product To Store Visitors" (`isVisibleInTheOnlineStore: false`)
+   makes the product sync to Etsy as a **draft** in the shop's Listings →
+   Drafts tab, not a live/public listing — so the pre-review creation does
+   still "reach" Etsy (as a draft), just not publicly visible. **Unresolved:**
+   no update/publish endpoint was found (public docs, no dedicated page) that
+   flips an existing draft to live after approval — only the create-time
+   flag is documented. Approach (b) (item 3) is viable for "don't leak
+   publicly" but the mechanism to *promote* the draft to live on approval
+   still needs a concrete API call identified — flag this as the one
+   remaining unknown before implementing item 3; don't guess the endpoint,
+   confirm against a real create→approve cycle or Gelato support.
+3. **RESOLVED — no.** No mockup-preview-only endpoint exists; Gelato's own
+   docs/support content confirm create-from-template always creates a real
+   store product (variants/mockups render in the background after create).
+   Approach (a) for item 3 is dead; approach (b) is the only path.
+4. **RESOLVED (by evidence, not docs).** Neither the actual
+   `create_product_from_template` request body in `gelato_client.py` nor any
+   captured response (manual test file, live probes) carries a price field
+   anywhere in the variant/product shape. Price is not settable via
+   create-from-template — confirms item 6/7's plan: set price via Etsy
+   `updateListingInventory` during the patch step.
+5. **UNRESOLVED — needs a manual dashboard check, not an API answer.** The
+   live `get_template` response for the real portrait template has no
+   fit/fill/scale-mode field on `imagePlaceholders` (only `name`/`height`/
+   `width`/`printArea` in mm — which is useful: it gives the exact per-size
+   target box directly from the API instead of hardcoding ISO ratios). No
+   evidence either way on a dashboard-only fill/cover toggle; the user would
+   need to check the Gelato template editor directly. Given no confirmation,
+   proceed with the code-crop path (item 5) as the working default — don't
+   block on this.
+6. Not re-verified this session — CLAUDE.md/prior memory already confirmed no
+   AI-tools API field exists; no new evidence contradicts it. Keep the
+   description disclosure as-is.
 
 ## Suggested sequencing
 1. **SPEC v4.11 + CLAUDE.md update FIRST.** The "one listing per size" flow and
