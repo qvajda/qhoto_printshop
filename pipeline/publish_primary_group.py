@@ -128,7 +128,7 @@ def create_gelato_product(conn, group_product_id, candidate, static_config, size
 
     try:
         if response.get("_dry_run"):
-            images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
+            images = [{"fileUrl": response.get("previewUrl") or candidate["base_image_url"], "isPrimary": True}]
         else:
             product = primary_mockup.poll_until_ready(gelato_product_id, store_id=store_id, api_key=api_key)
             images = product["productImages"]
@@ -329,7 +329,12 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
             "UPDATE candidates SET status = 'completed', updated_at = ? WHERE id = ?",
             (timestamp, candidate_id),
         )
-        conn.commit()
+    else:
+        conn.execute(
+            "UPDATE groups SET status = 'publish_failed', updated_at = ? WHERE id = ?",
+            (timestamp, group_id),
+        )
+    conn.commit()
 
     return results
 
@@ -441,7 +446,6 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     candidate_id = group_row["candidate_id"]
 
     log_telegram_event(conn, parsed["telegram_user_id"], update, True, parsed["action"], now=now)
-    telegram_client.answer_callback_query(parsed["callback_query_id"], bot_token=bot_token)
 
     if group_row["group_type"] == "primary":
         result = handle_decision(
@@ -458,6 +462,15 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
             etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
             dry_run=dry_run, now=now,
         )
+
+    # The decision is already durably recorded above - a failure here (e.g. a stale/expired
+    # callback query) is just a lost "loading spinner" on the admin's tap, not a lost decision,
+    # so it must not raise past this point and roll back the offset advance.
+    try:
+        telegram_client.answer_callback_query(parsed["callback_query_id"], bot_token=bot_token)
+    except Exception as exc:
+        print(f"answer_callback_query failed for {parsed['callback_query_id']}: {exc}")
+
     return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
 
 

@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS groups (
   decision_notes TEXT,
   decided_at TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending_generation','pending_review','approved_published','rejected','failed_abandoned'
+    'pending_generation','pending_review','approved_published','rejected','failed_abandoned','publish_failed'
   )),
   failed_reason TEXT,
   created_at TEXT NOT NULL,

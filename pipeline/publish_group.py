@@ -31,12 +31,20 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
             conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
         )
 
-        listing_id = publish_primary_group.publish_group_product(
-            conn, group_product["id"], candidate, static_config, store_id=store_id,
-            gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
-            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-            dry_run=dry_run, now=now,
-        )
+        try:
+            listing_id = publish_primary_group.publish_group_product(
+                conn, group_product["id"], candidate, static_config, store_id=store_id,
+                gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+                etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+                dry_run=dry_run, now=now,
+            )
+        except Exception:
+            conn.execute(
+                "UPDATE groups SET status = 'publish_failed', updated_at = ? WHERE id = ?",
+                (timestamp, group_id),
+            )
+            conn.commit()
+            raise
 
         conn.execute(
             "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",

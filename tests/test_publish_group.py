@@ -144,7 +144,7 @@ def test_handle_decision_approve_raises_when_no_live_group_product(tmp_path):
     conn.close()
 
 
-def test_handle_decision_approve_leaves_status_pending_review_on_publish_failure(tmp_path):
+def test_handle_decision_approve_marks_group_publish_failed_on_publish_failure(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
@@ -158,7 +158,7 @@ def test_handle_decision_approve_leaves_status_pending_review_on_publish_failure
             )
 
     group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
-    assert group_row["status"] == "pending_review"
+    assert group_row["status"] == "publish_failed"
     conn.close()
 
 
