@@ -43,7 +43,7 @@ def test_build_prompt_appends_correction_note_when_retrying():
 
     prompt = generate.build_prompt(candidate, correction_note="composition was off-center")
 
-    assert "moon phase print" in prompt
+    assert "moon phase" in prompt
     assert "Previous attempt was rejected for: composition was off-center" in prompt
 
 
@@ -53,6 +53,32 @@ def test_build_prompt_omits_correction_note_when_not_retrying():
     prompt = generate.build_prompt(candidate)
 
     assert "Previous attempt was rejected" not in prompt
+
+
+def test_build_prompt_forces_flat_full_bleed_2d_art_with_no_scene_words():
+    candidate = {"niche": "monstera line art"}
+
+    prompt = generate.build_prompt(candidate)
+
+    for guardrail in ("flat 2d", "full-bleed", "fills the entire frame"):
+        assert guardrail in prompt.lower()
+    for banned in ("no frame", "no wall", "no room", "no mockup"):
+        assert banned in prompt.lower()
+
+
+def test_build_prompt_strips_scene_tokens_from_niche_before_injection():
+    candidate = {"niche": "botanical minimalist wall art - holiday_peak"}
+
+    prompt = generate.build_prompt(candidate)
+
+    assert "wall art" not in prompt.lower()
+    assert "holiday_peak" in prompt
+
+
+def test_sanitize_niche_removes_known_scene_tokens():
+    assert generate.sanitize_niche("mid-century botanical wall poster") == "mid-century botanical"
+    assert generate.sanitize_niche("nature wall décor print") == "nature"
+    assert generate.sanitize_niche("monstera line art") == "monstera line art"
 
 
 def test_generate_for_candidate_calls_replicate_and_writes_image_back(tmp_path):

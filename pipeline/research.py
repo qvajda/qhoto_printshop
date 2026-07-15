@@ -94,7 +94,7 @@ EVENT_WINDOWS_2026 = [
 def collect_event_lookahead() -> list:
     return [
         {
-            "niche": f"botanical/minimalist wall art - {window['name']}",
+            "niche": f"botanical/minimalist nature illustration - {window['name']}",
             "trend_source": f"event_lookahead:{window['name']}",
             "rationale": window["niche_note"],
             "window_start": window["start"],

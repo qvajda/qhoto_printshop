@@ -1,12 +1,34 @@
+import re
 from datetime import datetime, timezone
 
 import pipeline.replicate_client as replicate_client
 
 
 NICHE_STYLE_SCAFFOLD = (
-    "A minimalist botanical/nature wall art print: {niche}. Clean composition, soft "
-    "muted natural color palette, print-ready poster art, no text or watermarks."
+    "Flat 2D artwork, full-bleed, fills the entire frame edge to edge: {niche}. "
+    "Clean composition, soft muted natural color palette, print-ready art, no text "
+    "or watermarks. No frame, no border, no wall, no room, no mockup, no photograph "
+    "of a poster - this is the flat artwork itself, not a lifestyle photo of it hanging."
 )
+
+# The niche string is a *scene* leak vector - it can come from a hardcoded
+# research.py template, an LLM's free-text trend research, or a raw Telegram
+# /research topic, and any of those can carry "wall poster" / "wall art" /
+# "print" as a product-container word. FLUX.1 then renders the container (a
+# framed poster on a wall) instead of the flat art. Stripped here, once, at
+# the single point every niche funnels through before hitting the prompt -
+# not at each niche source.
+SCENE_TOKENS = sorted(
+    ("wall poster", "wall art", "wall décor", "wall decor", "framed poster", "poster", "print"),
+    key=len, reverse=True,
+)
+
+
+def sanitize_niche(niche: str) -> str:
+    result = niche
+    for token in SCENE_TOKENS:
+        result = re.sub(re.escape(token), "", result, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", result).strip(" -,")
 
 # Hard no-go list per SPEC_v4.10.md section 2 / CLAUDE.md - baked into generation
 # prompts as best-effort steering, not a guarantee. The critic pass (future stage)
@@ -19,7 +41,8 @@ NO_GO_LIST = (
 
 
 def build_prompt(candidate: dict, *, correction_note: str = None) -> str:
-    prompt = f"{NICHE_STYLE_SCAFFOLD.format(niche=candidate['niche'])} {NO_GO_LIST}"
+    niche = sanitize_niche(candidate['niche'])
+    prompt = f"{NICHE_STYLE_SCAFFOLD.format(niche=niche)} {NO_GO_LIST}"
     if correction_note:
         prompt += f" Previous attempt was rejected for: {correction_note}. Avoid this issue in the new image."
     return prompt
