@@ -1,8 +1,19 @@
 import json
+import re
 import urllib.request
 
 import pipeline.config as config
 import pipeline.http as http
+
+_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+
+
+def parse_json_response(text: str) -> dict:
+    """Parse a Claude text response as JSON, tolerating a ```json ... ``` fence
+    around it - despite "no other text" instructions, the model wraps its
+    answer in a markdown fence often enough that a bare json.loads is unreliable."""
+    match = _JSON_FENCE_RE.match(text.strip())
+    return json.loads(match.group(1) if match else text)
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_API_VERSION = "2023-06-01"

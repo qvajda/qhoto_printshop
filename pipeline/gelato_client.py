@@ -12,13 +12,16 @@ class GelatoPlaceholderTemplateError(Exception):
 
 
 def _headers(api_key: str) -> dict:
-    return {"X-API-KEY": api_key, "Content-Type": "application/json"}
+    return {
+        "X-API-KEY": api_key,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; qhoto-printshop-pipeline/1.0)",
+    }
 
 
-def get_template(template_id: str, *, store_id: str = None, api_key: str = None) -> dict:
+def get_template(template_id: str, *, api_key: str = None) -> dict:
     api_key = api_key or config.require_env("GELATO_API_KEY")
-    store_id = store_id or config.require_env("GELATO_STORE_ID")
-    url = f"{GELATO_API_BASE}/stores/{store_id}/templates/{template_id}"
+    url = f"{GELATO_API_BASE}/templates/{template_id}"
     request = urllib.request.Request(url, headers=_headers(api_key), method="GET")
     return http.send(request)
 

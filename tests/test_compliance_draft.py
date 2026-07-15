@@ -132,7 +132,7 @@ def test_build_draft_prompt_includes_niche_disclosure_and_limits():
 
     assert "monstera line art" in prompt
     assert compliance_draft.DISCLOSURE_TEXT in prompt
-    assert "140" in prompt
+    assert str(compliance_draft.MAX_DRAFT_TITLE_LENGTH) in prompt
     assert "13" in prompt
     assert "20" in prompt
     assert "flat_mockup, lifestyle" in prompt
@@ -334,7 +334,7 @@ def test_build_compliance_draft_marks_compliance_failed_when_claude_call_raises(
 def test_build_compliance_draft_marks_compliance_failed_on_validation_error(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
-    over_limit_title = "x" * 141
+    over_limit_title = "x" * (compliance_draft.MAX_DRAFT_TITLE_LENGTH + 1)
     fake_response = {
         "text": _json.dumps({
             "title": over_limit_title, "tags": ["botanical"], "description": "desc",
@@ -343,7 +343,7 @@ def test_build_compliance_draft_marks_compliance_failed_on_validation_error(tmp_
     }
 
     with patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_response):
-        with pytest.raises(ValueError, match="140"):
+        with pytest.raises(ValueError, match=str(compliance_draft.MAX_DRAFT_TITLE_LENGTH)):
             compliance_draft.build_compliance_draft(
                 conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
                 now=datetime(2026, 7, 10, 10, 0, 0),

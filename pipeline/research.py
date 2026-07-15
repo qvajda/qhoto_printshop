@@ -1,4 +1,3 @@
-import json
 import random
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -176,7 +175,7 @@ def _build_demand_checked_candidate(keyword: str, rationale: str, source_label: 
 
 def collect_trending_now(*, anthropic_api_key=None, etsy_api_key=None, etsy_api_secret=None) -> list:
     search_result = anthropic_client.research_web_search(TRENDING_NOW_PROMPT, api_key=anthropic_api_key)
-    keyword_ideas = json.loads(search_result["text"])
+    keyword_ideas = anthropic_client.parse_json_response(search_result["text"])
     return [
         _build_demand_checked_candidate(
             idea["keyword"], idea["rationale"], "trending_now",

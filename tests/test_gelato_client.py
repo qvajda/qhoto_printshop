@@ -17,9 +17,9 @@ def test_get_template_builds_correct_request():
         return {"id": "tpl_abc", "variants": []}
 
     with patch("pipeline.gelato_client.http.send", side_effect=fake_send):
-        result = gelato_client.get_template("tpl_abc", store_id="store1", api_key="key1")
+        result = gelato_client.get_template("tpl_abc", api_key="key1")
 
-    assert captured["url"] == "https://ecommerce.gelatoapis.com/v1/stores/store1/templates/tpl_abc"
+    assert captured["url"] == "https://ecommerce.gelatoapis.com/v1/templates/tpl_abc"
     assert captured["method"] == "GET"
     assert captured["api_key_header"] == "key1"
     assert result == {"id": "tpl_abc", "variants": []}

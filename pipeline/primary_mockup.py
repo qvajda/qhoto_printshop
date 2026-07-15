@@ -94,7 +94,7 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
 
         if response.get("_dry_run"):
             # In dry-run mode, synthesize a single flat mockup placeholder
-            preview_url = response.get("previewUrl") or "placeholder://dry-run-image"
+            preview_url = response.get("previewUrl") or candidate["base_image_url"]
             images = [{"fileUrl": preview_url, "isPrimary": True}]
         else:
             product = poll_until_ready(

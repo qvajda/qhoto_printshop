@@ -43,7 +43,6 @@ def build_group_digest_message_text(candidate_id: int, group_id: int, group_type
         f"{listing_text['title']}\n\n"
         f"{listing_text['description']}\n\n"
         f"Tags: {tags}\n\n"
-        f"{listing_text['disclosure_text']}\n\n"
         f"Price: €{price_eur}"
     )
 

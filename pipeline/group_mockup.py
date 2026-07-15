@@ -93,7 +93,7 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
         conn.commit()
 
         if response.get("_dry_run"):
-            images = [{"fileUrl": response.get("previewUrl") or "placeholder://dry-run-image", "isPrimary": True}]
+            images = [{"fileUrl": response.get("previewUrl") or candidate["base_image_url"], "isPrimary": True}]
         else:
             product = primary_mockup.poll_until_ready(
                 gelato_product_id, store_id=store_id, api_key=api_key,

@@ -1,8 +1,9 @@
 # Prompt — prototype mockup generator
 
 Paste into a fresh Claude session with image generation. It builds a
-3-phase prototype: extract style → generate/select scenes → emit PSD
-smart-object templates per size ratio and orientation.
+3-phase prototype: extract style → generate/select scenes → emit a
+self-hosted asset bundle (background + overlay + aperture JSON) per size
+ratio and orientation, ready for the Pillow/homography compositor.
 
 ---
 
@@ -29,36 +30,44 @@ for every scene:
 - Render at high resolution (long edge ≥ 2400 px).
 Present them as a labelled grid. I'll reply with the scene numbers I want to keep.
 
-**Phase 3 — Size/orientation set + PSD templates.**
+**Phase 3 — Size/orientation set + self-hosted asset bundles.**
 For each scene I select, produce the full matrix below — same scene, aperture
 re-shaped to each target ratio, in both orientations (skip landscape where a scene
 clearly can't support it, and tell me which you skipped and why):
 
 | Ratio key | Aspect (portrait W:H) | Covers |
 |---|---|---|
-| iso    | 1 : 1.414 | 8x12, A3, A2, A1 (and 5x7 — ~1% off, reuse unless I say otherwise) |
-| p5x7   | 5 : 7     | 5x7 only, if I ask for a dedicated set |
+| iso    | 1 : 1.414 | 8x12, A3, A2, A1 |
+| p5x7   | 5 : 7     | 5x7 (its own dedicated set) |
 | pano   | 5 : 12    | 10x24 panoramic |
 
 Orientations: `portrait` and `landscape` (swap W:H).
 
-Then package each variant as a **layered PSD mockup template** with:
-- a background raster layer (the scene),
-- a **smart-object layer named exactly `Design`**, transformed (warped to the four
-  magenta-aperture corners) so my artwork drops straight in,
-- the magenta fill removed/hidden behind the smart object.
+The renderer is self-hosted (Pillow + a homography warp) — **not** Photoshop and
+**not** a PSD-based tool — so package each variant as a flat **asset bundle**, not a
+PSD. Since image generation produces flat rasters, do the packaging with a **script
+you write and run**. Per variant, emit:
+- `background.png` — the scene with the poster region empty (fill it neutral; the
+  compositor pastes artwork over it).
+- `overlay.png` — a transparent-alpha layer holding everything that should sit *on
+  top* of the poster: cast shadows, highlights/glare, and any foreground object
+  (plant, frame edge). This is what sells the realism; derive it from the scene's
+  lighting. If a scene has no foreground occlusion, it's just the shadow/highlight
+  gradient on transparent.
+- `meta.json` — `{ "scene": "...", "ratio": "iso|p5x7|pano", "orientation":
+  "portrait|landscape", "aperture": [[x,y],[x,y],[x,y],[x,y]] (TL,TR,BR,BL, px),
+  "size": [w,h], "tag": "flat|lifestyle" }`. Detect the aperture corners from the
+  magenta quad.
+- `preview.png` — a flattened composite with a placeholder poster in the aperture,
+  so I can eyeball fit without running the pipeline.
 
-Since image generation produces flat rasters, not layered PSDs, do the packaging
-with a **script you write and run**: detect the magenta quad's four corner
-coordinates in each render, then assemble the PSD via `psd-tools` (or an equivalent
-you justify). For each variant output: the final PSD, a flattened PNG preview, and
-the detected corner coordinates. Name files
-`mockup_<scene>_<ratioKey>_<orientation>.psd`.
+Name each bundle folder `<scene>_<ratioKey>_<orientation>/`.
 
-Deliverables: the style DNA, the selected scenes, and a folder of PSD smart-object
-templates + PNG previews + a manifest (scene, ratio, orientation, corner coords,
-flat/lifestyle tag) ready to load into a Dynamic Mockups-style renderer.
+Deliverables: the style DNA, the selected scenes, and a folder of asset bundles
+(background + overlay + meta + preview per variant) plus a top-level manifest
+listing every bundle — ready to drop into the pipeline's
+`assets/mockups/<group>/<orientation>/` and render with Pillow.
 
 Constraints: original scenes only — do not imitate a specific photographer or brand.
-Ask me before assuming scene count, the flat-vs-lifestyle split, or whether 5x7 gets
-its own set.
+Target 10 scenes per set (3 flat + 7 lifestyle); 5x7 gets its own dedicated set.
+Ask me before deviating from those.

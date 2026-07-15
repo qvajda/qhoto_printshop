@@ -141,7 +141,10 @@ def test_get_listing_text_raises_when_missing(tmp_path):
     conn.close()
 
 
-def test_build_digest_message_text_includes_ids_title_tags_price_disclosure():
+def test_build_digest_message_text_includes_ids_title_tags_price():
+    # disclosure_text is NOT repeated here - it's already required to be woven into
+    # the description itself (see compliance_draft's prompt), so appending the raw
+    # disclosure_text field again would just duplicate it in the admin's digest message.
     listing_text = {
         "title": "Monstera Line Art Botanical Print",
         "tags": _json.dumps(["botanical", "wall art"]),
@@ -156,7 +159,7 @@ def test_build_digest_message_text_includes_ids_title_tags_price_disclosure():
     assert "Monstera Line Art Botanical Print" in text
     assert "A minimalist botanical print." in text
     assert "botanical, wall art" in text
-    assert "AI disclosure text." in text
+    assert "AI disclosure text." not in text
     assert "24" in text
 
 

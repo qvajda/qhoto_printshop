@@ -141,7 +141,7 @@ def test_build_group_digest_message_text_includes_group_type_and_price():
     assert "Monstera Line Art Botanical Print" in text
     assert "A minimalist botanical print." in text
     assert "botanical, wall art" in text
-    assert "AI disclosure text." in text
+    assert "AI disclosure text." not in text
     assert "19" in text
 
 

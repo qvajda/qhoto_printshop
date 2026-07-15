@@ -1,64 +1,64 @@
 {
   "gelato_templates": {
     "5x7_portrait": {
-      "template_id": "PLACEHOLDER_5x7_PORTRAIT",
-      "template_variant_id": "PLACEHOLDER_5x7_PORTRAIT_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_5x7_PORTRAIT_IMAGE_SLOT"
+      "template_id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+      "template_variant_id": "91514a4b-202a-4a1d-b487-aee90c57e960",
+      "image_placeholder_name": "003_flower_in_stream_madeira_color.JPG"
     },
     "5x7_landscape": {
-      "template_id": "PLACEHOLDER_5x7_LANDSCAPE",
-      "template_variant_id": "PLACEHOLDER_5x7_LANDSCAPE_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_5x7_LANDSCAPE_IMAGE_SLOT"
+      "template_id": "5a8ab628-fc92-4ecb-b487-2c6344d6c995",
+      "template_variant_id": "56211d46-85b8-4019-b0d2-009f6545fb42",
+      "image_placeholder_name": "009_boat_serene_bnw_scotland.JPG"
     },
     "8x12_portrait": {
-      "template_id": "PLACEHOLDER_8x12_PORTRAIT",
-      "template_variant_id": "PLACEHOLDER_8x12_PORTRAIT_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_8x12_PORTRAIT_IMAGE_SLOT"
+      "template_id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+      "template_variant_id": "a55fef92-c197-4ac1-b4e5-e0a41a805011",
+      "image_placeholder_name": "003_flower_in_stream_madeira_color.JPG"
     },
     "8x12_landscape": {
-      "template_id": "PLACEHOLDER_8x12_LANDSCAPE",
-      "template_variant_id": "PLACEHOLDER_8x12_LANDSCAPE_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_8x12_LANDSCAPE_IMAGE_SLOT"
+      "template_id": "5a8ab628-fc92-4ecb-b487-2c6344d6c995",
+      "template_variant_id": "dffeb7a6-d981-41fe-af1b-6ac6f4697c4b",
+      "image_placeholder_name": "009_boat_serene_bnw_scotland.JPG"
     },
     "A3_portrait": {
-      "template_id": "PLACEHOLDER_A3_PORTRAIT",
-      "template_variant_id": "PLACEHOLDER_A3_PORTRAIT_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_A3_PORTRAIT_IMAGE_SLOT"
+      "template_id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+      "template_variant_id": "5c1ef62e-432d-42c4-8c58-43c7454df43e",
+      "image_placeholder_name": "003_flower_in_stream_madeira_color.JPG"
     },
     "A3_landscape": {
-      "template_id": "PLACEHOLDER_A3_LANDSCAPE",
-      "template_variant_id": "PLACEHOLDER_A3_LANDSCAPE_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_A3_LANDSCAPE_IMAGE_SLOT"
+      "template_id": "5a8ab628-fc92-4ecb-b487-2c6344d6c995",
+      "template_variant_id": "d8f1f81c-22c2-47e0-b22f-63845b56b8da",
+      "image_placeholder_name": "009_boat_serene_bnw_scotland.JPG"
     },
     "A2_portrait": {
-      "template_id": "PLACEHOLDER_A2_PORTRAIT",
-      "template_variant_id": "PLACEHOLDER_A2_PORTRAIT_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_A2_PORTRAIT_IMAGE_SLOT"
+      "template_id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+      "template_variant_id": "7965e259-d5bd-404f-ac7f-ddcb422eccf6",
+      "image_placeholder_name": "003_flower_in_stream_madeira_color.JPG"
     },
     "A2_landscape": {
-      "template_id": "PLACEHOLDER_A2_LANDSCAPE",
-      "template_variant_id": "PLACEHOLDER_A2_LANDSCAPE_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_A2_LANDSCAPE_IMAGE_SLOT"
+      "template_id": "5a8ab628-fc92-4ecb-b487-2c6344d6c995",
+      "template_variant_id": "3565bf29-0559-43e6-b153-983717a5748a",
+      "image_placeholder_name": "009_boat_serene_bnw_scotland.JPG"
     },
     "10x24_portrait": {
-      "template_id": "PLACEHOLDER_10x24_PORTRAIT",
-      "template_variant_id": "PLACEHOLDER_10x24_PORTRAIT_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_10x24_PORTRAIT_IMAGE_SLOT"
+      "template_id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+      "template_variant_id": "be74451a-ff36-4108-9e8a-bc80cbb08b83",
+      "image_placeholder_name": "003_flower_in_stream_madeira_color.JPG"
     },
     "10x24_landscape": {
-      "template_id": "PLACEHOLDER_10x24_LANDSCAPE",
-      "template_variant_id": "PLACEHOLDER_10x24_LANDSCAPE_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_10x24_LANDSCAPE_IMAGE_SLOT"
+      "template_id": "5a8ab628-fc92-4ecb-b487-2c6344d6c995",
+      "template_variant_id": "d6136b4e-2512-4722-9720-12bfdd867aee",
+      "image_placeholder_name": "009_boat_serene_bnw_scotland.JPG"
     },
     "A1_portrait": {
-      "template_id": "PLACEHOLDER_A1_PORTRAIT",
-      "template_variant_id": "PLACEHOLDER_A1_PORTRAIT_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_A1_PORTRAIT_IMAGE_SLOT"
+      "template_id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+      "template_variant_id": "ffcd60b8-b32a-4535-85cb-f4af77938e90",
+      "image_placeholder_name": "003_flower_in_stream_madeira_color.JPG"
     },
     "A1_landscape": {
-      "template_id": "PLACEHOLDER_A1_LANDSCAPE",
-      "template_variant_id": "PLACEHOLDER_A1_LANDSCAPE_VARIANT",
-      "image_placeholder_name": "PLACEHOLDER_A1_LANDSCAPE_IMAGE_SLOT"
+      "template_id": "5a8ab628-fc92-4ecb-b487-2c6344d6c995",
+      "template_variant_id": "5deb0c4a-2660-4f28-b0be-b12c2e81ebdc",
+      "image_placeholder_name": "009_boat_serene_bnw_scotland.JPG"
     }
   },
   "prices_eur": {
