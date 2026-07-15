@@ -1,6 +1,9 @@
 # Etsy AI POD pipeline
 
-Full spec: SPEC_v4.10.md. Changelog/decision history: CHANGELOG.md.
+Full spec: docs/SPEC_v4.11.md (supersedes v4.10 — variant listings +
+Gelato-pushes-we-patch, post-first-live-run). Root-cause analysis of the live
+run's defects: docs/superpowers/specs/2026-07-16-live-test-fixes-brainstorm.md.
+Changelog/decision history: CHANGELOG.md.
 Gelato cost reference: gelato_premium_matte_poster_prices_BE_2026-07-05.csv.
 Shop currency: EUR. Read the relevant spec section before touching a
 pipeline stage — don't guess at behavior that's already specified.
@@ -11,6 +14,12 @@ pipeline stage — don't guess at behavior that's already specified.
   A design is only ever image-generated once — group-level crop/retry
   (below) reuses the same base image, it never triggers a new generation
   call.
+- **Generated image = flat full-bleed artwork, NOT a poster-in-a-room
+  render.** The prompt must force flat 2D art filling the frame (no frame,
+  border, wall, room, mockup) and the injected niche must be subject/style
+  only, never scene words like "wall poster". The first live run printed
+  lifestyle mockups *as* the artwork because of this — see spec section 3
+  step 2.
 - Runtime is discrete scheduled functions on two cron cadences (hourly
   Telegram poll, twice-daily batch) — not a persistent service, not one
   agent loop. One function per pipeline stage (research, generate,
@@ -28,24 +37,45 @@ pipeline stage — don't guess at behavior that's already specified.
   (abandoning the whole candidate); at the 5x7/10x24-group level it only
   abandons that one group — the design's already-published groups are
   untouched.
+- **One Etsy listing per aspect-ratio group, sizes are variants (v4.11).**
+  A group's sizes are Etsy variations of ONE listing, each at its own price
+  — not one listing per size. There are **2 Gelato multi-variant templates**
+  (portrait + landscape), sizes are the variants; a group's listing is one
+  Gelato product created with that group's size-variants in a single
+  `create-from-template` call.
+- **Etsy integration = Gelato pushes, we patch (v4.11).** The Gelato store is
+  Etsy-connected and auto-creates the listing. The pipeline must NOT create
+  Etsy listings itself (doing so collided with Gelato's push in the live
+  run). After Gelato's async sync, resolve the Etsy `listing_id` (Gelato
+  product `externalId`) and PATCH it (`updateListing` +
+  `updateListingInventory`) to set title/description/tags/section/partner/
+  who_made/per-variant price. Never call `create_draft_listing`.
+- **Gelato create must be idempotent.** Reuse a stored `gelato_product_id`
+  before creating; delete orphans on a failed-create retry. The live run
+  duplicated products (create succeeded, poll timed out, retry re-created).
+  Route all create paths through one shared create-or-reuse helper.
 - **Aspect-ratio-group review flow (the core mechanic — see spec section
   3, steps 6–7):**
   1. Only the primary size (21x29.7cm/8x12″) gets generated, critic-passed,
      and shown in the first digest entry.
-  2. On approval, the **primary group** (8x12″ + A3 + A2 + A1 — same ISO
-     aspect ratio, ~1:1.414) publishes immediately, all four, with **no
-     further review** — they render identically, just scaled.
+  2. On approval, the **primary group** (8x12″ + A3 + A2 + A1, ISO A-series
+     ratio) publishes immediately as ONE listing with those four sizes as
+     variants, **no further review** — same composition, just scaled (the
+     8x12/2:3 vs A-series 0.707 difference is a small crop, not a
+     re-composition).
   3. Independently, the **5x7 group** and the **10x24 group** (each a
-     genuinely different aspect ratio from the primary) each get their
-     own re-crop of the same approved artwork, their own critic pass, and
-     their own separate follow-up digest entry + Approve/Edit/Reject,
-     sent in the same evening run.
+     genuinely different aspect ratio) each get their own **cover-crop** of
+     the approved artwork (a real crop that fills the frame, never a
+     fit/letterbox — the live run's 10x24 white bars were a missing crop),
+     their own critic pass, and their own follow-up digest entry +
+     Approve/Edit/Reject, sent in the same evening run.
   4. A design can end up selling at 4, 5, or 6 sizes depending on whether
      the 5x7/10x24 groups each pass their own review — this is expected,
      not a bug.
 - Data storage is SQLite, not a flat file — one row per aspect-ratio group
-  per candidate, not one row per candidate (each group has its own
-  decision, critic-pass history, and Gelato/Etsy IDs).
+  per candidate, not one row per candidate; under v4.11 each group has ONE
+  Gelato product + ONE Etsy listing (sizes are variants), plus its own
+  decision and critic-pass history.
 - Static config (Gelato template IDs, Etsy taxonomy_id, shipping_profile_id,
   production_partner_ids, who_made value, Telegram admin/allowlist user ID)
   is resolved once and hardcoded/read from config — never discovered
@@ -59,30 +89,29 @@ pipeline stage — don't guess at behavior that's already specified.
   care as an API key — **read it from `.env` (e.g. `TELEGRAM_ADMIN_CHAT_ID`),
   never hardcode it in this file.** Unlike the Gelato/Etsy static IDs below,
   it's not project documentation, it's closer to a credential.
-- **Placeholder policy for Gelato template IDs:** it's expected that most
-  of the 12 template-ID slots below start out as placeholder strings
-  (real ones require a manual step in the Gelato dashboard). Build and
-  test everything against placeholders freely. The one rule: if a
-  still-placeholder templateId ever reaches a real (non-mocked)
+- **Placeholder policy for Gelato template IDs:** the template/variant slots
+  below (2 templates × 6 size-variants each) may start out as placeholder
+  strings (real ones require a manual step in the Gelato dashboard). Build
+  and test everything against placeholders freely. The one rule: if a
+  still-placeholder templateId/variantId ever reaches a real (non-mocked)
   `products:create-from-template` call, that must fail loudly with a
   clear error — never silently skip the size or proceed with a fake ID.
 
-## Static config values (fill in template IDs as each is resolved — see
-SPEC_v4.10.md section 4 for the full cost/price table and per-size notes;
-prices below are final, not placeholders)
+## Static config values (see docs/SPEC_v4.11.md section 4 for the full cost/
+price table and per-size notes; prices below are final, not placeholders)
 - Telegram admin/allowlist user ID: **not listed here** — read from
   `TELEGRAM_ADMIN_CHAT_ID` in `.env` (git-ignored), same as the bot token.
   This file is committed to git, so it's the wrong place for it.
-- Gelato template IDs (6 sizes × 2 orientations — primary size marked) and
-  final EUR retail prices:
-  {
-    "5x7_portrait": "", "5x7_landscape": "",       // price: €19 (entry tier)
-    "8x12_portrait": "", "8x12_landscape": "",     // price: €24 (entry tier) — primary size, fill first
-    "A3_portrait": "", "A3_landscape": "",         // price: €35
-    "A2_portrait": "", "A2_landscape": "",         // price: €39 (both orientations, same price despite slightly different Gelato cost)
-    "10x24_portrait": "", "10x24_landscape": "",   // price: €45
-    "A1_portrait": "", "A1_landscape": ""           // price: €49
-  }
+- Gelato templates: **2 multi-variant templates (portrait + landscape),
+  sizes are the variants** — not 12 separate templates. In
+  `config/static_config.json`, `gelato_templates` is keyed
+  `<size>_<orientation>` → `{template_id, template_variant_id,
+  image_placeholder_name}`; all six portrait keys share one `template_id`
+  (distinct `template_variant_id` per size), all six landscape keys share
+  another. Real IDs are already filled in. Final EUR retail prices per size
+  (set per-variant on the listing):
+    5x7 €19 (entry) · 8x12 €24 (entry, primary size) · A3 €35 ·
+    A2 €39 (both orientations same price) · 10x24 €45 · A1 €49
 - Etsy taxonomy_id: **1027** ("Home & Living > Home Decor > Wall Decor" —
   resolved via live `getSellerTaxonomyNodes`; Etsy has no plain
   "Posters"/"Wall Art" leaf, this parent node was chosen over
@@ -106,8 +135,8 @@ prices below are final, not placeholders)
   (`287910565714`)**. `config/static_config.json`'s `etsy_shipping_profile_id`
   is now a per-group-type dict (keys match `aspect_ratio_groups`);
   `pipeline/config.py` exposes `get_group_type_for_size()` and
-  `get_shipping_profile_id()` to resolve it at publish time (per size,
-  per listing draft), not at compliance-draft time (a candidate's groups
+  `get_shipping_profile_id()` to resolve it at publish time (per group, one
+  value per listing), not at compliance-draft time (a candidate's groups
   can span both tiers, so it's never a single per-candidate value).
 - Etsy production_partner_ids (Gelato): **[5717252]** — resolved via live
   `getShopProductionPartners` after Gelato was manually added as a
@@ -115,18 +144,24 @@ prices below are final, not placeholders)
   with (listed there as "A print shop", Brussels, Belgium).
 - Etsy who_made value: **"i_did"** — verified live: the API's `who_made`
   enum has only 3 raw values (`i_did`/`someone_else`/`collective`), no
-  separate AI-disclosure field exists anywhere in the spec. Etsy's
-  "Designed by a seller" AI-context label is just the display name for
-  `i_did`, not a distinct value. Must be paired with `is_supply: false`
-  and `when_made: "made_to_order"` on every `createDraftListing` call
-  (required together, not stored here since they're fixed per-call
-  values, not IDs to resolve).
+  separate AI-disclosure/"tools used" field exists in the listing API.
+  Etsy's "Designed by a seller / made with an AI generator" label is just
+  the display name for `i_did`, not a distinct settable value — so the AI
+  disclosure stays via `who_made: i_did` + the written description text;
+  the "What tools are used?" question is not API-settable (keep the
+  description disclosure, don't drop it). Must be paired with
+  `is_supply: false` and `when_made: "made_to_order"`. Under v4.11 these are
+  applied on the **listing patch** (`updateListing`), not at listing
+  creation (Gelato creates the listing — see the integration constraint).
 - Etsy shop_section_id: **59380312** — manually created "Posters" section
-  in Shop Manager (per spec section 1's dedicated-section note); every
-  `createDraftListing` call sends this via `shop_section_id`, shared
-  across all groups/sizes for a candidate (`config/static_config.json`'s
-  `etsy_shop_section_id`, wired into `build_size_listing_data()` in
-  `pipeline/publish_primary_group.py`, reused by `publish_group.py`).
+  in Shop Manager (per spec section 1's dedicated-section note); applied via
+  `shop_section_id` on the **listing patch**, shared across all groups for a
+  candidate (`config/static_config.json`'s `etsy_shop_section_id`). NOTE:
+  the current code still sets these fields at create time via
+  `build_size_listing_data()` in `pipeline/publish_primary_group.py` /
+  `publish_group.py`; the v4.11 rework repoints that field set from create
+  to patch (title loses its per-size suffix, price moves to per-variant
+  inventory).
 - Shop listing currency: **EUR** (resolved, spec section 1)
 
 ## Conventions
