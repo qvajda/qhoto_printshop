@@ -36,15 +36,15 @@ def main():
     conn = db.get_connection(DB_PATH)
     db.init_db(conn)
 
-    existing = conn.execute("SELECT id FROM candidates").fetchone()
+    existing = conn.execute("SELECT id FROM candidates WHERE status = 'pending'").fetchone()
     if existing:
-        print(f"== research (skipped, candidate {existing['id']} already seeded) ==")
+        print(f"== research (skipped, candidate {existing['id']} already pending) ==")
     else:
-        print("== research (skipped, seeding 1 candidate for smoke test) ==")
+        print("== research (skipped, seeding 1 new candidate for live test) ==")
         raw = {
-            "niche": "botanical minimalist wall art - smoke test",
-            "trend_source": "manual_smoke_test",
-            "rationale": "M1 live smoke test - single candidate to bound API cost.",
+            "niche": "mid-century line art wall poster - live test",
+            "trend_source": "manual_live_test",
+            "rationale": "Live M1 test w/ real Gelato + Etsy calls - single candidate to bound API cost.",
             "window_start": None,
             "window_end": None,
             "demand_ratio": None,

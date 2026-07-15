@@ -73,4 +73,4 @@ def get_shipping_profile_id(static_config: dict, group_type: str) -> str:
 
 
 def is_live_mode(service: str) -> bool:
-    return os.environ.get(f"{service}_LIVE_MODE") == "true"
+    return os.environ.get(f"{service}_LIVE_MODE", "").strip().lower() == "true"
