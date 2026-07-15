@@ -515,6 +515,40 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
     conn.close()
 
 
+def test_run_critic_pass_abandons_candidate_when_retry_regeneration_crashes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,),
+    ).fetchone()
+    group_id = group_row["id"]
+
+    fake_critic_response = {"text": _json.dumps({"passed": False, "reason": "off-center composition"})}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
+         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.generate.generate_for_candidate", side_effect=RuntimeError("Unterminated string")):
+        with pytest.raises(RuntimeError, match="Unterminated string"):
+            critic_pass.run_critic_pass(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+                now=datetime(2026, 7, 10, 12, 0, 0),
+            )
+
+    # A crash mid-retry must not leave the candidate/group in a state cleanup.py never
+    # sweeps (candidates.status outside failed/abandoned/completed, groups.status still
+    # pending_review) - it must land in the same terminal state as a normal 3-attempt abandon.
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "failed"
+    assert "Unterminated string" in candidate_row["failed_reason"]
+
+    group_status_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_status_row["status"] == "failed_abandoned"
+    conn.close()
+
+
 def test_run_critic_pass_cycle_processes_ready_candidates_and_skips_undrafted(tmp_path):
     conn = _fresh_conn(tmp_path)
     ready_id = _insert_ready_candidate(conn, niche="monstera line art")

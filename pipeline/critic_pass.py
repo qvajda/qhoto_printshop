@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 
 import pipeline.anthropic_client as anthropic_client
@@ -38,7 +37,7 @@ def build_critic_prompt(listing_text: dict, image_count: int) -> str:
 def evaluate_critic_pass(gallery_image_urls: list, listing_text: dict, *, api_key: str = None) -> dict:
     prompt = build_critic_prompt(listing_text, len(gallery_image_urls))
     result = anthropic_client.complete_with_images(prompt, gallery_image_urls, api_key=api_key)
-    parsed = json.loads(result["text"])
+    parsed = anthropic_client.parse_json_response(result["text"])
     for key in ("passed", "reason"):
         if key not in parsed:
             raise ValueError(f"Claude critic response missing required key {key!r}: {parsed!r}")
@@ -174,18 +173,26 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
         conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
         conn.commit()
 
-        generate.generate_for_candidate(
-            conn, candidate_id, correction_note=result["reason"],
-            api_token=replicate_api_token, now=now,
-        )
-        primary_mockup.create_primary_mockup(
-            conn, candidate_id, static_config=static_config, store_id=store_id,
-            api_key=gelato_api_key, now=now,
-        )
-        compliance_draft.build_compliance_draft(
-            conn, candidate_id, static_config=static_config,
-            anthropic_api_key=anthropic_api_key, now=now,
-        )
+        try:
+            generate.generate_for_candidate(
+                conn, candidate_id, correction_note=result["reason"],
+                api_token=replicate_api_token, now=now,
+            )
+            primary_mockup.create_primary_mockup(
+                conn, candidate_id, static_config=static_config, store_id=store_id,
+                api_key=gelato_api_key, now=now,
+            )
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=static_config,
+                anthropic_api_key=anthropic_api_key, now=now,
+            )
+        except Exception as exc:
+            # A crash here (e.g. Claude returning malformed JSON) would otherwise leave the
+            # candidate in whatever terminal status that stage set (e.g. compliance_failed)
+            # while this group stays 'pending_review' - stuck state cleanup.py never sweeps.
+            abandon_candidate(conn, candidate_id, state["group_id"], f"retry regeneration failed: {exc}", now=now)
+            raise
+
         attempt_number += 1
 
 
