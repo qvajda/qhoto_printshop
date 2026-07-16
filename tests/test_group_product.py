@@ -147,7 +147,10 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
         "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
     }
 
-    with patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve, \
+    # Gelato is "live" here (a real product exists to resolve externalId from) even though the
+    # Etsy-side dry_run=True keeps the actual Etsy write calls dry. These are independent gates.
+    with patch("pipeline.config.is_live_mode", return_value=True) as mock_live, \
+         patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve, \
          patch("pipeline.etsy_client.update_listing") as mock_update, \
          patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory:
         mock_resolve.return_value = "etsy-listing-42"
@@ -156,6 +159,8 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
             shop_id="shop1", dry_run=True, now=timestamp,
         )
 
+    mock_live.assert_called_with("GELATO")
+    mock_resolve.assert_called_once_with("gelato-prod-1", store_id=None, api_key=None)
     assert listing_id == "etsy-listing-42"
     mock_update.assert_called_once()
     patched_data = mock_update.call_args[0][2]
@@ -168,3 +173,49 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
     gp_row = conn.execute("SELECT etsy_listing_id, status FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
     assert gp_row["etsy_listing_id"] == "etsy-listing-42"
     assert gp_row["status"] == "published"
+
+
+def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
+    # Regression test: patch_etsy_listing's dry_run parameter only gates the Etsy write calls.
+    # Resolving etsy_listing_id is a Gelato-side read (gelato_client.get_product has no dry_run
+    # of its own and always makes a real HTTP call) - it must be gated on Gelato's own liveness,
+    # not on this function's dry_run. Otherwise, in the standard dev state (GELATO_LIVE_MODE
+    # unset, create_or_reuse_group_product returns a fake "DRY_RUN_PRODUCT_ID"), calling this
+    # would crash (missing creds) or hang (up to the 600s poll timeout).
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id)
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'DRY_RUN_PRODUCT_ID', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
+    )
+    conn.commit()
+
+    listing_text = {
+        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
+        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
+    }
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve, \
+         patch("pipeline.etsy_client.update_listing") as mock_update, \
+         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory:
+        listing_id = group_product.patch_etsy_listing(
+            conn, group_product_id, "primary", listing_text, static_config,
+            shop_id="shop1", dry_run=True, now=timestamp,
+        )
+
+    mock_resolve.assert_not_called()
+    assert listing_id == "DRY_RUN_ETSY_LISTING_ID"
+    mock_update.assert_called_once()
+    mock_inventory.assert_called_once()
+    gp_row = conn.execute("SELECT etsy_listing_id FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+    assert gp_row["etsy_listing_id"] == "DRY_RUN_ETSY_LISTING_ID"

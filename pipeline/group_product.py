@@ -167,9 +167,15 @@ def patch_etsy_listing(conn, group_product_id: int, group_type: str, listing_tex
     listing_id = gp_row["etsy_listing_id"]
     if listing_id is None:
         # ponytail: resolving listing_id is a Gelato-side lookup (externalId sync), not an
-        # Etsy write - it always runs, regardless of the Etsy-patch dry_run flag. Only the
-        # Etsy update_listing/update_listing_inventory calls below are dry-run gated.
-        listing_id = resolve_etsy_listing_id(gp_row["gelato_product_id"], api_key=None)
+        # Etsy write, so it's gated on Gelato's own liveness (is a real product) - not on
+        # this function's dry_run, which only covers the Etsy update_listing/
+        # update_listing_inventory calls below. gelato_client.get_product has no dry_run of
+        # its own and always makes a real HTTP call, so calling it against the fake
+        # "DRY_RUN_PRODUCT_ID" from a dry-run create would crash or hang.
+        if config.is_live_mode("GELATO"):
+            listing_id = resolve_etsy_listing_id(gp_row["gelato_product_id"], api_key=None)
+        else:
+            listing_id = "DRY_RUN_ETSY_LISTING_ID"
         conn.execute(
             "UPDATE group_products SET etsy_listing_id = ?, updated_at = ? WHERE id = ?",
             (listing_id, timestamp, group_product_id),
