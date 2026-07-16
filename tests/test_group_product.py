@@ -94,6 +94,44 @@ def test_create_or_reuse_group_product_reuses_existing_created_row(tmp_path):
     assert first["group_product_id"] == second["group_product_id"]
 
 
+def test_create_or_reuse_group_product_recreates_when_sizes_expand(tmp_path):
+    # Regression: primary_mockup.py creates the group_products row with sizes=["8x12"] only.
+    # On approval, publish_primary_group.py calls this again with the full 4-size list for the
+    # same group_id. The old code only checked status (not variant sizes) and returned the
+    # stale 8x12-only row unchanged - A3/A2/A1 would never be created on the real Gelato product.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id)
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+        first = group_product.create_or_reuse_group_product(
+            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
+        )
+
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = {"id": "gelato-prod-2", "_dry_run": True, "previewUrl": None, "productImages": []}
+        second = group_product.create_or_reuse_group_product(
+            conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, static_config, "Title",
+            now="2026-07-16T09:11:00",
+        )
+
+    mock_delete.assert_called_once_with("gelato-prod-1", store_id=None, api_key=None)
+    assert mock_create.call_count == 1
+    variants_arg = mock_create.call_args[0][1]
+    assert len(variants_arg) == 4
+    assert second["group_product_id"] != first["group_product_id"]
+    assert second["gelato_product_id"] == "gelato-prod-2"
+
+    old_row = conn.execute(
+        "SELECT status FROM group_products WHERE id = ?", (first["group_product_id"],)
+    ).fetchone()
+    assert old_row["status"] == "deleted"
+
+
 def test_create_or_reuse_group_product_deletes_orphan_before_retry(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

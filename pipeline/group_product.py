@@ -62,7 +62,28 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         (group_id,),
     ).fetchone()
     if live_row is not None:
-        return {"group_product_id": live_row["id"], "gelato_product_id": live_row["gelato_product_id"]}
+        existing_sizes = {
+            row["size"] for row in conn.execute(
+                "SELECT size FROM group_product_variants WHERE group_product_id = ?", (live_row["id"],)
+            ).fetchall()
+        }
+        if existing_sizes == set(sizes):
+            return {"group_product_id": live_row["id"], "gelato_product_id": live_row["gelato_product_id"]}
+        # Requested sizes changed (e.g. primary_mockup.py's 8x12-only row now needs the full
+        # 4-size fan-out on approval) - the existing Gelato product no longer matches, so it's
+        # stale in the same sense as a mockup_failed/publish_failed row: delete it and fall
+        # through to a fresh create with the newly requested variant set.
+        stale_row = live_row
+        if stale_row["gelato_product_id"]:
+            gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
+        conn.execute(
+            "DELETE FROM group_product_variants WHERE group_product_id = ?", (stale_row["id"],),
+        )
+        conn.execute(
+            "UPDATE group_products SET status = 'deleted', updated_at = ? WHERE id = ?",
+            (timestamp, stale_row["id"]),
+        )
+        conn.commit()
 
     stale_row = conn.execute(
         "SELECT id, gelato_product_id FROM group_products WHERE group_id = ? "
@@ -72,6 +93,9 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
     if stale_row is not None:
         if stale_row["gelato_product_id"]:
             gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
+        conn.execute(
+            "DELETE FROM group_product_variants WHERE group_product_id = ?", (stale_row["id"],),
+        )
         conn.execute(
             "UPDATE group_products SET status = 'deleted', updated_at = ? WHERE id = ?",
             (timestamp, stale_row["id"]),
