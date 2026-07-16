@@ -40,7 +40,8 @@ def test_get_product_builds_correct_request():
 def test_create_product_from_template_dry_run_makes_no_network_call():
     with patch("pipeline.gelato_client.http.send") as mock_send:
         result = gelato_client.create_product_from_template(
-            "tpl_real", "variant_real", "image_slot_real.jpg", "https://img.example/x.png",
+            "tpl_real",
+            [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://img.example/x.png"}],
             "Botanical print", store_id="store1", api_key="key1", dry_run=True,
         )
 
@@ -53,8 +54,9 @@ def test_create_product_from_template_raises_on_placeholder_template_id_when_liv
     with patch("pipeline.gelato_client.http.send") as mock_send:
         with pytest.raises(gelato_client.GelatoPlaceholderTemplateError, match="template_id"):
             gelato_client.create_product_from_template(
-                "PLACEHOLDER_8x12_PORTRAIT", "variant_real", "image_slot_real.jpg",
-                "https://img.example/x.png", "Botanical print",
+                "PLACEHOLDER_8x12_PORTRAIT",
+                [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://img.example/x.png"}],
+                "Botanical print",
                 store_id="store1", api_key="key1", dry_run=False,
             )
 
@@ -65,8 +67,9 @@ def test_create_product_from_template_raises_on_placeholder_variant_id_when_live
     with patch("pipeline.gelato_client.http.send") as mock_send:
         with pytest.raises(gelato_client.GelatoPlaceholderTemplateError, match="template_variant_id"):
             gelato_client.create_product_from_template(
-                "tpl_real", "PLACEHOLDER_8x12_PORTRAIT_VARIANT", "image_slot_real.jpg",
-                "https://img.example/x.png", "Botanical print",
+                "tpl_real",
+                [{"template_variant_id": "PLACEHOLDER_8x12_PORTRAIT_VARIANT", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://img.example/x.png"}],
+                "Botanical print",
                 store_id="store1", api_key="key1", dry_run=False,
             )
 
@@ -83,8 +86,9 @@ def test_create_product_from_template_sends_correct_request_when_live():
 
     with patch("pipeline.gelato_client.http.send", side_effect=fake_send):
         result = gelato_client.create_product_from_template(
-            "tpl_real_123", "variant_real_456", "011_mt_sunday_brook.JPG",
-            "https://img.example/x.png", "Botanical print",
+            "tpl_real_123",
+            [{"template_variant_id": "variant_real_456", "image_placeholder_name": "011_mt_sunday_brook.JPG", "image_url": "https://img.example/x.png"}],
+            "Botanical print",
             store_id="store1", api_key="key1", dry_run=False,
         )
 
@@ -97,6 +101,56 @@ def test_create_product_from_template_sends_correct_request_when_live():
         "imagePlaceholders": [{"name": "011_mt_sunday_brook.JPG", "fileUrl": "https://img.example/x.png"}],
     }]
     assert result["id"] == "prod_new"
+
+
+def test_create_product_from_template_builds_one_variant_entry_per_size():
+    variants = [
+        {"template_variant_id": "var-8x12", "image_placeholder_name": "ph1", "image_url": "https://x/a.png"},
+        {"template_variant_id": "var-a3", "image_placeholder_name": "ph1", "image_url": "https://x/a.png"},
+    ]
+    with patch("pipeline.http.send") as mock_send:
+        mock_send.return_value = {"id": "prod123"}
+        gelato_client.create_product_from_template(
+            "tmpl1", variants, "Test Title", store_id="store1", api_key="key1", dry_run=False,
+        )
+
+    sent_request = mock_send.call_args[0][0]
+    body = json.loads(sent_request.data)
+    assert len(body["variants"]) == 2
+    assert body["variants"][0]["templateVariantId"] == "var-8x12"
+    assert body["variants"][1]["templateVariantId"] == "var-a3"
+    assert body["variants"][0]["imagePlaceholders"] == [{"name": "ph1", "fileUrl": "https://x/a.png"}]
+
+
+def test_create_product_from_template_dry_run_ignores_variant_count():
+    result = gelato_client.create_product_from_template(
+        "tmpl1", [{"template_variant_id": "v1", "image_placeholder_name": "ph1", "image_url": "u1"}],
+        "Test Title", dry_run=True,
+    )
+    assert result["_dry_run"] is True
+
+
+def test_create_product_from_template_refuses_placeholder_in_any_variant():
+    variants = [
+        {"template_variant_id": "REAL_VAR", "image_placeholder_name": "ph1", "image_url": "u1"},
+        {"template_variant_id": "PLACEHOLDER_VAR", "image_placeholder_name": "ph1", "image_url": "u1"},
+    ]
+    with pytest.raises(gelato_client.GelatoPlaceholderTemplateError):
+        gelato_client.create_product_from_template("tmpl1", variants, "Test Title", dry_run=False)
+
+
+def test_get_etsy_listing_id_returns_external_id_when_present():
+    with patch("pipeline.gelato_client.get_product") as mock_get:
+        mock_get.return_value = {"id": "prod123", "externalId": "etsy-listing-999"}
+        result = gelato_client.get_etsy_listing_id("prod123", store_id="store1", api_key="key1")
+    assert result == "etsy-listing-999"
+
+
+def test_get_etsy_listing_id_returns_none_when_not_yet_synced():
+    with patch("pipeline.gelato_client.get_product") as mock_get:
+        mock_get.return_value = {"id": "prod123", "externalId": None}
+        result = gelato_client.get_etsy_listing_id("prod123")
+    assert result is None
 
 
 def test_delete_product_dry_run_makes_no_network_call():
@@ -126,7 +180,8 @@ def test_dry_run_defaults_from_live_mode_env_var(monkeypatch):
 
     with patch("pipeline.gelato_client.http.send") as mock_send:
         result = gelato_client.create_product_from_template(
-            "tpl_real", "variant_real", "image_slot_real.jpg", "https://img.example/x.png",
+            "tpl_real",
+            [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://img.example/x.png"}],
             "Botanical print", store_id="store1", api_key="key1",
         )
 
@@ -142,7 +197,8 @@ def test_dry_run_false_when_live_mode_env_var_is_true(monkeypatch):
 
     with patch("pipeline.gelato_client.http.send", side_effect=fake_send) as mock_send:
         gelato_client.create_product_from_template(
-            "tpl_real", "variant_real", "image_slot_real.jpg", "https://img.example/x.png",
+            "tpl_real",
+            [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://img.example/x.png"}],
             "Botanical print", store_id="store1", api_key="key1",
         )
 
@@ -154,6 +210,7 @@ def test_missing_store_id_raises_when_live_and_not_provided(monkeypatch):
 
     with pytest.raises(config.MissingConfigError):
         gelato_client.create_product_from_template(
-            "tpl_real", "variant_real", "image_slot_real.jpg", "https://img.example/x.png",
+            "tpl_real",
+            [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://img.example/x.png"}],
             "Botanical print", api_key="key1", dry_run=False,
         )

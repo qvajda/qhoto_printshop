@@ -36,9 +36,7 @@ def get_product(product_id: str, *, store_id: str = None, api_key: str = None) -
 
 def create_product_from_template(
     template_id: str,
-    template_variant_id: str,
-    image_placeholder_name: str,
-    image_url: str,
+    variants: list,
     title: str,
     *,
     store_id: str = None,
@@ -60,17 +58,21 @@ def create_product_from_template(
             "_dry_run": True,
         }
 
-    for label, value in (
-        ("template_id", template_id),
-        ("template_variant_id", template_variant_id),
-        ("image_placeholder_name", image_placeholder_name),
-    ):
-        if config.is_placeholder(value):
-            raise GelatoPlaceholderTemplateError(
-                f"Refusing to create a real Gelato product with a placeholder "
-                f"{label} ({value!r}). Fill in the real value in "
-                f"config/static_config.json before making a live call."
-            )
+    for variant in variants:
+        for label in ("template_variant_id", "image_placeholder_name"):
+            value = variant[label]
+            if config.is_placeholder(value):
+                raise GelatoPlaceholderTemplateError(
+                    f"Refusing to create a real Gelato product with a placeholder "
+                    f"{label} ({value!r}). Fill in the real value in "
+                    f"config/static_config.json before making a live call."
+                )
+    if config.is_placeholder(template_id):
+        raise GelatoPlaceholderTemplateError(
+            f"Refusing to create a real Gelato product with a placeholder "
+            f"template_id ({template_id!r}). Fill in the real value in "
+            f"config/static_config.json before making a live call."
+        )
 
     api_key = api_key or config.require_env("GELATO_API_KEY")
     store_id = store_id or config.require_env("GELATO_STORE_ID")
@@ -81,15 +83,21 @@ def create_product_from_template(
         "isVisibleInTheOnlineStore": False,
         "variants": [
             {
-                "templateVariantId": template_variant_id,
+                "templateVariantId": variant["template_variant_id"],
                 "imagePlaceholders": [
-                    {"name": image_placeholder_name, "fileUrl": image_url}
+                    {"name": variant["image_placeholder_name"], "fileUrl": variant["image_url"]}
                 ],
             }
+            for variant in variants
         ],
     }).encode("utf-8")
     request = urllib.request.Request(url, data=body, headers=_headers(api_key), method="POST")
     return http.send(request)
+
+
+def get_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: str = None) -> str | None:
+    product = get_product(product_id, store_id=store_id, api_key=api_key)
+    return product.get("externalId") or None
 
 
 def delete_product(product_id: str, *, store_id: str = None, api_key: str = None, dry_run: bool = None) -> None:
