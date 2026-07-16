@@ -109,6 +109,7 @@ def discard_superseded_attempt(conn, group_product_id: int, *, store_id: str = N
         raise ValueError(f"No group_products row with id {group_product_id}")
     if row["gelato_product_id"]:
         gelato_client.delete_product(row["gelato_product_id"], store_id=store_id, api_key=api_key)
+    conn.execute("DELETE FROM group_product_variants WHERE group_product_id = ?", (group_product_id,))
     conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
     conn.execute("DELETE FROM group_products WHERE id = ?", (group_product_id,))
     conn.commit()

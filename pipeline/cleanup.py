@@ -68,6 +68,12 @@ def prune_stale_candidates(conn, *, retention_days=30, now=None) -> list:
             (candidate_id,),
         )
         conn.execute(
+            "DELETE FROM group_product_variants WHERE group_product_id IN "
+            "(SELECT id FROM group_products WHERE group_id IN "
+            "(SELECT id FROM groups WHERE candidate_id = ?))",
+            (candidate_id,),
+        )
+        conn.execute(
             "DELETE FROM product_images WHERE group_product_id IN "
             "(SELECT id FROM group_products WHERE group_id IN "
             "(SELECT id FROM groups WHERE candidate_id = ?))",

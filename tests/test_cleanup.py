@@ -36,13 +36,20 @@ def _insert_group_product(conn, group_id, *, gelato_product_id="gelato_x", statu
     timestamp = "2026-06-01T09:10:00"
     cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
+        "(group_id, gelato_template_id, gelato_product_id, "
         "status, created_at, updated_at) "
-        "VALUES (?, '5x7', 'portrait', 'tpl_x', ?, 19, ?, ?, ?)",
+        "VALUES (?, 'tpl_x', ?, ?, ?, ?)",
         (group_id, gelato_product_id, status, timestamp, timestamp),
     )
+    group_product_id = cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '5x7', 'portrait', 'variant_x', 19, ?)",
+        (group_product_id, timestamp),
+    )
     conn.commit()
-    return cursor.lastrowid
+    return group_product_id
 
 
 def test_cleanup_orphaned_deletes_publish_failed_product_regardless_of_group_status(tmp_path):
@@ -193,6 +200,9 @@ def test_prune_stale_candidates_cascade_deletes_eligible_candidate(tmp_path):
     assert conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone() is None
     assert conn.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone() is None
     assert conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM group_product_variants WHERE group_product_id = ?", (gp_id,)
+    ).fetchone() is None
     assert conn.execute(
         "SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)
     ).fetchone() is None

@@ -57,12 +57,18 @@ def _insert_primary_gallery(conn, candidate_id,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
+        "(group_id, gelato_template_id, gelato_product_id, "
         "status, created_at, updated_at) "
-        "VALUES (?, '8x12', 'portrait', 'tpl_1', ?, 24, ?, ?, ?)",
+        "VALUES (?, 'tpl_1', ?, ?, ?, ?)",
         (group_id, gelato_product_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
+        (group_product_id, timestamp),
+    )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
@@ -211,6 +217,42 @@ def test_discard_superseded_attempt_deletes_gelato_product_and_rows(tmp_path):
     assert conn.execute(
         "SELECT * FROM product_images WHERE group_product_id = ?", (group_product_id,)
     ).fetchall() == []
+    conn.close()
+
+
+def test_discard_superseded_attempt_also_deletes_variant_rows(tmp_path):
+    # ponytail: _insert_primary_gallery is pre-existing-broken against the post-migration
+    # group_products schema (size/orientation/price_eur moved to group_product_variants) -
+    # out of scope for this task, so this test inserts its own group/group_products rows
+    # directly against the current schema instead of relying on that fixture.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    timestamp = "2026-07-16T09:00:00"
+    group_id = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (?, 'primary', 'pending_review', ?, ?)",
+        (candidate_id, timestamp, timestamp),
+    ).lastrowid
+    group_product_id = conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'gelato-1', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)",
+        (group_product_id, timestamp),
+    )
+    conn.commit()
+
+    with patch("pipeline.critic_pass.gelato_client.delete_product"):
+        critic_pass.discard_superseded_attempt(conn, group_product_id)
+
+    remaining = conn.execute(
+        "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_product_id = ?", (group_product_id,)
+    ).fetchone()
+    assert remaining["n"] == 0
     conn.close()
 
 
