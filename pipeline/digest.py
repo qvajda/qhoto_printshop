@@ -8,7 +8,7 @@ import pipeline.telegram_client as telegram_client
 def get_primary_group(conn, candidate_id: int) -> dict:
     row = conn.execute(
         """
-        SELECT g.id AS group_id, gp.price_eur AS price_eur
+        SELECT g.id AS group_id, gp.id AS group_product_id
         FROM groups g
         JOIN group_products gp ON gp.group_id = g.id AND gp.status = 'created'
         WHERE g.candidate_id = ? AND g.group_type = 'primary'
@@ -17,7 +17,14 @@ def get_primary_group(conn, candidate_id: int) -> dict:
     ).fetchone()
     if row is None:
         raise ValueError(f"No live primary group_product for candidate {candidate_id}")
-    return {"group_id": row["group_id"], "price_eur": row["price_eur"]}
+    variant_rows = conn.execute(
+        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
+        (row["group_product_id"],),
+    ).fetchall()
+    return {
+        "group_id": row["group_id"],
+        "variants": [{"size": r["size"], "price_eur": r["price_eur"]} for r in variant_rows],
+    }
 
 
 def get_primary_gallery_urls(conn, candidate_id: int) -> list:
@@ -45,14 +52,15 @@ def get_listing_text(conn, candidate_id: int) -> dict:
     return dict(row)
 
 
-def build_digest_message_text(candidate_id: int, group_id: int, listing_text: dict, price_eur: float) -> str:
+def build_digest_message_text(candidate_id: int, group_id: int, listing_text: dict, variants: list) -> str:
     tags = ", ".join(json.loads(listing_text["tags"]))
+    price_lines = " · ".join(f"{v['size']} €{v['price_eur']}" for v in variants)
     return (
         f"Candidate #{candidate_id} — Primary group (#{group_id})\n\n"
         f"{listing_text['title']}\n\n"
         f"{listing_text['description']}\n\n"
         f"Tags: {tags}\n\n"
-        f"Price: €{price_eur}"
+        f"Sizes: {price_lines}"
     )
 
 
@@ -75,7 +83,7 @@ def send_primary_digest(conn, candidate_id: int, *, static_config: dict = None,
 
     telegram_client.send_media_group(chat_id, photo_urls, bot_token=bot_token)
 
-    text = build_digest_message_text(candidate_id, group["group_id"], listing_text, group["price_eur"])
+    text = build_digest_message_text(candidate_id, group["group_id"], listing_text, group["variants"])
     reply_markup = build_digest_keyboard(group["group_id"])
     response = telegram_client.send_message(chat_id, text, reply_markup, bot_token=bot_token)
     telegram_message_id = response["result"]["message_id"]

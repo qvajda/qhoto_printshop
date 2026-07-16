@@ -30,7 +30,8 @@ def _insert_candidate(conn, niche="monstera line art", *, status="primary_review
 
 def _insert_primary_gallery(conn, candidate_id,
                              image_urls=("https://gelato/flat.jpg", "https://gelato/life.jpg"),
-                             *, price_eur=24, group_product_status="created"):
+                             *, sizes_and_prices=(("8x12", 24), ("A3", 35), ("A2", 39), ("A1", 49)),
+                             group_product_status="created"):
     timestamp = "2026-07-11T09:05:00"
     group_cursor = conn.execute(
         "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
@@ -40,12 +41,18 @@ def _insert_primary_gallery(conn, candidate_id,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-        "status, created_at, updated_at) "
-        "VALUES (?, '8x12', 'portrait', 'tpl_1', 'gelato_prod_1', ?, ?, ?, ?)",
-        (group_id, price_eur, group_product_status, timestamp, timestamp),
+        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_1', 'gelato_prod_1', ?, ?, ?)",
+        (group_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
+    for size, price_eur in sizes_and_prices:
+        conn.execute(
+            "INSERT INTO group_product_variants "
+            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (?, ?, 'portrait', 'variant_1', ?, ?)",
+            (group_product_id, size, price_eur, timestamp),
+        )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
@@ -82,14 +89,19 @@ def _insert_ready_candidate(conn, niche="monstera line art"):
     return candidate_id
 
 
-def test_get_primary_group_returns_group_id_and_price(tmp_path):
+def test_get_primary_group_returns_group_id_and_variants(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    expected_group_id, _ = _insert_primary_gallery(conn, candidate_id, price_eur=24)
+    expected_group_id, _ = _insert_primary_gallery(
+        conn, candidate_id, sizes_and_prices=(("8x12", 24), ("A3", 35)),
+    )
 
     result = digest.get_primary_group(conn, candidate_id)
 
-    assert result == {"group_id": expected_group_id, "price_eur": 24}
+    assert result == {
+        "group_id": expected_group_id,
+        "variants": [{"size": "8x12", "price_eur": 24}, {"size": "A3", "price_eur": 35}],
+    }
     conn.close()
 
 
@@ -141,7 +153,7 @@ def test_get_listing_text_raises_when_missing(tmp_path):
     conn.close()
 
 
-def test_build_digest_message_text_includes_ids_title_tags_price():
+def test_build_digest_message_text_lists_every_size_and_price():
     # disclosure_text is NOT repeated here - it's already required to be woven into
     # the description itself (see compliance_draft's prompt), so appending the raw
     # disclosure_text field again would just duplicate it in the admin's digest message.
@@ -152,7 +164,11 @@ def test_build_digest_message_text_includes_ids_title_tags_price():
         "disclosure_text": "AI disclosure text.",
     }
 
-    text = digest.build_digest_message_text(7, 42, listing_text, 24)
+    text = digest.build_digest_message_text(
+        7, 42, listing_text,
+        [{"size": "8x12", "price_eur": 24.0}, {"size": "A3", "price_eur": 35.0},
+         {"size": "A2", "price_eur": 39.0}, {"size": "A1", "price_eur": 49.0}],
+    )
 
     assert "Candidate #7" in text
     assert "#42" in text
@@ -160,7 +176,9 @@ def test_build_digest_message_text_includes_ids_title_tags_price():
     assert "A minimalist botanical print." in text
     assert "botanical, wall art" in text
     assert "AI disclosure text." not in text
-    assert "24" in text
+    assert "8x12 €24.0" in text
+    assert "A3 €35.0" in text
+    assert "A1 €49.0" in text
 
 
 def test_build_digest_keyboard_has_three_buttons_with_group_id_callback_data():

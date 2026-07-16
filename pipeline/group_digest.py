@@ -9,7 +9,7 @@ import pipeline.telegram_client as telegram_client
 def get_review_group(conn, group_id: int) -> dict:
     row = conn.execute(
         """
-        SELECT g.candidate_id AS candidate_id, g.group_type AS group_type, gp.price_eur AS price_eur
+        SELECT g.candidate_id AS candidate_id, g.group_type AS group_type, gp.id AS group_product_id
         FROM groups g
         JOIN group_products gp ON gp.group_id = g.id AND gp.status = 'created'
         WHERE g.id = ?
@@ -18,7 +18,15 @@ def get_review_group(conn, group_id: int) -> dict:
     ).fetchone()
     if row is None:
         raise ValueError(f"No live group_product for group {group_id}")
-    return dict(row)
+    variant_rows = conn.execute(
+        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
+        (row["group_product_id"],),
+    ).fetchall()
+    return {
+        "candidate_id": row["candidate_id"],
+        "group_type": row["group_type"],
+        "variants": [{"size": r["size"], "price_eur": r["price_eur"]} for r in variant_rows],
+    }
 
 
 def get_group_gallery_urls(conn, group_id: int) -> list:
@@ -36,14 +44,15 @@ def get_group_gallery_urls(conn, group_id: int) -> list:
 
 
 def build_group_digest_message_text(candidate_id: int, group_id: int, group_type: str,
-                                     listing_text: dict, price_eur: float) -> str:
+                                     listing_text: dict, variants: list) -> str:
     tags = ", ".join(json.loads(listing_text["tags"]))
+    price_lines = " · ".join(f"{v['size']} €{v['price_eur']}" for v in variants)
     return (
         f"Candidate #{candidate_id} — {group_type} group (#{group_id})\n\n"
         f"{listing_text['title']}\n\n"
         f"{listing_text['description']}\n\n"
         f"Tags: {tags}\n\n"
-        f"Price: €{price_eur}"
+        f"Sizes: {price_lines}"
     )
 
 
@@ -52,7 +61,7 @@ def send_group_digest(conn, group_id: int, *, static_config: dict = None,
     review_group = get_review_group(conn, group_id)
     candidate_id = review_group["candidate_id"]
     group_type = review_group["group_type"]
-    price_eur = review_group["price_eur"]
+    variants = review_group["variants"]
 
     photo_urls = get_group_gallery_urls(conn, group_id)
     listing_text = digest.get_listing_text(conn, candidate_id)
@@ -60,7 +69,7 @@ def send_group_digest(conn, group_id: int, *, static_config: dict = None,
 
     telegram_client.send_media_group(chat_id, photo_urls, bot_token=bot_token)
 
-    text = build_group_digest_message_text(candidate_id, group_id, group_type, listing_text, price_eur)
+    text = build_group_digest_message_text(candidate_id, group_id, group_type, listing_text, variants)
     reply_markup = digest.build_digest_keyboard(group_id)
     response = telegram_client.send_message(chat_id, text, reply_markup, bot_token=bot_token)
     telegram_message_id = response["result"]["message_id"]

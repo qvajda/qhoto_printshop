@@ -41,12 +41,17 @@ def _insert_group_gallery(conn, candidate_id, group_type, size, *,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-        "status, created_at, updated_at) "
-        "VALUES (?, ?, 'portrait', 'tpl_1', 'gelato_prod_1', ?, ?, ?, ?)",
-        (group_id, size, price_eur, group_product_status, timestamp, timestamp),
+        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_1', 'gelato_prod_1', ?, ?, ?)",
+        (group_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, 'portrait', 'variant_1', ?, ?)",
+        (group_product_id, size, price_eur, timestamp),
+    )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
@@ -86,14 +91,17 @@ def _insert_critic_pass(conn, group_id, *, attempt_number=1, passed=1):
     conn.commit()
 
 
-def test_get_review_group_returns_candidate_type_and_price(tmp_path):
+def test_get_review_group_returns_candidate_type_and_variants(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id, _ = _insert_group_gallery(conn, candidate_id, "5x7", "5x7", price_eur=19)
 
     result = group_digest.get_review_group(conn, group_id)
 
-    assert result == {"candidate_id": candidate_id, "group_type": "5x7", "price_eur": 19}
+    assert result == {
+        "candidate_id": candidate_id, "group_type": "5x7",
+        "variants": [{"size": "5x7", "price_eur": 19}],
+    }
     conn.close()
 
 
@@ -125,7 +133,7 @@ def test_get_group_gallery_urls_returns_ordered_urls(tmp_path):
     conn.close()
 
 
-def test_build_group_digest_message_text_includes_group_type_and_price():
+def test_build_group_digest_message_text_lists_every_size_and_price():
     listing_text = {
         "title": "Monstera Line Art Botanical Print",
         "tags": _json.dumps(["botanical", "wall art"]),
@@ -133,7 +141,9 @@ def test_build_group_digest_message_text_includes_group_type_and_price():
         "disclosure_text": "AI disclosure text.",
     }
 
-    text = group_digest.build_group_digest_message_text(7, 42, "5x7", listing_text, 19)
+    text = group_digest.build_group_digest_message_text(
+        7, 42, "5x7", listing_text, [{"size": "5x7", "price_eur": 19.0}],
+    )
 
     assert "Candidate #7" in text
     assert "5x7 group" in text
@@ -142,7 +152,7 @@ def test_build_group_digest_message_text_includes_group_type_and_price():
     assert "A minimalist botanical print." in text
     assert "botanical, wall art" in text
     assert "AI disclosure text." not in text
-    assert "19" in text
+    assert "5x7 €19.0" in text
 
 
 def test_send_group_digest_sends_media_group_then_message_and_persists_id(tmp_path):
