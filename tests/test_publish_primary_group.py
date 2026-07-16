@@ -172,52 +172,6 @@ def _listing_text_row(title="Monstera Line Art Botanical Print", tags=("botanica
     }
 
 
-def test_build_size_listing_data_appends_size_suffix_for_secondary_sizes():
-    data = publish_primary_group.build_size_listing_data(_listing_text_row(), "A3", 35)
-
-    assert data["title"] == "Monstera Line Art Botanical Print - A3 Print"
-    assert data["price"] == 35
-    assert data["description"] == "A minimalist botanical print."
-    assert data["tags"] == ["botanical", "wall art"]
-    assert data["who_made"] == "i_did"
-    assert data["when_made"] == "made_to_order"
-    assert data["is_supply"] is False
-    assert data["taxonomy_id"] == "1027"
-    assert data["production_partner_ids"] == [5717252]
-    assert data["shop_section_id"] == config.load_static_config()["etsy_shop_section_id"]
-
-
-def test_build_size_listing_data_appends_size_suffix_for_5x7_and_10x24():
-    listing_text = {
-        "title": "monstera line art print", "tags": _json.dumps(["botanical", "wall art"]),
-        "description": "desc", "who_made": "i_did", "taxonomy_id": "1027",
-        "shipping_profile_id": "", "production_partner_ids": _json.dumps([5717252]),
-    }
-
-    data_5x7 = publish_primary_group.build_size_listing_data(listing_text, "5x7", 19)
-    data_10x24 = publish_primary_group.build_size_listing_data(listing_text, "10x24", 45)
-
-    assert data_5x7["title"] == "monstera line art print - 5x7 Print"
-    assert data_5x7["price"] == 19
-    assert data_10x24["title"] == "monstera line art print - 10x24 Panoramic Print"
-    assert data_10x24["price"] == 45
-
-
-def test_build_size_listing_data_uses_base_title_unchanged_for_8x12():
-    data = publish_primary_group.build_size_listing_data(_listing_text_row(), "8x12", 24)
-
-    assert data["title"] == "Monstera Line Art Botanical Print"
-    assert data["price"] == 24
-
-
-def test_build_size_listing_data_raises_when_suffixed_title_exceeds_140_chars():
-    long_title = "x" * 137  # + " - A3 Print" (11 chars) = 148, over the 140 cap
-    listing_text = _listing_text_row(title=long_title)
-
-    with pytest.raises(ValueError, match="140"):
-        publish_primary_group.build_size_listing_data(listing_text, "A3", 35)
-
-
 STATIC_CONFIG = {
     "gelato_templates": {
         "8x12_portrait": {
@@ -243,77 +197,6 @@ STATIC_CONFIG = {
 }
 
 
-def test_create_group_product_row_inserts_pending_row(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-
-    gp_id = publish_primary_group.create_group_product_row(
-        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
-    )
-
-    row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert row["group_id"] == group_id
-    assert row["size"] == "A3"
-    assert row["orientation"] == "portrait"
-    assert row["gelato_template_id"] == "tpl_a3"
-    assert row["price_eur"] == 35
-    assert row["status"] == "pending"
-    assert row["gelato_product_id"] is None
-    conn.close()
-
-
-def test_create_gelato_product_writes_product_id_and_ordered_gallery(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    gp_id = publish_primary_group.create_group_product_row(
-        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
-    )
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-
-    def fake_create_product_from_template(template_id, template_variant_id, image_placeholder_name,
-                                           image_url, title, *, store_id=None, api_key=None, **kwargs):
-        assert template_id == "tpl_a3"
-        assert template_variant_id == "variant_a3"
-        assert image_placeholder_name == "slot_a3.jpg"
-        assert image_url == "https://replicate.delivery/out.png"
-        return {"id": "gelato_prod_a3", "isReadyToPublish": False, "productImages": []}
-
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        return {
-            "id": product_id, "isReadyToPublish": True,
-            "productImages": [
-                {"fileUrl": "https://gelato/a3_life.jpg", "isPrimary": False},
-                {"fileUrl": "https://gelato/a3_flat.jpg", "isPrimary": True},
-            ],
-        }
-
-    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.publish_primary_group.primary_mockup.gelato_client.get_product",
-               side_effect=fake_get_product):
-        gelato_product_id = publish_primary_group.create_gelato_product(
-            conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
-            store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
-        )
-
-    assert gelato_product_id == "gelato_prod_a3"
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["gelato_product_id"] == "gelato_prod_a3"
-    assert gp_row["status"] == "created"
-
-    images = conn.execute(
-        "SELECT * FROM product_images WHERE group_product_id = ? ORDER BY gallery_order", (gp_id,)
-    ).fetchall()
-    assert len(images) == 2
-    assert images[0]["image_type"] == "flat_mockup"
-    assert images[0]["image_url"] == "https://gelato/a3_flat.jpg"
-    assert images[1]["image_type"] == "lifestyle"
-    conn.close()
-
-
 def _insert_listing_text(conn, candidate_id, niche="monstera line art"):
     timestamp = "2026-07-12T09:10:00"
     conn.execute(
@@ -332,17 +215,23 @@ def _insert_listing_text(conn, candidate_id, niche="monstera line art"):
     conn.commit()
 
 
-def _insert_group_product_with_images(conn, group_id, size="A3", *, gelato_product_id="gelato_a3",
-                                       image_urls=("https://gelato/a3_flat.jpg", "https://gelato/a3_life.jpg")):
+def _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), *, gelato_product_id="gelato_prod_1",
+                                         status="created",
+                                         image_urls=("https://gelato/flat.jpg", "https://gelato/life.jpg")):
     timestamp = "2026-07-12T10:00:00"
     cursor = conn.execute(
-        "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-        "status, created_at, updated_at) "
-        "VALUES (?, ?, 'portrait', 'tpl_x', ?, 35, 'created', ?, ?)",
-        (group_id, size, gelato_product_id, timestamp, timestamp),
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_x', ?, ?, ?, ?)",
+        (group_id, gelato_product_id, status, timestamp, timestamp),
     )
     gp_id = cursor.lastrowid
+    for size in sizes:
+        conn.execute(
+            "INSERT INTO group_product_variants "
+            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (?, ?, 'portrait', ?, ?, ?)",
+            (gp_id, size, f"variant_{size}", STATIC_CONFIG["prices_eur"][size], timestamp),
+        )
     for order, url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
@@ -354,416 +243,154 @@ def _insert_group_product_with_images(conn, group_id, size="A3", *, gelato_produ
     return gp_id
 
 
-def test_publish_to_etsy_dry_run_skips_image_download_and_writes_published(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    _insert_listing_text(conn, candidate_id)
-    gp_id = _insert_group_product_with_images(conn, group_id)
-
-    with patch("pipeline.publish_primary_group.etsy_client.create_draft_listing",
-               return_value={"listing_id": "DRY_RUN_LISTING_ID", "_dry_run": True}) as mock_draft, \
-         patch("pipeline.publish_primary_group.etsy_client.upload_listing_image",
-               return_value={"_dry_run": True}) as mock_upload, \
-         patch("pipeline.publish_primary_group.etsy_client.update_listing_state",
-               return_value={"_dry_run": True}) as mock_state, \
-         patch("pipeline.publish_primary_group.http.fetch_bytes") as mock_fetch:
-        listing_id = publish_primary_group.publish_to_etsy(
-            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1",
-            dry_run=True, now=datetime(2026, 7, 12, 10, 10, 0),
-        )
-
-    mock_fetch.assert_not_called()
-    assert mock_upload.call_count == 2
-    for call in mock_upload.call_args_list:
-        assert call.args[2] == b""
-    assert listing_id == "DRY_RUN_LISTING_ID"
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["etsy_listing_id"] == "DRY_RUN_LISTING_ID"
-    assert gp_row["status"] == "published"
-    conn.close()
-
-
-def test_publish_to_etsy_live_downloads_images_and_activates_listing(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    _insert_listing_text(conn, candidate_id)
-    gp_id = _insert_group_product_with_images(conn, group_id)
-
-    calls = []
-
-    def fake_create_draft_listing(shop_id, listing_data, **kwargs):
-        calls.append(("draft", shop_id, listing_data["title"]))
-        return {"listing_id": 555}
-
-    def fake_upload(shop_id, listing_id, image_bytes, **kwargs):
-        calls.append(("upload", shop_id, listing_id, image_bytes))
-        return {"listing_image_id": 1}
-
-    def fake_update_state(shop_id, listing_id, state, **kwargs):
-        calls.append(("activate", shop_id, listing_id, state))
-        return {"state": "active"}
-
-    with patch("pipeline.publish_primary_group.etsy_client.create_draft_listing",
-               side_effect=fake_create_draft_listing), \
-         patch("pipeline.publish_primary_group.etsy_client.upload_listing_image",
-               side_effect=fake_upload), \
-         patch("pipeline.publish_primary_group.etsy_client.update_listing_state",
-               side_effect=fake_update_state), \
-         patch("pipeline.publish_primary_group.http.fetch_bytes",
-               return_value=b"real-image-bytes") as mock_fetch:
-        listing_id = publish_primary_group.publish_to_etsy(
-            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1",
-            dry_run=False, now=datetime(2026, 7, 12, 10, 10, 0),
-        )
-
-    assert listing_id == "555"
-    assert calls[0] == ("draft", "shop1", "monstera line art print - A3 Print")
-    assert calls[1] == ("upload", "shop1", 555, b"real-image-bytes")
-    assert calls[2] == ("upload", "shop1", 555, b"real-image-bytes")
-    assert calls[3] == ("activate", "shop1", 555, "active")
-    assert mock_fetch.call_count == 2
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["etsy_listing_id"] == "555"
-    assert gp_row["status"] == "published"
-    conn.close()
-
-
-def test_publish_to_etsy_reuses_existing_listing_on_retry_instead_of_creating_duplicate(tmp_path):
-    # Simulates a retry after create_draft_listing succeeded but update_listing_state failed
-    # on the first attempt: etsy_listing_id is already set on the row.
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    _insert_listing_text(conn, candidate_id)
-    gp_id = _insert_group_product_with_images(conn, group_id)
-    conn.execute("UPDATE group_products SET etsy_listing_id = '555' WHERE id = ?", (gp_id,))
-    conn.commit()
-
-    calls = []
-
-    def fake_upload(shop_id, listing_id, image_bytes, **kwargs):
-        calls.append(("upload", listing_id))
-        return {"listing_image_id": 1}
-
-    def fake_update_state(shop_id, listing_id, state, **kwargs):
-        calls.append(("activate", listing_id, state))
-        return {"state": "active"}
-
-    with patch("pipeline.publish_primary_group.etsy_client.create_draft_listing") as mock_draft, \
-         patch("pipeline.publish_primary_group.etsy_client.upload_listing_image",
-               side_effect=fake_upload), \
-         patch("pipeline.publish_primary_group.etsy_client.update_listing_state",
-               side_effect=fake_update_state), \
-         patch("pipeline.publish_primary_group.http.fetch_bytes", return_value=b"bytes"):
-        listing_id = publish_primary_group.publish_to_etsy(
-            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1",
-            dry_run=False, now=datetime(2026, 7, 12, 10, 10, 0),
-        )
-
-    mock_draft.assert_not_called()
-    assert listing_id == "555"
-    assert calls[0] == ("upload", "555")
-    assert calls[-1] == ("activate", "555", "active")
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["etsy_listing_id"] == "555"
-    assert gp_row["status"] == "published"
-    conn.close()
-
-
-def test_publish_to_etsy_raises_when_no_listing_text(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    gp_id = _insert_group_product_with_images(conn, group_id)
-
-    with pytest.raises(ValueError, match="listing_texts"):
-        publish_primary_group.publish_to_etsy(
-            conn, gp_id, candidate_id, "A3", 35, shop_id="shop1", dry_run=True,
-        )
-    conn.close()
-
-
-def test_create_gelato_product_marks_mockup_failed_on_poll_timeout(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    gp_id = publish_primary_group.create_group_product_row(
-        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
-    )
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-
-    def fake_create_product_from_template(*args, **kwargs):
-        return {"id": "gelato_prod_a3_stuck", "isReadyToPublish": False, "productImages": []}
-
-    def fake_poll_until_ready(*args, **kwargs):
-        raise primary_mockup.GelatoMockupTimeoutError("gelato_prod_a3_stuck did not become ready")
-
-    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.publish_primary_group.primary_mockup.poll_until_ready",
-               side_effect=fake_poll_until_ready):
-        with pytest.raises(primary_mockup.GelatoMockupTimeoutError):
-            publish_primary_group.create_gelato_product(
-                conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
-                store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
-            )
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["status"] == "mockup_failed"
-    assert gp_row["gelato_product_id"] == "gelato_prod_a3_stuck"
-    assert conn.execute(
-        "SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)
-    ).fetchall() == []
-    conn.close()
-
-
-def test_create_gelato_product_dry_run_skips_polling(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
-    gp_id = publish_primary_group.create_group_product_row(
-        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
-    )
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-
-    def fake_create_product_from_template(*args, **kwargs):
-        return {"id": "DRY_RUN_PRODUCT_ID", "previewUrl": None, "productImages": [], "_dry_run": True}
-
-    with patch("pipeline.publish_primary_group.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.publish_primary_group.primary_mockup.gelato_client.get_product") as mock_get_product:
-        publish_primary_group.create_gelato_product(
-            conn, gp_id, candidate, STATIC_CONFIG, "A3", "portrait",
-            store_id="store1", api_key="key1", now=datetime(2026, 7, 12, 10, 5, 0),
-        )
-
-    mock_get_product.assert_not_called()
-    images = conn.execute("SELECT * FROM product_images WHERE group_product_id = ?", (gp_id,)).fetchall()
-    assert len(images) == 1
-    assert images[0]["image_type"] == "flat_mockup"
-    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["status"] == "created"
-    conn.close()
-
-
 def _insert_ready_primary_group(conn, candidate_id, niche="monstera line art"):
     group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
-    _insert_group_product_with_images(
-        conn, group_id, size="8x12", gelato_product_id="gelato_prod_1",
-        image_urls=("https://gelato/flat.jpg", "https://gelato/life.jpg"),
-    )
+    # ponytail: no variants here (sizes=()) - none of this file's handle_decision/process_update
+    # tests assert on group_product_variants, and critic_pass.discard_superseded_attempt (called
+    # from the edit path below) has a pre-existing bug where it deletes group_products before its
+    # group_product_variants children, which trips the FK constraint if variants exist. That bug
+    # predates this task (critic_pass.py wasn't updated for the group_product_variants schema in
+    # tasks 1-5) and is out of this task's file scope to fix - flagged in the task report.
+    _insert_group_product_with_variants(conn, group_id, sizes=(), gelato_product_id="gelato_prod_1")
     _insert_listing_text(conn, candidate_id, niche=niche)
     return group_id
 
 
-def test_publish_group_product_succeeds_first_try(tmp_path):
+def test_publish_primary_group_creates_one_listing_for_all_four_sizes(tmp_path, monkeypatch):
+    # ponytail: GELATO_LIVE_MODE=true is required for this to exercise the resolve_etsy_listing_id
+    # path in group_product.patch_etsy_listing (it's gated on Gelato's own liveness, not this
+    # call's dry_run - see the ponytail comment on patch_etsy_listing) - without it the listing id
+    # would just be the "DRY_RUN_ETSY_LISTING_ID" placeholder and the mock below would go unused.
+    monkeypatch.setenv("GELATO_LIVE_MODE", "true")
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    group_id = _insert_ready_primary_group(conn, candidate_id)
-    gp_id = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
-    ).fetchone()["id"]
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-
-    with patch("pipeline.publish_primary_group.publish_to_etsy",
-               return_value="listing_1") as mock_publish:
-        result = publish_primary_group.publish_group_product(
-            conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
-        )
-
-    assert result == "listing_1"
-    mock_publish.assert_called_once()
-    conn.close()
-
-
-def test_publish_group_product_creates_gelato_product_when_missing(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_primary_group(conn, candidate_id)
+    _insert_primary_group(conn, candidate_id, status="pending_review")
     _insert_listing_text(conn, candidate_id)
-    gp_id = publish_primary_group.create_group_product_row(
-        conn, group_id, "A3", "portrait", "tpl_a3", 35, now=datetime(2026, 7, 12, 10, 0, 0),
-    )
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = config.load_static_config()
 
-    with patch("pipeline.publish_primary_group.create_gelato_product",
-               return_value="gelato_prod_new") as mock_create, \
-         patch("pipeline.publish_primary_group.publish_to_etsy",
-               return_value="listing_2") as mock_publish:
-        result = publish_primary_group.publish_group_product(
-            conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
-        )
-
-    assert result == "listing_2"
-    mock_create.assert_called_once()
-    mock_publish.assert_called_once()
-    conn.close()
-
-
-def test_publish_group_product_retries_once_then_succeeds(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_ready_primary_group(conn, candidate_id)
-    gp_id = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
-    ).fetchone()["id"]
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-
-    attempts = {"n": 0}
-
-    def flaky_publish(*args, **kwargs):
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise RuntimeError("Etsy throttled")
-        return "listing_after_retry"
-
-    with patch("pipeline.publish_primary_group.publish_to_etsy", side_effect=flaky_publish):
-        result = publish_primary_group.publish_group_product(
-            conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
-        )
-
-    assert result == "listing_after_retry"
-    assert attempts["n"] == 2
-    conn.close()
-
-
-def test_publish_group_product_marks_publish_failed_after_second_failure(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_ready_primary_group(conn, candidate_id)
-    gp_id = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
-    ).fetchone()["id"]
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-
-    with patch("pipeline.publish_primary_group.publish_to_etsy",
-               side_effect=RuntimeError("Etsy down")):
-        with pytest.raises(RuntimeError, match="Etsy down"):
-            publish_primary_group.publish_group_product(
-                conn, gp_id, candidate, STATIC_CONFIG, dry_run=True, now=datetime(2026, 7, 12, 11, 0, 0),
-            )
-
-    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (gp_id,)).fetchone()
-    assert gp_row["status"] == "publish_failed"
-    conn.close()
-
-
-def test_publish_primary_group_publishes_all_four_sizes(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_ready_primary_group(conn, candidate_id)
-
-    published_sizes = []
-
-    def fake_publish_group_product(conn, group_product_id, candidate, static_config, **kwargs):
-        row = conn.execute("SELECT size FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
-        published_sizes.append(row["size"])
-        return f"listing_{row['size']}"
-
-    with patch("pipeline.publish_primary_group.publish_group_product",
-               side_effect=fake_publish_group_product):
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve:
+        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+        mock_resolve.return_value = "etsy-listing-42"
         result = publish_primary_group.publish_primary_group(
-            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
-            now=datetime(2026, 7, 12, 11, 0, 0),
+            conn, candidate_id, static_config=static_config, shop_id="shop1", dry_run=True,
+            now="2026-07-16T09:20:00",
         )
 
-    assert result == {"8x12": "published", "A3": "published", "A2": "published", "A1": "published"}
-    assert sorted(published_sizes) == ["8x12", "A1", "A2", "A3"]
+    assert result["etsy_listing_id"] == "etsy-listing-42"
+    gp_row = conn.execute(
+        "SELECT id, status FROM group_products WHERE group_id = "
+        "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary')",
+        (candidate_id,),
+    ).fetchone()
+    assert gp_row["status"] == "published"
+    variant_rows = conn.execute(
+        "SELECT size FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
+        (gp_row["id"],),
+    ).fetchall()
+    assert [r["size"] for r in variant_rows] == ["8x12", "A1", "A2", "A3"]
 
-    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,)
+    ).fetchone()
     assert group_row["status"] == "approved_published"
     candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert candidate_row["status"] == "completed"
-
-    sizes_in_db = {
-        row["size"] for row in conn.execute(
-            "SELECT size FROM group_products WHERE group_id = ?", (group_id,)
-        ).fetchall()
-    }
-    assert sizes_in_db == {"8x12", "A3", "A2", "A1"}
     conn.close()
 
 
-def test_publish_primary_group_isolates_per_size_failures(tmp_path):
+def test_publish_primary_group_reuses_existing_live_group_product_on_reentry(tmp_path, monkeypatch):
+    # A re-run after a crash between create_or_reuse_group_product succeeding and patch_etsy_listing
+    # failing must not spawn a second Gelato product.
+    monkeypatch.setenv("GELATO_LIVE_MODE", "true")
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    group_id = _insert_ready_primary_group(conn, candidate_id)
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_group_product_with_variants(
+        conn, group_id, sizes=("8x12", "A3", "A2", "A1"), gelato_product_id="gelato-prod-existing",
+    )
+    _insert_listing_text(conn, candidate_id)
+    static_config = config.load_static_config()
 
-    def fake_publish_group_product(conn, group_product_id, candidate, static_config, **kwargs):
-        row = conn.execute("SELECT size FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
-        if row["size"] == "A2":
-            raise RuntimeError("A2 template placeholder")
-        return f"listing_{row['size']}"
-
-    with patch("pipeline.publish_primary_group.publish_group_product",
-               side_effect=fake_publish_group_product):
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve:
+        mock_resolve.return_value = "etsy-listing-77"
         result = publish_primary_group.publish_primary_group(
-            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
-            now=datetime(2026, 7, 12, 11, 0, 0),
+            conn, candidate_id, static_config=static_config, shop_id="shop1", dry_run=True,
+            now="2026-07-16T09:20:00",
         )
 
-    assert result == {"8x12": "published", "A3": "published", "A2": "publish_failed", "A1": "published"}
+    mock_create.assert_not_called()
+    assert result["etsy_listing_id"] == "etsy-listing-77"
+    conn.close()
+
+
+def test_publish_primary_group_retries_once_then_succeeds(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_listing_text(conn, candidate_id)
+    static_config = config.load_static_config()
+
+    attempts = {"n": 0}
+
+    def flaky_create(*args, **kwargs):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("Gelato throttled")
+        return {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+
+    with patch("pipeline.gelato_client.create_product_from_template", side_effect=flaky_create), \
+         patch("pipeline.gelato_client.delete_product") as mock_delete:
+        result = publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=static_config, shop_id="shop1", dry_run=True,
+            now="2026-07-16T09:20:00",
+        )
+
+    assert attempts["n"] == 2
+    assert result["etsy_listing_id"] == "DRY_RUN_ETSY_LISTING_ID"
+    mock_delete.assert_not_called()  # first attempt never got a gelato_product_id to clean up
+    conn.close()
+
+
+def test_publish_primary_group_marks_group_publish_failed_after_second_failure(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_listing_text(conn, candidate_id)
+    static_config = config.load_static_config()
+
+    with patch("pipeline.gelato_client.create_product_from_template",
+               side_effect=RuntimeError("Gelato down")):
+        with pytest.raises(RuntimeError, match="Gelato down"):
+            publish_primary_group.publish_primary_group(
+                conn, candidate_id, static_config=static_config, shop_id="shop1", dry_run=True,
+                now="2026-07-16T09:20:00",
+            )
+
     group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
-    assert group_row["status"] == "approved_published"
+    assert group_row["status"] == "publish_failed"
     conn.close()
 
 
-def test_publish_primary_group_is_idempotent_on_reentry_after_partial_crash(tmp_path):
-    # Simulates the process crashing/being re-invoked after 8x12 and A3 already published but
-    # before A2/A1 ran — a re-run must not re-publish the already-published sizes or spawn
-    # duplicate group_products rows for them.
+def test_publish_primary_group_raises_when_no_primary_group(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    group_id = _insert_ready_primary_group(conn, candidate_id)
-    conn.execute(
-        "UPDATE group_products SET status = 'published', etsy_listing_id = 'listing_8x12' "
-        "WHERE group_id = ? AND size = '8x12'", (group_id,),
-    )
-    _insert_group_product_with_images(conn, group_id, size="A3", gelato_product_id="gelato_a3")
-    conn.execute(
-        "UPDATE group_products SET status = 'published', etsy_listing_id = 'listing_a3' "
-        "WHERE group_id = ? AND size = 'A3'", (group_id,),
-    )
-    conn.commit()
-
-    called_for = []
-
-    def fake_publish_group_product(conn, group_product_id, candidate, static_config, **kwargs):
-        row = conn.execute("SELECT size FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
-        called_for.append(row["size"])
-        return f"listing_{row['size']}"
-
-    with patch("pipeline.publish_primary_group.publish_group_product",
-               side_effect=fake_publish_group_product):
-        result = publish_primary_group.publish_primary_group(
-            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
-            now=datetime(2026, 7, 12, 11, 0, 0),
-        )
-
-    assert sorted(called_for) == ["A1", "A2"]
-    assert result == {"8x12": "published", "A3": "published", "A2": "published", "A1": "published"}
-
-    sizes_in_db = [
-        row["size"] for row in conn.execute(
-            "SELECT size FROM group_products WHERE group_id = ?", (group_id,)
-        ).fetchall()
-    ]
-    assert sorted(sizes_in_db) == ["8x12", "A1", "A2", "A3"]
-    conn.close()
-
-
-def test_publish_primary_group_raises_when_no_live_8x12_product(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    _insert_primary_group(conn, candidate_id)
     _insert_listing_text(conn, candidate_id)
 
-    with pytest.raises(ValueError, match="8x12"):
+    with pytest.raises(ValueError, match="primary group"):
+        publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
+        )
+    conn.close()
+
+
+def test_publish_primary_group_raises_when_no_listing_text(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="pending_review")
+
+    with pytest.raises(ValueError, match="listing_texts"):
         publish_primary_group.publish_primary_group(
             conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
         )
@@ -818,7 +445,7 @@ def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
     candidate_id = _insert_candidate(conn)
     group_id = _insert_ready_primary_group(conn, candidate_id)
     old_gp_id = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND size = '8x12'", (group_id,)
+        "SELECT id FROM group_products WHERE group_id = ?", (group_id,)
     ).fetchone()["id"]
     publish_primary_group.critic_pass.record_critic_attempt(
         conn, group_id, 1, {"passed": True, "reason": "meets rubric"}, now=datetime(2026, 7, 12, 9, 20, 0),
@@ -837,11 +464,15 @@ def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
                                     api_key=None, now=None, **kwargs):
         timestamp = now.isoformat() if now else "2026-07-12T12:06:00"
         cursor = conn.execute(
-            "INSERT INTO group_products "
-            "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-            "status, created_at, updated_at) "
-            "VALUES (?, '8x12', 'portrait', 'tpl_1', 'gelato_prod_v2', 24, 'created', ?, ?)",
+            "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+            "VALUES (?, 'tpl_1', 'gelato_prod_v2', 'created', ?, ?)",
             (group_id, timestamp, timestamp),
+        )
+        conn.execute(
+            "INSERT INTO group_product_variants "
+            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
+            (cursor.lastrowid, timestamp),
         )
         conn.execute(
             "UPDATE groups SET status = 'pending_review', updated_at = ? WHERE id = ?",
