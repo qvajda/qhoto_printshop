@@ -111,6 +111,41 @@ Etsy-connected, that pre-review product creation pushes a listing to Etsy.
   reachable state). Confirm after item 6 lands.
 
 ### 5. 10x24 is the ISO image dropped in the middle with white bars
+
+**UPDATE 2026-07-16 — item 5's crop premise below is WRONG, verified live,
+do not implement as written.** Live `get_template` on the real portrait
+template (`23444c3a-...`, used for all 6 sizes) shows every variant's
+`imagePlaceholder` width/height is **exactly 2:3** — identical to our 2:3
+source image:
+```
+8x12 218.96x328.44=0.6667  A3 307.26x460.89=0.6667  5x7 134.97x202.45=0.6667
+A1 609.50x914.25=0.6667   10x24 261.21x391.82=0.6667  A2 432.18x648.27=0.6667
+```
+Our source already matches every placeholder's declared ratio exactly.
+Cropping the source to the *physical paper* ratio (10x24→0.417, 5x7→0.714,
+A-series→0.707, as originally planned below) would make it **mismatch**
+the placeholder and produce a worse result, not fix anything.
+The white bars are instead a **template-geometry gap**: the 10x24 variant's
+placeholder box (261x392mm) doesn't span its 250x600mm physical page. This
+is a template property set when the templates were built in Gelato Studio —
+no API field overrides placeholder geometry per-request. Fix is a manual
+dashboard task (resize the 10x24 variant's placeholder to span the full
+physical page; check 5x7/A-series too) — **not code**. User is checking/
+fixing this in the Gelato dashboard directly.
+**If the dashboard fix doesn't fully resolve it**, or if placeholder ratios
+ever drift from 2:3, the remaining code option is: `crop_to_ratio` (Pillow
+center-crop) reading the *live* placeholder ratio from `get_template` per
+size (not hardcoded ISO ratios), plus hosting the cropped file via
+Replicate's Files API (`POST https://api.replicate.com/v1/files`,
+multipart, reuses `REPLICATE_API_TOKEN`, 24h expiry — plenty since Gelato
+fetches immediately). No Gelato upload endpoint exists (confirmed via
+search) — external `fileUrl` is the only input Gelato's create-from-template
+accepts, so some hosting is unavoidable if a code crop is ever needed.
+Pillow is not currently installed (no requirements.txt exists yet, only
+requirements-dev.txt with pytest) — would need adding.
+Not built this session — deferred until the dashboard check comes back.
+
+**Original plan (superseded by the update above, kept for reference):**
 **Root cause.** `group_mockup.py` line 85 passes `candidate['base_image_url']`
 untouched into the 10x24 template. No per-aspect-ratio re-crop exists anywhere
 (the spec's "re-crop of the same approved artwork" was never implemented).
