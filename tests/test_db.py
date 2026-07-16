@@ -1,3 +1,7 @@
+import sqlite3
+
+import pytest
+
 import pipeline.db as db
 
 
@@ -87,14 +91,57 @@ def test_group_products_accepts_mockup_failed_status(tmp_path):
     )
     conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, price_eur, status, created_at, updated_at) "
-        "VALUES (1, '8x12', 'portrait', 'tpl_1', 24, 'mockup_failed', '2026-07-06', '2026-07-06')"
+        "(group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (1, 'tpl_1', 'mockup_failed', '2026-07-06', '2026-07-06')"
     )
     conn.commit()
 
     row = conn.execute("SELECT status FROM group_products WHERE group_id = 1").fetchone()
     assert row["status"] == "mockup_failed"
     conn.close()
+
+
+def test_group_products_is_group_level_not_size_level(tmp_path):
+    conn = db.get_connection(tmp_path / "test.sqlite3")
+    db.init_db(conn)
+
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(group_products)").fetchall()}
+    assert "size" not in cols
+    assert "price_eur" not in cols
+    assert "orientation" not in cols
+    assert {"gelato_product_id", "etsy_listing_id", "title", "status"} <= cols
+
+
+def test_group_product_variants_table_exists_with_unique_size_per_product(tmp_path):
+    conn = db.get_connection(tmp_path / "test.sqlite3")
+    db.init_db(conn)
+
+    timestamp = "2026-07-16T00:00:00"
+    conn.execute(
+        "INSERT INTO candidates (created_at, niche, go_hold_kill, status, updated_at) "
+        "VALUES (?, 'test', 'go', 'pending', ?)", (timestamp, timestamp),
+    )
+    conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (1, 'primary', 'pending_generation', ?, ?)", (timestamp, timestamp),
+    )
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (1, 'tmpl1', 'pending', ?, ?)", (timestamp, timestamp),
+    )
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (1, '8x12', 'portrait', 'var1', 24.0, ?)", (timestamp,),
+    )
+    conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO group_product_variants "
+            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (1, '8x12', 'portrait', 'var1', 99.0, ?)", (timestamp,),
+        )
 
 
 def test_candidates_accepts_compliance_failed_status(tmp_path):

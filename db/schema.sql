@@ -61,18 +61,26 @@ CREATE TABLE IF NOT EXISTS critic_pass_attempts (
 CREATE TABLE IF NOT EXISTS group_products (
   id INTEGER PRIMARY KEY,
   group_id INTEGER NOT NULL REFERENCES groups(id),
-  size TEXT NOT NULL CHECK(size IN ('5x7','8x12','A3','A2','10x24','A1')),
-  orientation TEXT NOT NULL CHECK(orientation IN ('portrait','landscape')),
   gelato_template_id TEXT NOT NULL,
   gelato_product_id TEXT,
   etsy_listing_id TEXT,
-  price_eur REAL NOT NULL,
   title TEXT,
   status TEXT NOT NULL CHECK(status IN (
     'pending','created','mockup_failed','publish_failed','published','deleted'
   )),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_product_variants (
+  id INTEGER PRIMARY KEY,
+  group_product_id INTEGER NOT NULL REFERENCES group_products(id),
+  size TEXT NOT NULL CHECK(size IN ('5x7','8x12','A3','A2','10x24','A1')),
+  orientation TEXT NOT NULL CHECK(orientation IN ('portrait','landscape')),
+  gelato_template_variant_id TEXT NOT NULL,
+  price_eur REAL NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(group_product_id, size)
 );
 
 CREATE TABLE IF NOT EXISTS product_images (
