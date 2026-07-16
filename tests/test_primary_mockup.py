@@ -1,8 +1,7 @@
 from datetime import datetime
 from unittest.mock import patch
 
-import pytest
-
+import pipeline.config as config
 import pipeline.db as db
 import pipeline.primary_mockup as primary_mockup
 
@@ -71,169 +70,87 @@ def test_get_or_create_primary_group_returns_existing_row(tmp_path):
     conn.close()
 
 
-def test_poll_until_ready_returns_product_once_ready():
-    call_count = {"n": 0}
-
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        call_count["n"] += 1
-        if call_count["n"] < 3:
-            return {"id": product_id, "isReadyToPublish": False, "productImages": []}
-        return {
-            "id": product_id, "isReadyToPublish": True,
-            "productImages": [{"fileUrl": "https://img/1.jpg", "isPrimary": True}],
-        }
-
-    sleeps = []
-
-    with patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
-        result = primary_mockup.poll_until_ready(
-            "prod_1", store_id="store1", api_key="key1",
-            poll_interval=3.0, timeout=90.0,
-            sleep_fn=sleeps.append, now_fn=lambda: 0.0,
-        )
-
-    assert result["isReadyToPublish"] is True
-    assert call_count["n"] == 3
-    assert sleeps == [3.0, 3.0]
+# poll_until_ready / GelatoMockupTimeoutError now live in pipeline.group_product - covered by
+# tests/test_group_product.py, not re-tested here.
 
 
-def test_poll_until_ready_raises_after_timeout():
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        return {"id": product_id, "isReadyToPublish": False, "productImages": []}
+def test_create_primary_mockup_creates_group_product_with_8x12_variant(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    static_config = config.load_static_config()
 
-    now_values = iter([0.0, 10.0, 95.0])
+    result = primary_mockup.create_primary_mockup(
+        conn, candidate_id, static_config=static_config, now="2026-07-16T09:00:00",
+    )
 
-    with patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
-        with pytest.raises(primary_mockup.GelatoMockupTimeoutError, match="prod_1"):
-            primary_mockup.poll_until_ready(
-                "prod_1", store_id="store1", api_key="key1",
-                poll_interval=3.0, timeout=90.0,
-                sleep_fn=lambda seconds: None, now_fn=lambda: next(now_values),
-            )
-
-
-STATIC_CONFIG = {
-    "gelato_templates": {
-        "8x12_portrait": {
-            "template_id": "tpl_real_8x12",
-            "template_variant_id": "variant_real_8x12",
-            "image_placeholder_name": "real_image_slot.jpg",
-        }
-    },
-    "prices_eur": {"8x12": 24},
-}
+    gp_row = conn.execute(
+        "SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)
+    ).fetchone()
+    assert gp_row["status"] == "created"
+    variant_row = conn.execute(
+        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ?",
+        (result["group_product_id"],),
+    ).fetchone()
+    assert variant_row["size"] == "8x12"
+    assert variant_row["price_eur"] == static_config["prices_eur"]["8x12"]
+    conn.close()
 
 
-def test_create_primary_mockup_happy_path_writes_group_product_and_images(tmp_path):
+def test_create_primary_mockup_delegates_to_create_or_reuse_group_product(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, niche="monstera line art")
+    static_config = config.load_static_config()
 
-    def fake_create_product_from_template(template_id, template_variant_id, image_placeholder_name,
-                                           image_url, title, *, store_id=None, api_key=None, **kwargs):
-        assert template_id == "tpl_real_8x12"
-        assert template_variant_id == "variant_real_8x12"
-        assert image_placeholder_name == "real_image_slot.jpg"
-        assert image_url == "https://replicate.delivery/out.png"
-        assert "monstera line art" in title
-        return {"id": "gelato_prod_1", "isReadyToPublish": False, "productImages": []}
-
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        assert product_id == "gelato_prod_1"
-        return {
-            "id": "gelato_prod_1",
-            "isReadyToPublish": True,
-            "productImages": [
-                {"fileUrl": "https://gelato/lifestyle1.jpg", "isPrimary": False},
-                {"fileUrl": "https://gelato/flat.jpg", "isPrimary": True},
-                {"fileUrl": "https://gelato/lifestyle2.jpg", "isPrimary": False},
-            ],
-        }
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+    with patch(
+        "pipeline.primary_mockup.group_product.create_or_reuse_group_product"
+    ) as mock_create:
+        mock_create.return_value = {"group_product_id": 42, "gelato_product_id": "gelato-prod-1"}
         result = primary_mockup.create_primary_mockup(
-            conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-            poll_interval=0, poll_timeout=10, now=datetime(2026, 7, 9, 12, 0, 0),
+            conn, candidate_id, static_config=static_config, store_id="store1", api_key="key1",
+            poll_interval=1, poll_timeout=5, now=datetime(2026, 7, 16, 12, 0, 0),
         )
 
-    assert result["gelato_product_id"] == "gelato_prod_1"
+    assert mock_create.call_count == 1
+    args, kwargs = mock_create.call_args
+    conn_arg, group_id_arg, sizes_arg, candidate_arg, static_config_arg, title_arg = args
+    assert sizes_arg == ["8x12"]
+    assert candidate_arg["niche"] == "monstera line art"
+    assert title_arg == primary_mockup.build_mockup_title(candidate_arg)
+    assert kwargs["store_id"] == "store1"
+    assert kwargs["api_key"] == "key1"
+    assert kwargs["poll_interval"] == 1
+    assert kwargs["poll_timeout"] == 5
+
+    assert result["group_product_id"] == 42
+    assert result["gelato_product_id"] == "gelato-prod-1"
 
     group_row = conn.execute("SELECT * FROM groups WHERE id = ?", (result["group_id"],)).fetchone()
     assert group_row["status"] == "pending_review"
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
-    assert gp_row["status"] == "created"
-    assert gp_row["gelato_product_id"] == "gelato_prod_1"
-    assert gp_row["size"] == "8x12"
-    assert gp_row["orientation"] == "portrait"
-    assert gp_row["price_eur"] == 24
-
-    images = conn.execute(
-        "SELECT * FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
-        (result["group_product_id"],),
-    ).fetchall()
-    assert len(images) == 3
-    assert images[0]["image_type"] == "flat_mockup"
-    assert images[0]["image_url"] == "https://gelato/flat.jpg"
-    assert images[0]["alt_text"] == ""
-    assert [img["image_type"] for img in images[1:]] == ["lifestyle", "lifestyle"]
     conn.close()
 
 
-def test_create_primary_mockup_dry_run_skips_polling(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn, niche="moon phase print")
-
-    def fake_create_product_from_template(*args, **kwargs):
-        return {
-            "id": "DRY_RUN_PRODUCT_ID", "previewUrl": None, "productImages": [],
-            "_dry_run": True,
-        }
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product") as mock_get_product:
-        result = primary_mockup.create_primary_mockup(
-            conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 9, 12, 0, 0),
-        )
-
-    mock_get_product.assert_not_called()
-
-    images = conn.execute(
-        "SELECT * FROM product_images WHERE group_product_id = ?",
-        (result["group_product_id"],),
-    ).fetchall()
-    assert len(images) == 1
-    assert images[0]["image_type"] == "flat_mockup"
-    assert images[0]["gallery_order"] == 0
-
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
-    assert gp_row["status"] == "created"
-    conn.close()
-
-
-def test_create_primary_mockup_marks_mockup_failed_when_create_call_raises(tmp_path):
+def test_create_primary_mockup_propagates_delegate_failure(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, niche="saturated term")
+    static_config = config.load_static_config()
 
-    def fake_create_product_from_template(*args, **kwargs):
-        raise RuntimeError("Gelato 500")
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template):
-        with pytest.raises(RuntimeError, match="Gelato 500"):
+    with patch(
+        "pipeline.primary_mockup.group_product.create_or_reuse_group_product",
+        side_effect=RuntimeError("Gelato 500"),
+    ):
+        try:
             primary_mockup.create_primary_mockup(
-                conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-                now=datetime(2026, 7, 9, 12, 0, 0),
+                conn, candidate_id, static_config=static_config, now=datetime(2026, 7, 16, 12, 0, 0),
             )
+            assert False, "expected RuntimeError"
+        except RuntimeError as exc:
+            assert "Gelato 500" in str(exc)
 
-    gp_row = conn.execute(
-        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
-        "WHERE g.candidate_id = ?", (candidate_id,)
+    group_row = conn.execute(
+        "SELECT * FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,)
     ).fetchone()
-    assert gp_row["status"] == "mockup_failed"
+    # group creation happens before delegation and is not rolled back on failure
+    assert group_row["status"] == "pending_generation"
     conn.close()
 
 
@@ -242,21 +159,15 @@ def test_run_primary_mockup_cycle_processes_ready_candidates_and_skips_others(tm
     ready_id = _insert_candidate(conn, niche="monstera line art", status="generating",
                                   base_image_url="https://replicate.delivery/a.png")
     _insert_candidate(conn, niche="pending one", status="pending", base_image_url=None)
+    static_config = config.load_static_config()
 
-    def fake_create_product_from_template(*args, **kwargs):
-        return {"id": "gelato_prod_x", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
-
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        return {"id": product_id, "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+    with patch(
+        "pipeline.primary_mockup.group_product.create_or_reuse_group_product"
+    ) as mock_create:
+        mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "gelato-prod-x"}
         processed_ids = primary_mockup.run_primary_mockup_cycle(
-            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 9, 12, 0, 0),
+            conn, static_config=static_config, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 16, 12, 0, 0),
         )
 
     assert processed_ids == [ready_id]
@@ -266,26 +177,20 @@ def test_run_primary_mockup_cycle_processes_ready_candidates_and_skips_others(tm
 def test_run_primary_mockup_cycle_skips_candidates_already_mocked_up(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, niche="monstera line art", status="generating")
+    static_config = config.load_static_config()
 
-    def fake_create_product_from_template(*args, **kwargs):
-        return {"id": "gelato_prod_y", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
-
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        return {"id": product_id, "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
-        first_run = primary_mockup.run_primary_mockup_cycle(
-            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 9, 12, 0, 0),
-        )
-        second_run = primary_mockup.run_primary_mockup_cycle(
-            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 9, 13, 0, 0),
-        )
+    # Exercise the real create_or_reuse_group_product (dry-run, since GELATO_LIVE_MODE is unset)
+    # so the group_products row it inserts is what makes the cycle's exclusion query work -
+    # fully mocking that function away (as elsewhere in this file) would skip the DB write the
+    # idempotency check here actually depends on.
+    first_run = primary_mockup.run_primary_mockup_cycle(
+        conn, static_config=static_config, store_id="store1", api_key="key1",
+        now=datetime(2026, 7, 16, 12, 0, 0),
+    )
+    second_run = primary_mockup.run_primary_mockup_cycle(
+        conn, static_config=static_config, store_id="store1", api_key="key1",
+        now=datetime(2026, 7, 16, 13, 0, 0),
+    )
 
     assert first_run == [candidate_id]
     assert second_run == []
@@ -298,69 +203,32 @@ def test_run_primary_mockup_cycle_isolates_per_candidate_failures(tmp_path):
                                     base_image_url="https://replicate.delivery/fail.png")
     succeeding_id = _insert_candidate(conn, niche="moon phase print", status="generating",
                                        base_image_url="https://replicate.delivery/ok.png")
+    static_config = config.load_static_config()
 
-    def fake_create_product_from_template(template_id, template_variant_id, image_placeholder_name,
-                                           image_url, title, *, store_id=None, api_key=None, **kwargs):
-        if image_url == "https://replicate.delivery/fail.png":
+    def fake_create_or_reuse(conn, group_id, sizes, candidate, static_config, title, **kwargs):
+        if candidate["base_image_url"] == "https://replicate.delivery/fail.png":
             raise RuntimeError("Gelato throttled")
-        return {"id": "gelato_prod_ok", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
+        return {"group_product_id": 1, "gelato_product_id": "gelato-prod-ok"}
 
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        return {"id": product_id, "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat.jpg", "isPrimary": True}]}
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
+    with patch(
+        "pipeline.primary_mockup.group_product.create_or_reuse_group_product",
+        side_effect=fake_create_or_reuse,
+    ):
         processed_ids = primary_mockup.run_primary_mockup_cycle(
-            conn, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 9, 12, 0, 0),
+            conn, static_config=static_config, store_id="store1", api_key="key1",
+            now=datetime(2026, 7, 16, 12, 0, 0),
         )
 
     assert processed_ids == [succeeding_id]
-
-    failing_gp = conn.execute(
-        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
-        "WHERE g.candidate_id = ?", (failing_id,)
-    ).fetchone()
-    assert failing_gp["status"] == "mockup_failed"
     conn.close()
 
 
 def test_run_primary_mockup_cycle_returns_empty_list_when_nothing_ready(tmp_path):
     conn = _fresh_conn(tmp_path)
     _insert_candidate(conn, niche="pending one", status="pending", base_image_url=None)
+    static_config = config.load_static_config()
 
-    processed_ids = primary_mockup.run_primary_mockup_cycle(conn, static_config=STATIC_CONFIG)
+    processed_ids = primary_mockup.run_primary_mockup_cycle(conn, static_config=static_config)
 
     assert processed_ids == []
-    conn.close()
-
-
-def test_create_primary_mockup_marks_mockup_failed_on_poll_timeout(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn, niche="fern print")
-
-    def fake_create_product_from_template(*args, **kwargs):
-        return {"id": "gelato_prod_2", "isReadyToPublish": False, "productImages": []}
-
-    def fake_get_product(product_id, *, store_id=None, api_key=None):
-        return {"id": product_id, "isReadyToPublish": False, "productImages": []}
-
-    with patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
-               side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product):
-        with pytest.raises(primary_mockup.GelatoMockupTimeoutError):
-            primary_mockup.create_primary_mockup(
-                conn, candidate_id, static_config=STATIC_CONFIG, store_id="store1", api_key="key1",
-                poll_interval=0, poll_timeout=0,
-                now=datetime(2026, 7, 9, 12, 0, 0),
-            )
-
-    gp_row = conn.execute(
-        "SELECT gp.* FROM group_products gp JOIN groups g ON g.id = gp.group_id "
-        "WHERE g.candidate_id = ?", (candidate_id,)
-    ).fetchone()
-    assert gp_row["status"] == "mockup_failed"
     conn.close()
