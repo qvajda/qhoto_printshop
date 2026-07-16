@@ -1,6 +1,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 import pipeline.etsy_client as etsy_client
 
 
@@ -171,3 +173,95 @@ def test_update_listing_state_sends_patch_with_state_body_when_live():
     assert captured["method"] == "PATCH"
     assert captured["body"] == {"state": "active"}
     assert result == {"listing_id": 999, "state": "active"}
+
+
+def test_update_listing_patches_full_field_set():
+    listing_data = {
+        "title": "Monstera Line Art", "description": "desc", "tags": ["a", "b"],
+        "taxonomy_id": 1027, "who_made": "i_did", "when_made": "made_to_order",
+        "is_supply": False, "shop_section_id": 59380312, "production_partner_ids": [5717252],
+    }
+    with patch("pipeline.http.send") as mock_send:
+        mock_send.return_value = {"listing_id": 555, **listing_data}
+        result = etsy_client.update_listing(
+            "shop1", "555", listing_data, api_key="k", api_secret="s", access_token="t", dry_run=False,
+        )
+
+    sent_request = mock_send.call_args[0][0]
+    assert sent_request.method == "PATCH"
+    assert sent_request.full_url == "https://openapi.etsy.com/v3/application/shops/shop1/listings/555"
+    body = json.loads(sent_request.data)
+    assert body == listing_data
+    assert result["listing_id"] == 555
+
+
+def test_update_listing_dry_run_does_not_call_http():
+    with patch("pipeline.http.send") as mock_send:
+        result = etsy_client.update_listing("shop1", "555", {"title": "x"}, dry_run=True)
+    mock_send.assert_not_called()
+    assert result["_dry_run"] is True
+
+
+def test_get_listing_inventory_sends_get():
+    with patch("pipeline.http.send") as mock_send:
+        mock_send.return_value = {"products": []}
+        etsy_client.get_listing_inventory("shop1", "555", api_key="k", api_secret="s",
+                                           access_token="t", dry_run=False)
+    sent_request = mock_send.call_args[0][0]
+    assert sent_request.method == "GET"
+    assert sent_request.full_url == "https://openapi.etsy.com/v3/application/listings/555/inventory"
+
+
+def test_update_listing_inventory_sets_price_on_matching_size_and_strips_readonly_fields():
+    inventory = {
+        "products": [
+            {
+                "product_id": 1, "sku": "", "is_deleted": False,
+                "property_values": [{"property_id": 100, "property_name": "Size",
+                                      "value_ids": [1], "scale_id": None, "scale_name": None,
+                                      "values": ["8x12"]}],
+                "offerings": [{"offering_id": 10, "price": {"amount": 2000, "divisor": 100, "currency_code": "EUR"},
+                               "quantity": 999, "is_enabled": True}],
+            },
+            {
+                "product_id": 2, "sku": "", "is_deleted": False,
+                "property_values": [{"property_id": 100, "property_name": "Size",
+                                      "value_ids": [2], "scale_id": None, "scale_name": None,
+                                      "values": ["A3"]}],
+                "offerings": [{"offering_id": 11, "price": {"amount": 3000, "divisor": 100, "currency_code": "EUR"},
+                               "quantity": 999, "is_enabled": True}],
+            },
+        ]
+    }
+    with patch("pipeline.etsy_client.get_listing_inventory") as mock_get, \
+         patch("pipeline.http.send") as mock_send:
+        mock_get.return_value = inventory
+        mock_send.return_value = {"products": []}
+        etsy_client.update_listing_inventory(
+            "shop1", "555", {"8x12": 24.0, "A3": 35.0},
+            api_key="k", api_secret="s", access_token="t", dry_run=False,
+        )
+
+    sent_request = mock_send.call_args[0][0]
+    assert sent_request.method == "PUT"
+    body = json.loads(sent_request.data)
+    prices = {p["property_values"][0]["values"][0]: p["offerings"][0]["price"] for p in body["products"]}
+    assert prices["8x12"] == 24.0
+    assert prices["A3"] == 35.0
+    assert "product_id" not in body["products"][0]
+    assert "is_deleted" not in body["products"][0]
+    assert "offering_id" not in body["products"][0]["offerings"][0]
+
+
+def test_update_listing_inventory_raises_if_a_size_has_no_matching_product():
+    inventory = {"products": [{"product_id": 1, "sku": "", "is_deleted": False,
+                                "property_values": [{"property_id": 100, "property_name": "Size",
+                                                      "value_ids": [1], "scale_id": None, "scale_name": None,
+                                                      "values": ["8x12"]}],
+                                "offerings": [{"offering_id": 10,
+                                               "price": {"amount": 2000, "divisor": 100, "currency_code": "EUR"},
+                                               "quantity": 999, "is_enabled": True}]}]}
+    with patch("pipeline.etsy_client.get_listing_inventory") as mock_get:
+        mock_get.return_value = inventory
+        with pytest.raises(ValueError, match="A1"):
+            etsy_client.update_listing_inventory("shop1", "555", {"8x12": 24.0, "A1": 49.0}, dry_run=False)
