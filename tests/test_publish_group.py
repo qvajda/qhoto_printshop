@@ -4,7 +4,10 @@ from unittest.mock import patch
 
 import pytest
 
+import pipeline.config as config
 import pipeline.db as db
+import pipeline.group_mockup as group_mockup
+import pipeline.group_product as group_product
 import pipeline.publish_group as publish_group
 import pipeline.publish_primary_group as publish_primary_group
 
@@ -24,6 +27,17 @@ def _insert_candidate(conn, niche="monstera line art", *, status="primary_review
         VALUES (?, ?, 'go', ?, ?, ?)
         """,
         (timestamp, niche, status, base_image_url, timestamp),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def _insert_primary_group(conn, candidate_id, *, status="approved_published"):
+    timestamp = "2026-07-12T09:00:00"
+    cursor = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (?, 'primary', ?, ?, ?)",
+        (candidate_id, status, timestamp, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
@@ -64,12 +78,17 @@ def _insert_group_product_with_images(conn, group_id, size, *, gelato_product_id
     timestamp = "2026-07-13T10:00:00"
     cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-        "status, created_at, updated_at) "
-        "VALUES (?, ?, 'portrait', 'tpl_x', ?, ?, 'created', ?, ?)",
-        (group_id, size, gelato_product_id, price_eur, timestamp, timestamp),
+        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_x', ?, 'created', ?, ?)",
+        (group_id, gelato_product_id, timestamp, timestamp),
     )
     gp_id = cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, 'portrait', 'variant_x', ?, ?)",
+        (gp_id, size, price_eur, timestamp),
+    )
     for order, url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
@@ -101,22 +120,50 @@ STATIC_CONFIG = {
 }
 
 
+def test_handle_decision_approve_patches_existing_etsy_listing(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="approved_published")
+    group_id = _insert_group(conn, candidate_id, "5x7", status="pending_review")
+    static_config = config.load_static_config()
+    group_mockup.create_group_mockup(conn, candidate_id, "5x7", static_config=static_config, now="2026-07-16T09:00:00")
+    _insert_listing_text(conn, candidate_id)
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve:
+        mock_resolve.return_value = "etsy-listing-99"
+        result = publish_group.handle_decision(
+            conn, candidate_id, group_id, "approve", static_config=static_config,
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:10:00",
+        )
+
+    assert result == {"action": "approve", "etsy_listing_id": "etsy-listing-99"}
+
+    group_row = conn.execute(
+        "SELECT decision, status FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()
+    assert group_row["decision"] == "approved"
+    assert group_row["status"] == "approved_published"
+    conn.close()
+
+
 def test_handle_decision_approve_publishes_group_and_sets_status(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
 
-    with patch("pipeline.publish_group.publish_primary_group.publish_group_product",
-               return_value="listing_777") as mock_publish:
+    with patch("pipeline.publish_group.group_product.patch_etsy_listing",
+               return_value="etsy-listing-777") as mock_patch:
         result = publish_group.handle_decision(
             conn, candidate_id, group_id, "approve", static_config=STATIC_CONFIG, dry_run=True,
             now=datetime(2026, 7, 13, 12, 0, 0),
         )
 
-    mock_publish.assert_called_once()
-    assert mock_publish.call_args.args[1] == gp_id
+    mock_patch.assert_called_once()
+    assert mock_patch.call_args.args[1] == gp_id
+    assert mock_patch.call_args.args[2] == "5x7"
     assert result["action"] == "approve"
-    assert result["listing_id"] == "listing_777"
+    assert result["etsy_listing_id"] == "etsy-listing-777"
 
     group_row = conn.execute(
         "SELECT decision, status, decided_at FROM groups WHERE id = ?", (group_id,)
@@ -149,7 +196,7 @@ def test_handle_decision_approve_marks_group_publish_failed_on_publish_failure(t
     candidate_id = _insert_candidate(conn)
     group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
 
-    with patch("pipeline.publish_group.publish_primary_group.publish_group_product",
+    with patch("pipeline.publish_group.group_product.patch_etsy_listing",
                side_effect=RuntimeError("etsy down")):
         with pytest.raises(RuntimeError, match="etsy down"):
             publish_group.handle_decision(

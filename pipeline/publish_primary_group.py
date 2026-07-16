@@ -45,7 +45,7 @@ def log_telegram_event(conn, telegram_user_id, raw_payload, accepted, action_tak
 
 
 def record_decision(conn, group_id, decision, decision_notes=None, *, now=None) -> None:
-    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     conn.execute(
         "UPDATE groups SET decision = ?, decision_notes = ?, decided_at = ?, updated_at = ? WHERE id = ?",
         (decision, decision_notes, timestamp, timestamp, group_id),

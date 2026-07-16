@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pipeline.config as config
 import pipeline.critic_pass as critic_pass
+import pipeline.group_product as group_product
 import pipeline.publish_primary_group as publish_primary_group
 
 
@@ -20,23 +21,28 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
                      static_config=None, store_id=None, gelato_api_key=None, shop_id=None,
                      etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
                      dry_run=None, now=None) -> dict:
-    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
 
     if action == "approve":
         publish_primary_group.record_decision(conn, group_id, "approved", decision_notes, now=now)
         static_config = static_config if static_config is not None else config.load_static_config()
 
-        group_product = get_live_group_product(conn, group_id)
-        candidate = dict(
-            conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+        group_product_row = get_live_group_product(conn, group_id)
+        group_row = conn.execute(
+            "SELECT group_type FROM groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        group_type = group_row["group_type"]
+        listing_text = dict(
+            conn.execute(
+                "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+            ).fetchone()
         )
 
         try:
-            listing_id = publish_primary_group.publish_group_product(
-                conn, group_product["id"], candidate, static_config, store_id=store_id,
-                gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
-                etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-                dry_run=dry_run, now=now,
+            etsy_listing_id = group_product.patch_etsy_listing(
+                conn, group_product_row["id"], group_type, listing_text, static_config,
+                shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
             )
         except Exception:
             conn.execute(
@@ -51,7 +57,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
             (timestamp, group_id),
         )
         conn.commit()
-        return {"action": "approve", "listing_id": listing_id}
+        return {"action": "approve", "etsy_listing_id": etsy_listing_id}
 
     if action == "reject":
         publish_primary_group.record_decision(conn, group_id, "rejected", decision_notes, now=now)
