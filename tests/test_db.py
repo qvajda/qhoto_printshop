@@ -144,6 +144,17 @@ def test_group_product_variants_table_exists_with_unique_size_per_product(tmp_pa
         )
 
 
+def test_candidates_has_base_artwork_persistence_columns(tmp_path):
+    conn = db.get_connection(tmp_path / "test.sqlite3")
+    db.init_db(conn)
+
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(candidates)").fetchall()}
+    assert {
+        "base_image_local_path", "base_image_sha256", "base_replicate_delivery_url",
+    } <= cols
+    conn.close()
+
+
 def test_candidates_accepts_compliance_failed_status(tmp_path):
     db_path = tmp_path / "test.sqlite3"
     conn = db.get_connection(db_path)

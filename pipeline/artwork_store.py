@@ -7,16 +7,13 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from pipeline import config
+
 ARTWORK_CACHE_DIR = Path(__file__).resolve().parent.parent / "db" / "base_artwork"
 
-R2_ENV_VARS = (
-    "R2_ACCOUNT_ID",
-    "R2_ACCESS_KEY_ID",
-    "R2_SECRET_ACCESS_KEY",
-    "R2_BUCKET",
-    "R2_ENDPOINT",
-    "R2_PUBLIC_BASE_URL",
-)
+# Kept as an alias for existing callers/tests; config.R2_ENV_VARS is now the
+# source of truth (see config.is_r2_configured).
+R2_ENV_VARS = config.R2_ENV_VARS
 
 R2_REGION = "auto"
 R2_SERVICE = "s3"
@@ -62,14 +59,12 @@ def persist_base_artwork(candidate_id: int, raw_bytes: bytes) -> dict:
 
 
 def _r2_config() -> dict | None:
-    """All-or-nothing R2 env var gate. Matches config.is_live_mode's style of
-    reading straight from os.environ (these are optional, so require_env's
-    raise-on-missing doesn't fit - absence means "R2 not configured", not an
-    error)."""
-    values = {key: os.environ.get(key) for key in R2_ENV_VARS}
-    if not all(values.values()):
+    """All-or-nothing R2 env var gate (see config.is_r2_configured). Absence
+    means "R2 not configured", not an error, so this returns None rather
+    than raising like config.require_env would."""
+    if not config.is_r2_configured():
         return None
-    return values
+    return {key: os.environ.get(key) for key in config.R2_ENV_VARS}
 
 
 # --- R2 object operations (S3-compatible PUT/HEAD, SigV4-signed) ---

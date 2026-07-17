@@ -74,3 +74,17 @@ def get_shipping_profile_id(static_config: dict, group_type: str) -> str:
 
 def is_live_mode(service: str) -> bool:
     return os.environ.get(f"{service}_LIVE_MODE", "").strip().lower() == "true"
+
+
+R2_ENV_VARS = (
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_BUCKET",
+    "R2_ENDPOINT",
+    "R2_PUBLIC_BASE_URL",
+)
+
+
+def is_r2_configured() -> bool:
+    return all(os.environ.get(key) for key in R2_ENV_VARS)

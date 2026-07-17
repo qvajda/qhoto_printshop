@@ -160,3 +160,35 @@ def test_is_live_mode_true_when_env_var_is_exactly_true(monkeypatch):
     monkeypatch.setenv("QHOTOTEST_LIVE_MODE", "true")
 
     assert config.is_live_mode("QHOTOTEST") is True
+
+
+R2_ENV_VARS = (
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_BUCKET",
+    "R2_ENDPOINT",
+    "R2_PUBLIC_BASE_URL",
+)
+
+
+def test_is_r2_configured_true_when_all_vars_present(monkeypatch):
+    for key in R2_ENV_VARS:
+        monkeypatch.setenv(key, "value")
+
+    assert config.is_r2_configured() is True
+
+
+def test_is_r2_configured_false_when_any_var_missing(monkeypatch):
+    for key in R2_ENV_VARS:
+        monkeypatch.setenv(key, "value")
+    monkeypatch.delenv("R2_BUCKET", raising=False)
+
+    assert config.is_r2_configured() is False
+
+
+def test_is_r2_configured_false_when_none_present(monkeypatch):
+    for key in R2_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+
+    assert config.is_r2_configured() is False
