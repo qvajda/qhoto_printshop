@@ -41,7 +41,8 @@ def test_persist_base_artwork_overwrites_when_bytes_differ_for_same_candidate(tm
     assert result["sha256"] == hashlib.sha256(b"retry produced new bytes").hexdigest()
 
 
-def test_persist_base_artwork_return_shape_has_expected_keys_and_types():
+def test_persist_base_artwork_return_shape_has_expected_keys_and_types(tmp_path, monkeypatch):
+    monkeypatch.setattr(artwork_store, "ARTWORK_CACHE_DIR", tmp_path)
     result = artwork_store.persist_base_artwork(candidate_id=99, raw_bytes=b"shape check")
 
     assert isinstance(result["durable_url"], str)
