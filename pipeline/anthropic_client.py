@@ -1,9 +1,19 @@
+import base64
+import io
 import json
 import re
+import urllib.error
 import urllib.request
+
+from PIL import Image
 
 import pipeline.config as config
 import pipeline.http as http
+
+# Anthropic rejects URL-fetched images over 5MB outright ("Unable to download the
+# file") - hit live 2026-07-17 with a ~6.9MB raw Replicate generation output used as
+# a group-critic image fallback.
+MAX_IMAGE_URL_BYTES = 5 * 1024 * 1024
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
@@ -59,12 +69,48 @@ def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024) -> dic
     return {"text": "\n".join(text_blocks), "raw": result}
 
 
+def _downscaled_base64_block(raw: bytes) -> dict:
+    image = Image.open(io.BytesIO(raw)).convert("RGB")
+    image.thumbnail((2000, 2000))
+    quality = 85
+    while True:
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=quality)
+        if buffer.tell() <= MAX_IMAGE_URL_BYTES or quality <= 20:
+            break
+        quality -= 15
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": "image/jpeg",
+            "data": base64.b64encode(buffer.getvalue()).decode("ascii"),
+        },
+    }
+
+
+def _image_content_block(image_url: str) -> dict:
+    if not image_url.startswith(("http://", "https://")):
+        # Locally cover-cropped preview (pipeline.image_crop) - no public URL exists
+        # for it, so it's always sent as base64.
+        with open(image_url, "rb") as f:
+            return _downscaled_base64_block(f.read())
+
+    try:
+        head = urllib.request.urlopen(urllib.request.Request(image_url, method="HEAD"), timeout=10)
+        content_length = int(head.headers.get("Content-Length") or 0)
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
+        content_length = 0
+
+    if 0 < content_length <= MAX_IMAGE_URL_BYTES:
+        return {"type": "image", "source": {"type": "url", "url": image_url}}
+    raw = urllib.request.urlopen(urllib.request.Request(image_url), timeout=30).read()
+    return _downscaled_base64_block(raw)
+
+
 def complete_with_images(prompt: str, image_urls: list, *, api_key: str = None, max_tokens: int = 1024) -> dict:
     api_key = api_key or config.require_env("ANTHROPIC_API_KEY")
-    content = [
-        {"type": "image", "source": {"type": "url", "url": image_url}}
-        for image_url in image_urls
-    ]
+    content = [_image_content_block(image_url) for image_url in image_urls]
     content.append({"type": "text", "text": prompt})
     body = json.dumps({
         "model": ANTHROPIC_MODEL,

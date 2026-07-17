@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pipeline.config as config
 import pipeline.etsy_client as etsy_client
 import pipeline.gelato_client as gelato_client
+import pipeline.image_crop as image_crop
 
 
 class GelatoMockupTimeoutError(Exception):
@@ -68,6 +69,27 @@ def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: s
                 f"pipeline bug."
             )
         sleep_fn(poll_interval)
+
+
+def _primary_flat_image_url(conn, group_id: int, *, store_id: str = None, api_key: str = None) -> str | None:
+    row = conn.execute(
+        """
+        SELECT gp.gelato_product_id FROM group_products gp
+        JOIN groups g ON g.id = gp.group_id
+        WHERE g.candidate_id = (SELECT candidate_id FROM groups WHERE id = ?)
+          AND g.group_type = 'primary' AND gp.status IN ('created', 'published')
+        ORDER BY gp.id DESC LIMIT 1
+        """,
+        (group_id,),
+    ).fetchone()
+    if row is None or not row["gelato_product_id"]:
+        return None
+    product = gelato_client.get_product(row["gelato_product_id"], store_id=store_id, api_key=api_key)
+    images = product.get("productImages") or []
+    if not images:
+        return None
+    primary_image = next((img for img in images if img.get("isPrimary")), images[0])
+    return primary_image.get("fileUrl")
 
 
 def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
@@ -167,6 +189,31 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
                 poll_interval=poll_interval, timeout=poll_timeout,
             )
             images = product["productImages"]
+            if not images:
+                # ponytail: Gelato never renders a mockup preview for single-variant
+                # products (its primaryPreviewProductVariantKey defaults to a larger
+                # size not present in a 1-variant product, confirmed live 2026-07-17) -
+                # fall back to a flat image so critic review + digest gallery aren't
+                # stuck with 0 images. Prefer the primary group's already-rehosted
+                # Gelato image (re-fetched live, so it's never stale) over the raw
+                # candidate.base_image_url - Replicate's delivery links expire within
+                # a couple hours (confirmed live 2026-07-17), well within the time a
+                # design can sit waiting for admin approval.
+                fallback_url = (
+                    _primary_flat_image_url(conn, group_id, store_id=store_id, api_key=api_key)
+                    or candidate["base_image_url"]
+                )
+                if len(sizes) == 1:
+                    # ponytail: the primary group's preview is composed for its own
+                    # (portrait) aspect ratio - showing it uncropped to a 5x7/10x24
+                    # group's critic review makes any composition look wrong (subject
+                    # crammed in a corner). Gelato itself cover-crops correctly at
+                    # print time for the physical poster; this crop is only to make
+                    # the *review/digest preview* honestly represent that group's
+                    # aspect ratio (spec: "their own cover-crop... a real crop that
+                    # fills the frame").
+                    fallback_url = image_crop.crop_for_group(fallback_url, sizes[0], group_product_id)
+                images = [{"fileUrl": fallback_url, "isPrimary": True}]
     except Exception:
         conn.execute(
             "UPDATE group_products SET status = 'mockup_failed', updated_at = ? WHERE id = ?",

@@ -30,6 +30,31 @@ def test_send_media_group_builds_correct_request_and_parses_response():
     assert result == {"ok": True, "result": {"message_id": 1}}
 
 
+def test_send_media_group_uploads_local_paths_as_multipart(tmp_path):
+    # Regression: locally cover-cropped previews (pipeline.image_crop) have no public
+    # URL, so sendMediaGroup must upload them as multipart attachments instead of
+    # referencing a URL string.
+    image_path = tmp_path / "cropped.jpg"
+    image_path.write_bytes(b"fake-jpeg-bytes")
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["content_type"] = request.headers.get("Content-type") or request.headers.get("Content-Type")
+        captured["body"] = request.data
+        return {"ok": True, "result": {"message_id": 3}}
+
+    with patch("pipeline.telegram_client.http.send", side_effect=fake_send):
+        result = telegram_client.send_media_group(
+            "12345", ["https://example.com/a.jpg", str(image_path)], bot_token="test-token"
+        )
+
+    assert "multipart/form-data" in captured["content_type"]
+    assert b"fake-jpeg-bytes" in captured["body"]
+    assert b"attach://attach1" in captured["body"]
+    assert b"https://example.com/a.jpg" in captured["body"]
+    assert result == {"ok": True, "result": {"message_id": 3}}
+
+
 def test_send_message_includes_reply_markup_when_given():
     captured = {}
     keyboard = {"inline_keyboard": [[{"text": "Approve", "callback_data": "approve:1:primary"}]]}

@@ -59,11 +59,11 @@ A single mockup set cannot serve all sizes: the poster aperture in each scene
 must match the artwork's aspect ratio or the print gets cropped/stretched.
 Our six sizes collapse into **three ratios × two orientations**:
 
-| Family | Sizes | Ratio (portrait) | Notes |
+| Family | Sizes | Ratio (portrait) | Staged apparent scale |
 |---|---|---|---|
-| ISO / primary | 8x12, A3, A2, A1 | ~1:1.414 (0.707) | the primary group; one render scales to all four |
-| 5x7 | 5x7 | 5:7 (0.714) | **own dedicated set** (decision, Q1) — not reused from ISO |
-| Panoramic | 10x24 | 5:12 (0.417) | genuinely different; own scenes |
+| ISO / primary | 8x12, A3, A2, A1 | ~1:1.414 (0.707) | **large / statement (A1–A2 feel)** — one render scales to all four; stage generously for perceived value |
+| 5x7 | 5x7 | 5:7 (0.714) | **small / intimate** — shelf, desk, gallery cluster |
+| Panoramic | 10x24 | 5:12 (0.417) | **wide statement** — above a sofa/bed |
 
 So the template registry is keyed by **(group_type, orientation)**, matching
 the existing `aspect_ratio_groups` / `get_group_type_for_size()` split — the
@@ -72,11 +72,30 @@ distinct scene sets** (ISO, 5x7, panoramic), each × orientation, **10 scenes
 per set: 3 flat/straight-on + 7 lifestyle** (decision, Q2). Etsy's 20-image
 ceiling leaves headroom.
 
+Why 5x7 is its own set (Q1, refined): not the trivial ~1% ratio gap vs ISO,
+but that a physically tiny 13×18cm print has genuinely different *appealing
+staging* than an A1 wall statement — so the scenes, not just the aperture,
+differ. Each set is therefore **staged at its own most-flattering apparent
+scale** (column above); since a single ISO render serves 8x12→A1, stage the
+ISO scenes at the large end for premium feel.
+
+**Scale-honesty caveat:** an ISO listing sells down to 8x12, so don't let
+lifestyle shots imply an item much larger than the smallest variant. Reserve
+**one slot for a size/scale reference** (poster-vs-furniture or a dimensions
+graphic) — Etsy's 20-image ceiling lets this be an 11th image without
+dropping a lifestyle scene.
+
 ## 4. Config
 
 Scene assets live in the repo (e.g. `assets/mockups/<group_type>/<orientation>/<scene>/`,
 each holding `background.png`, `overlay.png`, `meta.json` with the aperture
-corners + `flat`/`lifestyle` tag). `config/static_config.json` gets a
+corners + `flat`/`lifestyle` tag). They are authored **once**, offline, via the
+Replicate-backed prototype in `mockup_generator_prototype_prompt.md` (scene
+generation goes through the Replicate skills — `find-models`/`compare-models`/
+`run-models`/`prompt-images` — under the same commercial-licence guardrail as
+the pipeline: FLUX.1 [schnell] / Apache-2.0 only, never [dev]). Authoring is
+out of the runtime pipeline; the pipeline only consumes the finished bundles.
+`config/static_config.json` gets a
 `mockup_templates` block that just lists scene IDs in render order, keyed to
 match `aspect_ratio_groups`:
 

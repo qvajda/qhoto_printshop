@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pipeline.anthropic_client as anthropic_client
 
@@ -79,6 +79,12 @@ def test_complete_concatenates_multiple_text_blocks():
     assert result["text"] == "line one\nline two"
 
 
+def _fake_head_response(content_length=1024):
+    response = MagicMock()
+    response.headers = {"Content-Length": str(content_length)}
+    return response
+
+
 def test_complete_with_images_builds_correct_request_with_image_blocks_before_text():
     captured = {}
 
@@ -88,7 +94,8 @@ def test_complete_with_images_builds_correct_request_with_image_blocks_before_te
         captured["body"] = json.loads(request.data)
         return {"content": [{"type": "text", "text": '{"passed": true, "reason": "ok"}'}]}
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+         patch("pipeline.anthropic_client.urllib.request.urlopen", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images(
             "review these images", ["https://gelato/a.jpg", "https://gelato/b.jpg"], api_key="key1"
         )
@@ -110,7 +117,73 @@ def test_complete_with_images_concatenates_multiple_text_blocks():
     def fake_send(request, timeout=30):
         return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+         patch("pipeline.anthropic_client.urllib.request.urlopen", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images("prompt", ["https://gelato/a.jpg"], api_key="key1")
 
     assert result["text"] == "line one\nline two"
+
+
+def test_complete_with_images_falls_back_to_base64_when_over_size_cap():
+    # Regression: Anthropic rejects URL-fetched images over 5MB outright ("Unable to
+    # download the file") - hit live 2026-07-17 with a ~6.9MB raw Replicate generation
+    # output used as a group-critic image fallback. Oversized images must be downscaled
+    # and sent as base64 instead of as a URL source.
+    import io
+
+    from PIL import Image
+
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["body"] = json.loads(request.data)
+        return {"content": [{"type": "text", "text": "ok"}]}
+
+    big_image = Image.new("RGB", (10, 10), color="red")
+    buffer = io.BytesIO()
+    big_image.save(buffer, format="PNG")
+    raw_bytes = buffer.getvalue()
+
+    def fake_urlopen(request, timeout=None):
+        if request.get_method() == "HEAD":
+            return _fake_head_response(content_length=10 * 1024 * 1024)
+        response = MagicMock()
+        response.read.return_value = raw_bytes
+        return response
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+         patch("pipeline.anthropic_client.urllib.request.urlopen", side_effect=fake_urlopen):
+        anthropic_client.complete_with_images("prompt", ["https://replicate.delivery/huge.png"], api_key="key1")
+
+    content = captured["body"]["messages"][0]["content"]
+    assert content[0]["type"] == "image"
+    assert content[0]["source"]["type"] == "base64"
+    assert content[0]["source"]["media_type"] == "image/jpeg"
+    assert len(content[0]["source"]["data"]) > 0
+
+
+def test_complete_with_images_sends_local_paths_as_base64_without_http_fetch(tmp_path):
+    # Regression: locally cover-cropped previews (pipeline.image_crop) have no public
+    # URL - they must be read straight off disk and base64-encoded, never HEAD/GET'd.
+    import io
+
+    from PIL import Image
+
+    image = Image.new("RGB", (10, 10), color="blue")
+    image_path = tmp_path / "cropped.jpg"
+    image.save(image_path, format="JPEG")
+
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["body"] = json.loads(request.data)
+        return {"content": [{"type": "text", "text": "ok"}]}
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+         patch("pipeline.anthropic_client.urllib.request.urlopen") as mock_urlopen:
+        anthropic_client.complete_with_images("prompt", [str(image_path)], api_key="key1")
+
+    mock_urlopen.assert_not_called()
+    content = captured["body"]["messages"][0]["content"]
+    assert content[0]["source"]["type"] == "base64"
+    assert content[0]["source"]["media_type"] == "image/jpeg"
