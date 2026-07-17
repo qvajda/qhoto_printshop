@@ -46,11 +46,17 @@ def _insert_primary_gallery(conn, candidate_id, image_types=("flat_mockup", "lif
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, price_eur, status, created_at, updated_at) "
-        "VALUES (?, '8x12', 'portrait', 'tpl_1', 24, ?, ?, ?)",
+        "(group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_1', ?, ?, ?)",
         (group_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
+        (group_product_id, timestamp),
+    )
     for order, image_type in enumerate(image_types):
         conn.execute(
             "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "

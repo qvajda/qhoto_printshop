@@ -41,12 +41,17 @@ def _insert_group_gallery(conn, candidate_id, group_type, size, *,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-        "status, created_at, updated_at) "
-        "VALUES (?, ?, 'portrait', 'tpl_1', ?, 19, ?, ?, ?)",
-        (group_id, size, gelato_product_id, group_product_status, timestamp, timestamp),
+        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_1', ?, ?, ?, ?)",
+        (group_id, gelato_product_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, 'portrait', ?, 19, ?)",
+        (group_product_id, size, f"variant_{size}", timestamp),
+    )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
@@ -210,9 +215,9 @@ def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=lambda *a, **k: next(critic_responses)), \
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
-         patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+         patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
+         patch("pipeline.group_product.poll_until_ready", return_value=ready_product):
         result = group_critic_pass.run_group_critic_pass(
             conn, candidate_id, "5x7", static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 13, 12, 0, 0),
@@ -267,9 +272,9 @@ def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=lambda *a, **k: next(critic_responses)), \
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
-         patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+         patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
+         patch("pipeline.group_product.poll_until_ready", return_value=ready_product):
         result = group_critic_pass.run_group_critic_pass(
             conn, candidate_id, "5x7", static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 13, 12, 0, 0),
@@ -356,9 +361,9 @@ def test_run_group_critic_pass_cycle_excludes_abandoned_group_from_rerun(tmp_pat
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fail_response), \
          patch("pipeline.critic_pass.gelato_client.delete_product"), \
-         patch("pipeline.group_mockup.gelato_client.create_product_from_template",
+         patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.group_mockup.primary_mockup.poll_until_ready", return_value=ready_product):
+         patch("pipeline.group_product.poll_until_ready", return_value=ready_product):
         first_run = group_critic_pass.run_group_critic_pass_cycle(
             conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
             now=datetime(2026, 7, 13, 20, 0, 0),

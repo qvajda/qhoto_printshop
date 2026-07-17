@@ -350,12 +350,17 @@ def test_run_critic_pass_resumes_attempt_count_after_crash_before_regenerate(tmp
     timestamp = "2026-07-10T12:30:00"
     new_gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, size, orientation, gelato_template_id, gelato_product_id, price_eur, "
-        "status, created_at, updated_at) "
-        "VALUES (?, '8x12', 'portrait', 'tpl_1', 'gelato_prod_resumed', 24, 'created', ?, ?)",
+        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_1', 'gelato_prod_resumed', 'created', ?, ?)",
         (group_id, timestamp, timestamp),
     )
     new_group_product_id = new_gp_cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
+        (new_group_product_id, timestamp),
+    )
     for order, image_url in enumerate(
         ("https://gelato/flat_resumed.jpg", "https://gelato/life_resumed.jpg")
     ):
@@ -452,9 +457,9 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
-         patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+         patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product), \
+         patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product), \
          patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_draft_response):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
@@ -523,9 +528,9 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
-         patch("pipeline.primary_mockup.gelato_client.create_product_from_template",
+         patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.primary_mockup.gelato_client.get_product", side_effect=fake_get_product), \
+         patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product), \
          patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_draft_response):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
