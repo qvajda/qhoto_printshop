@@ -142,7 +142,8 @@ def get_listing_inventory(
 
 
 _INVENTORY_READONLY_PRODUCT_FIELDS = ("product_id", "is_deleted")
-_INVENTORY_READONLY_OFFERING_FIELDS = ("offering_id",)
+_INVENTORY_READONLY_OFFERING_FIELDS = ("offering_id", "is_deleted")
+_INVENTORY_READONLY_PROPERTY_VALUE_FIELDS = ("scale_name",)
 
 
 def update_listing_inventory(
@@ -173,6 +174,10 @@ def update_listing_inventory(
             {k: v for k, v in offering.items() if k not in _INVENTORY_READONLY_OFFERING_FIELDS}
             for offering in product["offerings"]
         ]
+        clean_product["property_values"] = [
+            {k: v for k, v in prop.items() if k not in _INVENTORY_READONLY_PROPERTY_VALUE_FIELDS}
+            for prop in product["property_values"]
+        ]
         if matched_size is not None:
             matched_sizes.add(matched_size)
             for offering in clean_product["offerings"]:
@@ -190,7 +195,12 @@ def update_listing_inventory(
     api_secret = api_secret or config.require_env("ETSY_API_SECRET")
     access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
     url = f"{ETSY_API_BASE}/listings/{listing_id}/inventory"
-    body = json.dumps({"products": products}).encode("utf-8")
+    body = json.dumps({
+        "products": products,
+        "price_on_property": inventory.get("price_on_property", []),
+        "quantity_on_property": inventory.get("quantity_on_property", []),
+        "sku_on_property": inventory.get("sku_on_property", []),
+    }).encode("utf-8")
     headers = _headers(api_key, api_secret, access_token)
     headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=headers, method="PUT")
