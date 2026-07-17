@@ -80,8 +80,12 @@ def build_draft_prompt(candidate: dict, image_types: list) -> str:
     )
 
 
-def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = None) -> dict:
-    result = anthropic_client.complete(build_draft_prompt(candidate, image_types), api_key=api_key)
+def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = None,
+                         retry_feedback: str = None) -> dict:
+    prompt = build_draft_prompt(candidate, image_types)
+    if retry_feedback:
+        prompt += f"\n\n{retry_feedback}"
+    result = anthropic_client.complete(prompt, api_key=api_key)
     draft = anthropic_client.parse_json_response(result["text"])
     for key in ("title", "tags", "description", "alt_texts"):
         if key not in draft:
@@ -142,18 +146,37 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
     image_types = [image["image_type"] for image in gallery]
     metadata = resolve_compliance_metadata(static_config)
 
-    try:
-        draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key)
-        validate_listing_text(draft["title"], draft["tags"])
-        listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
-        update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
-    except Exception as exc:
+    # LLMs don't reliably obey character-count instructions on the first try, so retry
+    # with the validation failure fed back as feedback before giving up (cap 3, same
+    # retry budget as critic_pass).
+    feedback = None
+    last_exc = None
+    draft = None
+    for attempt in range(3):
+        try:
+            draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key,
+                                         retry_feedback=feedback)
+            validate_listing_text(draft["title"], draft["tags"])
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            feedback = f"Your previous attempt failed validation: {exc}. Fix this and keep every other requirement."
+
+    if last_exc is None:
+        try:
+            listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
+            update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
+        except Exception as exc:
+            last_exc = exc
+
+    if last_exc is not None:
         conn.execute(
             "UPDATE candidates SET status = 'compliance_failed', failed_reason = ?, updated_at = ? WHERE id = ?",
-            (str(exc), timestamp, candidate_id),
+            (str(last_exc), timestamp, candidate_id),
         )
         conn.commit()
-        raise
+        raise last_exc
 
     return {"listing_text_id": listing_text_id, "candidate_id": candidate_id}
 

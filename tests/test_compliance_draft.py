@@ -366,6 +366,40 @@ def test_build_compliance_draft_marks_compliance_failed_on_validation_error(tmp_
     conn.close()
 
 
+def test_build_compliance_draft_retries_after_over_limit_title_then_succeeds(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+    over_limit_title = "x" * (compliance_draft.MAX_TITLE_LENGTH + 1)
+    bad_response = {
+        "text": _json.dumps({
+            "title": over_limit_title, "tags": ["botanical"], "description": "desc",
+            "alt_texts": ["alt one", "alt two"],
+        })
+    }
+    good_response = _fake_draft_response(2)
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=[bad_response, good_response]) as mock_complete:
+        result = compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    assert mock_complete.call_count == 2
+    # the retry prompt must carry the validation failure back to Claude
+    retry_prompt = mock_complete.call_args_list[1].args[0]
+    assert "previous attempt failed validation" in retry_prompt
+    assert str(compliance_draft.MAX_TITLE_LENGTH) in retry_prompt
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
+    listing_rows = conn.execute(
+        "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchall()
+    assert len(listing_rows) == 1
+    conn.close()
+
+
 def test_build_compliance_draft_marks_compliance_failed_on_alt_text_mismatch_but_keeps_listing_text(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))

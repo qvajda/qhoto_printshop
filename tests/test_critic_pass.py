@@ -431,11 +431,11 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
 
     def fake_create_product_from_template(*args, **kwargs):
         return {"id": "gelato_prod_retry", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat_v2.jpg", "isPrimary": True}]}
+                "productImages": [{"fileUrl": "https://gelato-api-live.s3/flat_v2.jpg", "isPrimary": True}]}
 
     def fake_get_product(product_id, *, store_id=None, api_key=None):
         return {"id": product_id, "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat_v2.jpg", "isPrimary": True}]}
+                "productImages": [{"fileUrl": "https://gelato-api-live.s3/flat_v2.jpg", "isPrimary": True}]}
 
     def fake_generate_image(prompt, *, api_token=None):
         assert "composition is off-center" in prompt
@@ -504,11 +504,11 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
 
     def fake_create_product_from_template(*args, **kwargs):
         return {"id": "gelato_prod_new", "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat_new.jpg", "isPrimary": True}]}
+                "productImages": [{"fileUrl": "https://gelato-api-live.s3/flat_new.jpg", "isPrimary": True}]}
 
     def fake_get_product(product_id, *, store_id=None, api_key=None):
         return {"id": product_id, "isReadyToPublish": True,
-                "productImages": [{"fileUrl": "https://gelato/flat_new.jpg", "isPrimary": True}]}
+                "productImages": [{"fileUrl": "https://gelato-api-live.s3/flat_new.jpg", "isPrimary": True}]}
 
     def fake_generate_image(prompt, *, api_token=None):
         return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred_retry"}

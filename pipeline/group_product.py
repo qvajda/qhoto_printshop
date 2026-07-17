@@ -1,5 +1,7 @@
 import json
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 import pipeline.config as config
@@ -15,19 +17,36 @@ class EtsyListingSyncTimeoutError(Exception):
     pass
 
 
+def _image_is_fetchable(url: str) -> bool:
+    try:
+        urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=10)
+        return True
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return False
+
+
 def poll_until_ready(product_id: str, *, store_id: str = None, api_key: str = None,
-                      poll_interval: float = 3.0, timeout: float = 90.0,
+                      poll_interval: float = 3.0, timeout: float = 300.0,
                       sleep_fn=time.sleep, now_fn=time.monotonic) -> dict:
     deadline = now_fn() + timeout
     while True:
         product = gelato_client.get_product(product_id, store_id=store_id, api_key=api_key)
-        if product.get("isReadyToPublish"):
+        images = product.get("productImages", [])
+        # Gelato can report isReadyToPublish=true and a gelato-hosted fileUrl before the
+        # underlying S3 object is actually fetchable (live probe, 2026-07-17) - a real GET
+        # is the only way to catch that race, a domain-name check alone isn't enough.
+        images_rehosted = all(
+            gelato_client.GELATO_IMAGE_HOST in image.get("fileUrl", "") and _image_is_fetchable(image["fileUrl"])
+            for image in images
+        )
+        if product.get("isReadyToPublish") and images_rehosted:
             return product
         if now_fn() >= deadline:
             raise GelatoMockupTimeoutError(
                 f"Gelato product {product_id} did not become ready to publish within "
-                f"{timeout:.0f}s. The one observed real render took ~9s for a 4-image "
-                f"gallery - this likely indicates a Gelato-side delay or outage, not a "
+                f"{timeout:.0f}s. isReadyToPublish flips in ~9s, but a live probe "
+                f"(2026-07-17) saw actual image rehosting lag anywhere from seconds to "
+                f"~5 minutes - this likely indicates a Gelato-side delay or outage, not a "
                 f"pipeline bug."
             )
         sleep_fn(poll_interval)
@@ -54,7 +73,7 @@ def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: s
 def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
                                    title: str, orientation: str = "portrait", *, store_id: str = None,
                                    api_key: str = None, poll_interval: float = 3.0,
-                                   poll_timeout: float = 90.0, now=None) -> dict:
+                                   poll_timeout: float = 300.0, now=None) -> dict:
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
 
     live_row = conn.execute(

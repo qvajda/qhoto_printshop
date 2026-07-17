@@ -30,7 +30,7 @@ def get_or_create_primary_group(conn, candidate_id: int, *, now=None) -> int:
 
 def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None,
                            store_id: str = None, api_key: str = None,
-                           poll_interval: float = 3.0, poll_timeout: float = 90.0,
+                           poll_interval: float = 3.0, poll_timeout: float = 300.0,
                            now=None) -> dict:
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
@@ -59,7 +59,7 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
 
 def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str = None,
                               api_key: str = None, poll_interval: float = 3.0,
-                              poll_timeout: float = 90.0, now=None) -> list:
+                              poll_timeout: float = 300.0, now=None) -> list:
     candidate_ids = [
         row["id"] for row in conn.execute(
             """

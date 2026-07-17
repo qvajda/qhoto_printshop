@@ -5,6 +5,12 @@ import pipeline.config as config
 import pipeline.http as http
 
 GELATO_API_BASE = "https://ecommerce.gelatoapis.com/v1"
+# Gelato's own preview image host. A live probe (2026-07-17) found a product still
+# reports isReadyToPublish=true while one productImages entry echoes back our
+# submitted source URL (Replicate's, which expires) instead of Gelato's rehosted
+# preview - that entry gets replaced by a real Gelato URL moments later. Callers
+# poll on this too, not just isReadyToPublish, to avoid capturing the transient echo.
+GELATO_IMAGE_HOST = "gelato-api-live.s3"
 
 
 class GelatoPlaceholderTemplateError(Exception):
