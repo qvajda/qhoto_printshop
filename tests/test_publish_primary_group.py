@@ -440,6 +440,25 @@ def test_handle_decision_reject_marks_group_and_candidate(tmp_path):
     conn.close()
 
 
+def test_handle_decision_reject_deletes_live_gelato_product(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    gp_id = conn.execute(
+        "SELECT id FROM group_products WHERE group_id = ?", (group_id,)
+    ).fetchone()["id"]
+
+    with patch("pipeline.publish_primary_group.critic_pass.gelato_client.delete_product") as mock_delete:
+        publish_primary_group.handle_decision(
+            conn, candidate_id, group_id, "reject", static_config=STATIC_CONFIG,
+            now=datetime(2026, 7, 12, 12, 0, 0),
+        )
+
+    mock_delete.assert_called_once_with("gelato_prod_1", store_id=None, api_key=None)
+    assert conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone() is None
+    conn.close()
+
+
 def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

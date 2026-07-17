@@ -165,6 +165,17 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
 
     if action == "reject":
         record_decision(conn, group_id, "rejected", decision_notes, now=now)
+
+        live_row = conn.execute(
+            "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
+            "ORDER BY id LIMIT 1",
+            (group_id,),
+        ).fetchone()
+        if live_row is not None:
+            critic_pass.discard_superseded_attempt(
+                conn, live_row["id"], store_id=store_id, api_key=gelato_api_key,
+            )
+
         conn.execute(
             "UPDATE groups SET status = 'rejected', updated_at = ? WHERE id = ?",
             (timestamp, group_id),
