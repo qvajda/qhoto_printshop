@@ -15,18 +15,10 @@ MAX_TAGS = 13
 MAX_TAG_LENGTH = 20
 MAX_TITLE_LENGTH = 140
 
-# publish_primary_group.py's SIZE_TITLE_SUFFIXES appends a per-size suffix to the draft
-# title at publish time; " - 10x24 Panoramic Print" (24 chars) is the longest one. The
-# draft title is validated against MAX_TITLE_LENGTH minus this headroom so that no size
-# variant's suffixed title can ever exceed Etsy's real 140-char limit later.
-MAX_SIZE_SUFFIX_LENGTH = 24
-MAX_DRAFT_TITLE_LENGTH = MAX_TITLE_LENGTH - MAX_SIZE_SUFFIX_LENGTH
-
 DRAFT_TEXT_PROMPT_TEMPLATE = (
     "You are writing an Etsy listing draft for an AI-generated botanical/minimalist wall "
     "art poster print, niche: {niche}. This listing must comply with Etsy's format limits: "
-    "the title must be at most {max_title_length} characters (this listing will have a size "
-    "suffix like \" - 10x24 Panoramic Print\" appended later, so leave room for that), there "
+    "the title must be at most {max_title_length} characters, there "
     "must be at most 13 tags and each tag at most 20 characters, and the description must "
     "mention the following AI disclosure: \"{disclosure}\"\n\n"
     "The product gallery has {image_count} images in this order: {image_types}. Write one "
@@ -84,7 +76,7 @@ def build_draft_prompt(candidate: dict, image_types: list) -> str:
         disclosure=DISCLOSURE_TEXT,
         image_count=len(image_types),
         image_types=", ".join(image_types),
-        max_title_length=MAX_DRAFT_TITLE_LENGTH,
+        max_title_length=MAX_TITLE_LENGTH,
     )
 
 
@@ -152,7 +144,7 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
 
     try:
         draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key)
-        validate_listing_text(draft["title"], draft["tags"], max_title_length=MAX_DRAFT_TITLE_LENGTH)
+        validate_listing_text(draft["title"], draft["tags"])
         listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
         update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
     except Exception as exc:
