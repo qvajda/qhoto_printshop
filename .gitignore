@@ -39,3 +39,6 @@ db/*.sqlite3
 
 # Session handoff notes (local scratch, not project docs)
 .remember/
+
+# OAuth PKCE state (short-lived, holds code_verifier)
+.etsy_oauth_state.json
