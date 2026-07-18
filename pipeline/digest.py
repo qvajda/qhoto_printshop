@@ -99,6 +99,31 @@ def send_primary_digest(conn, candidate_id: int, *, static_config: dict = None,
             "telegram_message_id": telegram_message_id}
 
 
+def surface_publish_failed_groups(conn, *, bot_token: str = None, chat_id: str = None, now=None) -> int:
+    """Send one plain message listing any groups stuck at publish_failed (spec 3.7:
+    "surface the failure in the next digest"). Returns the count surfaced."""
+    rows = conn.execute(
+        "SELECT id, candidate_id, group_type, updated_at FROM groups "
+        "WHERE status = 'publish_failed' ORDER BY candidate_id, id"
+    ).fetchall()
+    if not rows:
+        return 0
+
+    now_dt = now if isinstance(now, datetime) else datetime.now(timezone.utc).replace(tzinfo=None)
+    lines = ["⚠️ Groups stuck at publish_failed (retried automatically each poll):"]
+    for r in rows:
+        try:
+            age = now_dt - datetime.fromisoformat(r["updated_at"])
+            age_str = f"{int(age.total_seconds() // 3600)}h" if age.total_seconds() >= 3600 else f"{int(age.total_seconds() // 60)}m"
+        except (ValueError, TypeError):
+            age_str = "?"
+        lines.append(f"• group #{r['id']} ({r['group_type']}), candidate #{r['candidate_id']}, failed {age_str} ago")
+
+    chat_id = chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")
+    telegram_client.send_message(chat_id, "\n".join(lines), bot_token=bot_token)
+    return len(rows)
+
+
 def run_digest_cycle(conn, *, static_config: dict = None, bot_token: str = None,
                       chat_id: str = None, now=None) -> list:
     candidate_ids = [
@@ -123,4 +148,10 @@ def run_digest_cycle(conn, *, static_config: dict = None, bot_token: str = None,
             print(f"send_primary_digest failed for candidate {candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
+
+    try:
+        surface_publish_failed_groups(conn, bot_token=bot_token, chat_id=chat_id, now=now)
+    except Exception as exc:
+        print(f"surface_publish_failed_groups failed: {exc}")
+
     return processed_ids

@@ -209,6 +209,47 @@ def test_handle_decision_approve_marks_group_publish_failed_on_publish_failure(t
     conn.close()
 
 
+def test_handle_decision_approve_retries_patch_once_then_succeeds(tmp_path):
+    # H1: a transient patch failure shouldn't dead-end the secondary group - the
+    # approve path retries the patch once (mirrors publish_primary_group).
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
+
+    with patch("pipeline.publish_group.group_product.patch_etsy_listing",
+               side_effect=[RuntimeError("etsy hiccup"), "etsy-listing-recovered"]) as mock_patch:
+        result = publish_group.handle_decision(
+            conn, candidate_id, group_id, "approve", static_config=STATIC_CONFIG, dry_run=True,
+            now=datetime(2026, 7, 13, 12, 0, 0),
+        )
+
+    assert mock_patch.call_count == 2
+    assert result["etsy_listing_id"] == "etsy-listing-recovered"
+    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["status"] == "approved_published"
+    conn.close()
+
+
+def test_handle_decision_approve_marks_publish_failed_after_both_attempts_fail(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, gp_id = _insert_ready_5x7_group(conn, candidate_id)
+
+    with patch("pipeline.publish_group.group_product.patch_etsy_listing",
+               side_effect=RuntimeError("etsy down")) as mock_patch:
+        with pytest.raises(RuntimeError, match="etsy down"):
+            publish_group.handle_decision(
+                conn, candidate_id, group_id, "approve", static_config=STATIC_CONFIG, dry_run=True,
+                now=datetime(2026, 7, 13, 12, 0, 0),
+            )
+
+    assert mock_patch.call_count == 2
+    group_row = conn.execute("SELECT decision, status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["decision"] == "approved"  # tap consumed, decision recorded
+    assert group_row["status"] == "publish_failed"
+    conn.close()
+
+
 def test_handle_decision_reject_deletes_product_and_marks_group_rejected(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

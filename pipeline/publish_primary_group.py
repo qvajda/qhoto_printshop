@@ -263,6 +263,53 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
 
 
+def retry_publish_failed_groups(conn, *, static_config=None, shop_id=None, etsy_api_key=None,
+                                 etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> list:
+    """Re-attempt the Etsy patch for any group stuck at publish_failed whose decision
+    was 'approved' - once per poll cycle (H1: publish_failed isn't a dead end). The
+    group_product already exists (create succeeded, only the patch failed), so this
+    just retries patch_etsy_listing and flips the group back to approved_published on
+    success. Applies to both primary and secondary (5x7/10x24) groups."""
+    static_config = static_config if static_config is not None else config.load_static_config()
+    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    rows = conn.execute(
+        "SELECT id, candidate_id, group_type FROM groups "
+        "WHERE status = 'publish_failed' AND decision = 'approved' ORDER BY id"
+    ).fetchall()
+
+    retried = []
+    for row in rows:
+        gp_row = conn.execute(
+            "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
+            "ORDER BY id LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        if gp_row is None:
+            continue
+        listing_text_row = conn.execute(
+            "SELECT * FROM listing_texts WHERE candidate_id = ?", (row["candidate_id"],)
+        ).fetchone()
+        if listing_text_row is None:
+            continue
+        try:
+            group_product.patch_etsy_listing(
+                conn, gp_row["id"], row["group_type"], dict(listing_text_row), static_config,
+                shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
+            )
+        except Exception as exc:
+            print(f"publish_failed retry failed for group {row['id']}: {exc}")
+            continue
+        conn.execute(
+            "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",
+            (timestamp, row["id"]),
+        )
+        conn.commit()
+        retried.append(row["id"])
+    return retried
+
+
 def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None, static_config=None,
                                      store_id=None, gelato_api_key=None, shop_id=None,
                                      etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
@@ -300,5 +347,16 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
 
     if max_update_id is not None:
         set_telegram_offset(conn, max_update_id)
+
+    # Once per poll cycle, re-attempt any group stuck at publish_failed after an
+    # approved decision - a transient patch failure shouldn't strand it forever (H1).
+    try:
+        retry_publish_failed_groups(
+            conn, static_config=static_config, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            dry_run=dry_run, now=now,
+        )
+    except Exception as exc:
+        print(f"retry_publish_failed_groups failed: {exc}")
 
     return processed

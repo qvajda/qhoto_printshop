@@ -343,3 +343,62 @@ def test_run_digest_cycle_returns_empty_list_when_nothing_ready(tmp_path):
 
     assert processed_ids == []
     conn.close()
+
+
+# --- H1: surface publish_failed groups ---
+
+def _insert_publish_failed_group(conn, candidate_id, group_type="10x24", *, updated_at="2026-07-18T09:00:00"):
+    cursor = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, ?, 'publish_failed', 'approved', ?, ?)",
+        (candidate_id, group_type, updated_at, updated_at),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def test_surface_publish_failed_groups_sends_message_listing_stuck_groups(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_publish_failed_group(conn, candidate_id, "10x24", updated_at="2026-07-18T09:00:00")
+
+    with patch("pipeline.digest.telegram_client.send_message") as mock_message:
+        count = digest.surface_publish_failed_groups(
+            conn, bot_token="t", chat_id="admin-chat", now=datetime(2026, 7, 18, 12, 0, 0),
+        )
+
+    assert count == 1
+    mock_message.assert_called_once()
+    text = mock_message.call_args.args[1]
+    assert f"group #{group_id}" in text
+    assert "10x24" in text
+    assert f"candidate #{candidate_id}" in text
+    assert "3h ago" in text  # 09:00 -> 12:00
+    conn.close()
+
+
+def test_surface_publish_failed_groups_sends_nothing_when_none_stuck(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    _insert_candidate(conn)
+
+    with patch("pipeline.digest.telegram_client.send_message") as mock_message:
+        count = digest.surface_publish_failed_groups(conn, bot_token="t", chat_id="admin-chat")
+
+    assert count == 0
+    mock_message.assert_not_called()
+    conn.close()
+
+
+def test_run_digest_cycle_surfaces_publish_failed_groups(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="nothing ready", status="generating")
+    _insert_publish_failed_group(conn, candidate_id, "5x7")
+
+    with patch("pipeline.digest.telegram_client.send_message") as mock_message:
+        digest.run_digest_cycle(conn, bot_token="t", chat_id="admin-chat",
+                                now=datetime(2026, 7, 18, 12, 0, 0))
+
+    # No fresh candidate to digest, but the stuck group is still surfaced.
+    mock_message.assert_called_once()
+    assert "publish_failed" in mock_message.call_args.args[1]
+    conn.close()

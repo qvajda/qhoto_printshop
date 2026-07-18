@@ -805,3 +805,76 @@ def test_run_publish_primary_group_cycle_isolates_per_update_failures(tmp_path):
     assert error_log_row["telegram_user_id"] == "987654321"
     assert "boom" in error_log_row["action_taken"]
     conn.close()
+
+
+# --- H1: retry_publish_failed_groups (poll-cycle re-attempt) ---
+
+def _insert_publish_failed_group(conn, candidate_id, group_type, *, decision="approved"):
+    timestamp = "2026-07-18T09:00:00"
+    cursor = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, ?, 'publish_failed', ?, ?, ?)",
+        (candidate_id, group_type, decision, timestamp, timestamp),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def test_retry_publish_failed_groups_repatches_and_flips_to_published(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="approved")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_listing_text(conn, candidate_id)
+
+    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
+               return_value="etsy-listing-late") as mock_patch:
+        retried = publish_primary_group.retry_publish_failed_groups(
+            conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
+            now="2026-07-18T12:00:00",
+        )
+
+    assert retried == [group_id]
+    mock_patch.assert_called_once()
+    assert mock_patch.call_args.args[2] == "5x7"
+    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["status"] == "approved_published"
+    conn.close()
+
+
+def test_retry_publish_failed_groups_leaves_group_failed_when_patch_still_fails(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="approved")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_listing_text(conn, candidate_id)
+
+    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
+               side_effect=RuntimeError("still down")):
+        retried = publish_primary_group.retry_publish_failed_groups(
+            conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
+            now="2026-07-18T12:00:00",
+        )
+
+    assert retried == []
+    group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_row["status"] == "publish_failed"  # still stuck, but surfaced + retried next cycle
+    conn.close()
+
+
+def test_retry_publish_failed_groups_skips_non_approved_decisions(tmp_path):
+    # A group that failed after a reject/edit isn't an approved-but-stuck publish - don't retry it.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="rejected")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_listing_text(conn, candidate_id)
+
+    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing") as mock_patch:
+        retried = publish_primary_group.retry_publish_failed_groups(
+            conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
+        )
+
+    assert retried == []
+    mock_patch.assert_not_called()
+    conn.close()

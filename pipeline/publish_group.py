@@ -38,12 +38,20 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
             ).fetchone()
         )
 
-        try:
-            etsy_listing_id = group_product.patch_etsy_listing(
+        def attempt():
+            return group_product.patch_etsy_listing(
                 conn, group_product_row["id"], group_type, listing_text, static_config,
                 shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
                 etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
             )
+
+        # Retry the patch once (mirrors publish_primary_group) - a transient Gelato
+        # sync/Etsy hiccup shouldn't dead-end the group at publish_failed on one miss.
+        try:
+            try:
+                etsy_listing_id = attempt()
+            except Exception:
+                etsy_listing_id = attempt()
         except Exception:
             conn.execute(
                 "UPDATE groups SET status = 'publish_failed', updated_at = ? WHERE id = ?",
