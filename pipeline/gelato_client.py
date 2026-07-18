@@ -29,7 +29,6 @@ def _headers(api_key: str) -> dict:
     return {
         "X-API-KEY": api_key,
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; qhoto-printshop-pipeline/1.0)",
     }
 
 

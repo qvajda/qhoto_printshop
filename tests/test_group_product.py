@@ -4,7 +4,30 @@ import pytest
 
 import pipeline.config as config
 import pipeline.db as db
+import pipeline.gelato_client as gelato_client
 import pipeline.group_product as group_product
+
+
+def test_poll_until_ready_jitters_the_sleep_interval():
+    # Sleeps between polls carry +-20% jitter so a run isn't a metronome of identical
+    # fresh connections (a Cloudflare bot-rate signal). Inject sleep_fn - never real-sleep.
+    slept = []
+    ready = {
+        "isReadyToPublish": True,
+        "productImages": [{"fileUrl": f"https://{gelato_client.GELATO_IMAGE_HOST}/a.jpg", "isPrimary": True}],
+    }
+    not_ready = {"isReadyToPublish": False, "productImages": []}
+
+    with patch("pipeline.gelato_client.get_product", side_effect=[not_ready, not_ready, ready]), \
+         patch("pipeline.group_product._image_is_fetchable", return_value=True):
+        result = group_product.poll_until_ready(
+            "prod-1", poll_interval=10.0, timeout=1000.0,
+            sleep_fn=slept.append, now_fn=lambda: 0.0,
+        )
+
+    assert result is ready
+    assert len(slept) == 2
+    assert all(8.0 <= s <= 12.0 for s in slept)
 
 
 def _fresh_conn(tmp_path):

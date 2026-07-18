@@ -95,7 +95,7 @@ def test_complete_with_images_builds_correct_request_with_image_blocks_before_te
         return {"content": [{"type": "text", "text": '{"passed": true, "reason": "ok"}'}]}
 
     with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
-         patch("pipeline.anthropic_client.urllib.request.urlopen", return_value=_fake_head_response()):
+         patch("pipeline.anthropic_client.http.head", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images(
             "review these images", ["https://gelato/a.jpg", "https://gelato/b.jpg"], api_key="key1"
         )
@@ -118,7 +118,7 @@ def test_complete_with_images_concatenates_multiple_text_blocks():
         return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
 
     with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
-         patch("pipeline.anthropic_client.urllib.request.urlopen", return_value=_fake_head_response()):
+         patch("pipeline.anthropic_client.http.head", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images("prompt", ["https://gelato/a.jpg"], api_key="key1")
 
     assert result["text"] == "line one\nline two"
@@ -144,15 +144,10 @@ def test_complete_with_images_falls_back_to_base64_when_over_size_cap():
     big_image.save(buffer, format="PNG")
     raw_bytes = buffer.getvalue()
 
-    def fake_urlopen(request, timeout=None):
-        if request.get_method() == "HEAD":
-            return _fake_head_response(content_length=10 * 1024 * 1024)
-        response = MagicMock()
-        response.read.return_value = raw_bytes
-        return response
-
     with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
-         patch("pipeline.anthropic_client.urllib.request.urlopen", side_effect=fake_urlopen):
+         patch("pipeline.anthropic_client.http.head",
+               return_value=_fake_head_response(content_length=10 * 1024 * 1024)), \
+         patch("pipeline.anthropic_client.http.fetch_bytes", return_value=raw_bytes):
         anthropic_client.complete_with_images("prompt", ["https://replicate.delivery/huge.png"], api_key="key1")
 
     content = captured["body"]["messages"][0]["content"]
@@ -180,10 +175,12 @@ def test_complete_with_images_sends_local_paths_as_base64_without_http_fetch(tmp
         return {"content": [{"type": "text", "text": "ok"}]}
 
     with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
-         patch("pipeline.anthropic_client.urllib.request.urlopen") as mock_urlopen:
+         patch("pipeline.anthropic_client.http.head") as mock_head, \
+         patch("pipeline.anthropic_client.http.fetch_bytes") as mock_fetch:
         anthropic_client.complete_with_images("prompt", [str(image_path)], api_key="key1")
 
-    mock_urlopen.assert_not_called()
+    mock_head.assert_not_called()
+    mock_fetch.assert_not_called()
     content = captured["body"]["messages"][0]["content"]
     assert content[0]["source"]["type"] == "base64"
     assert content[0]["source"]["media_type"] == "image/jpeg"

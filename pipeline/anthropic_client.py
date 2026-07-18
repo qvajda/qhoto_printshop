@@ -2,7 +2,6 @@ import base64
 import io
 import json
 import re
-import urllib.error
 import urllib.request
 
 from PIL import Image
@@ -97,14 +96,14 @@ def _image_content_block(image_url: str) -> dict:
             return _downscaled_base64_block(f.read())
 
     try:
-        head = urllib.request.urlopen(urllib.request.Request(image_url, method="HEAD"), timeout=10)
+        head = http.head(image_url, timeout=10)
         content_length = int(head.headers.get("Content-Length") or 0)
-    except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
+    except (http.HTTPError, ValueError):
         content_length = 0
 
     if 0 < content_length <= MAX_IMAGE_URL_BYTES:
         return {"type": "image", "source": {"type": "url", "url": image_url}}
-    raw = urllib.request.urlopen(urllib.request.Request(image_url), timeout=30).read()
+    raw = http.fetch_bytes(image_url)
     return _downscaled_base64_block(raw)
 
 

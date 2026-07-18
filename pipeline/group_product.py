@@ -1,4 +1,5 @@
 import json
+import random
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +19,12 @@ class EtsyListingSyncTimeoutError(Exception):
     pass
 
 
+def _jittered(interval: float) -> float:
+    # +-20% jitter desynchronizes polling so a run isn't a metronome of identical
+    # fresh connections (a Cloudflare bot-rate signal). rand=1.0 when interval is 0.
+    return interval * random.uniform(0.8, 1.2)
+
+
 def _image_is_fetchable(url: str) -> bool:
     try:
         urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=10)
@@ -27,7 +34,7 @@ def _image_is_fetchable(url: str) -> bool:
 
 
 def poll_until_ready(product_id: str, *, store_id: str = None, api_key: str = None,
-                      poll_interval: float = 3.0, timeout: float = 300.0,
+                      poll_interval: float = 10.0, timeout: float = 300.0,
                       sleep_fn=time.sleep, now_fn=time.monotonic) -> dict:
     deadline = now_fn() + timeout
     while True:
@@ -50,7 +57,7 @@ def poll_until_ready(product_id: str, *, store_id: str = None, api_key: str = No
                 f"~5 minutes - this likely indicates a Gelato-side delay or outage, not a "
                 f"pipeline bug."
             )
-        sleep_fn(poll_interval)
+        sleep_fn(_jittered(poll_interval))
 
 
 def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: str = None,
@@ -68,7 +75,7 @@ def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: s
                 f"this likely means Gelato's async Etsy sync is stalled or failed, not a "
                 f"pipeline bug."
             )
-        sleep_fn(poll_interval)
+        sleep_fn(_jittered(poll_interval))
 
 
 def _primary_flat_image_url(conn, group_id: int, *, store_id: str = None, api_key: str = None) -> str | None:
@@ -94,7 +101,7 @@ def _primary_flat_image_url(conn, group_id: int, *, store_id: str = None, api_ke
 
 def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
                                    title: str, orientation: str = "portrait", *, store_id: str = None,
-                                   api_key: str = None, poll_interval: float = 3.0,
+                                   api_key: str = None, poll_interval: float = 10.0,
                                    poll_timeout: float = 300.0, now=None) -> dict:
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
 
