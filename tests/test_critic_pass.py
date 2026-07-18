@@ -457,6 +457,13 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork",
+               side_effect=lambda candidate_id, raw_bytes: {
+                   "durable_url": f"https://pub-fake.r2.dev/base/{candidate_id}.png",
+                   "local_path": f"/fake/db/base_artwork/{candidate_id}.png",
+                   "sha256": "fakesha256hash",
+               }), \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product), \
@@ -528,6 +535,13 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
          patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork",
+               side_effect=lambda candidate_id, raw_bytes: {
+                   "durable_url": f"https://pub-fake.r2.dev/base/{candidate_id}.png",
+                   "local_path": f"/fake/db/base_artwork/{candidate_id}.png",
+                   "sha256": "fakesha256hash",
+               }), \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product), \

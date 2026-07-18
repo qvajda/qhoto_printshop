@@ -81,6 +81,14 @@ def test_sanitize_niche_removes_known_scene_tokens():
     assert generate.sanitize_niche("monstera line art") == "monstera line art"
 
 
+def _fake_persist_base_artwork(candidate_id, raw_bytes):
+    return {
+        "durable_url": f"https://durable.example/{candidate_id}.png",
+        "local_path": f"/fake/db/base_artwork/{candidate_id}.png",
+        "sha256": "fakesha256hash",
+    }
+
+
 def test_generate_for_candidate_calls_replicate_and_writes_image_back(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
@@ -95,23 +103,33 @@ def test_generate_for_candidate_calls_replicate_and_writes_image_back(tmp_path):
         captured["upscale_input_url"] = image_url
         return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
 
+    def fake_fetch_bytes(url, timeout=30):
+        captured["fetch_url"] = url
+        return b"fake-image-bytes"
+
     with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
-         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", side_effect=fake_fetch_bytes), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
         result = generate.generate_for_candidate(
             conn, candidate_id, api_token="test-token", now=datetime(2026, 7, 9, 10, 0, 0)
         )
 
     assert result == {
-        "image_url": "https://replicate.delivery/upscaled.png",
+        "image_url": f"https://durable.example/{candidate_id}.png",
         "prediction_id": "pred123",
         "upscale_prediction_id": "pred-up1",
     }
     assert "monstera line art" in captured["prompt"]
     assert captured["api_token"] == "test-token"
     assert captured["upscale_input_url"] == "https://replicate.delivery/raw.png"
+    assert captured["fetch_url"] == "https://replicate.delivery/upscaled.png"
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
-    assert row["base_image_url"] == "https://replicate.delivery/upscaled.png"
+    assert row["base_image_url"] == f"https://durable.example/{candidate_id}.png"
+    assert row["base_image_local_path"] == f"/fake/db/base_artwork/{candidate_id}.png"
+    assert row["base_image_sha256"] == "fakesha256hash"
+    assert row["base_replicate_delivery_url"] == "https://replicate.delivery/upscaled.png"
     assert row["base_replicate_prediction_id"] == "pred123"
     assert row["base_upscale_prediction_id"] == "pred-up1"
     assert row["status"] == "generating"
@@ -132,7 +150,9 @@ def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
         return {"image_url": "https://replicate.delivery/retry-upscaled.png", "prediction_id": "pred-up2"}
 
     with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
-         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
         generate.generate_for_candidate(
             conn, candidate_id, correction_note="composition was off-center",
             now=datetime(2026, 7, 9, 11, 0, 0),
@@ -141,7 +161,7 @@ def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
     assert "Previous attempt was rejected for: composition was off-center" in captured["prompt"]
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
-    assert row["base_image_url"] == "https://replicate.delivery/retry-upscaled.png"
+    assert row["base_image_url"] == f"https://durable.example/{candidate_id}.png"
     conn.close()
 
 
@@ -163,6 +183,9 @@ def test_generate_for_candidate_leaves_row_untouched_when_upscale_fails(tmp_path
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert row["status"] == "pending"
     assert row["base_image_url"] is None
+    assert row["base_image_local_path"] is None
+    assert row["base_image_sha256"] is None
+    assert row["base_replicate_delivery_url"] is None
     assert row["base_replicate_prediction_id"] is None
     assert row["base_upscale_prediction_id"] is None
     conn.close()
@@ -193,7 +216,9 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
         return {"image_url": image_url.replace("out", "upscaled"), "prediction_id": "pred-up"}
 
     with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
-         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
         processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
 
     assert sorted(processed_ids) == sorted([pending_id_1, pending_id_2])
@@ -226,7 +251,9 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
         return {"image_url": "https://replicate.delivery/upscaled2.png", "prediction_id": "pred-up2"}
 
     with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
-         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
         processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
 
     assert processed_ids == [succeeding_id]
@@ -238,7 +265,7 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
     assert failing_row["base_image_url"] is None
 
     assert succeeding_row["status"] == "generating"
-    assert succeeding_row["base_image_url"] == "https://replicate.delivery/upscaled2.png"
+    assert succeeding_row["base_image_url"] == f"https://durable.example/{succeeding_id}.png"
     conn.close()
 
 

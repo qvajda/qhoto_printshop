@@ -1,6 +1,8 @@
 import re
 from datetime import datetime, timezone
 
+import pipeline.artwork_store as artwork_store
+import pipeline.http as http
 import pipeline.replicate_client as replicate_client
 
 
@@ -63,19 +65,27 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     generated = replicate_client.generate_image(prompt, api_token=api_token)
     upscaled = replicate_client.upscale_image(generated["image_url"], api_token=api_token)
 
+    raw = http.fetch_bytes(upscaled["image_url"])
+    artwork = artwork_store.persist_base_artwork(candidate_id, raw)
+
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     conn.execute(
         """
         UPDATE candidates
-        SET base_image_url = ?, base_replicate_prediction_id = ?,
+        SET base_image_url = ?, base_image_local_path = ?, base_image_sha256 = ?,
+            base_replicate_delivery_url = ?, base_replicate_prediction_id = ?,
             base_upscale_prediction_id = ?, status = 'generating', updated_at = ?
         WHERE id = ?
         """,
-        (upscaled["image_url"], generated["prediction_id"], upscaled["prediction_id"], timestamp, candidate_id),
+        (
+            artwork["durable_url"], artwork["local_path"], artwork["sha256"],
+            upscaled["image_url"], generated["prediction_id"], upscaled["prediction_id"],
+            timestamp, candidate_id,
+        ),
     )
     conn.commit()
     return {
-        "image_url": upscaled["image_url"],
+        "image_url": artwork["durable_url"],
         "prediction_id": generated["prediction_id"],
         "upscale_prediction_id": upscaled["prediction_id"],
     }
