@@ -17,6 +17,10 @@ class GelatoPlaceholderTemplateError(Exception):
     pass
 
 
+class GelatoReplicateURLError(Exception):
+    pass
+
+
 def _headers(api_key: str) -> dict:
     return {
         "X-API-KEY": api_key,
@@ -79,6 +83,16 @@ def create_product_from_template(
             f"template_id ({template_id!r}). Fill in the real value in "
             f"config/static_config.json before making a live call."
         )
+
+    for variant in variants:
+        image_url = variant["image_url"]
+        if "replicate.delivery" in image_url:
+            raise GelatoReplicateURLError(
+                f"Refusing to create a real Gelato product with a replicate.delivery "
+                f"image_url ({image_url!r}). Replicate delivery URLs expire; Gelato "
+                f"needs a durable, persisted URL (e.g. R2/local artwork store) before "
+                f"making a live call."
+            )
 
     api_key = api_key or config.require_env("GELATO_API_KEY")
     store_id = store_id or config.require_env("GELATO_STORE_ID")

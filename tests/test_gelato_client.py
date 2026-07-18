@@ -139,6 +139,44 @@ def test_create_product_from_template_refuses_placeholder_in_any_variant():
         gelato_client.create_product_from_template("tmpl1", variants, "Test Title", dry_run=False)
 
 
+def test_create_product_from_template_raises_on_replicate_delivery_url_when_live():
+    with patch("pipeline.gelato_client.http.send") as mock_send:
+        with pytest.raises(gelato_client.GelatoReplicateURLError, match="replicate.delivery"):
+            gelato_client.create_product_from_template(
+                "tpl_real",
+                [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://replicate.delivery/xyz/out.png"}],
+                "Botanical print",
+                store_id="store1", api_key="key1", dry_run=False,
+            )
+
+    mock_send.assert_not_called()
+
+
+def test_create_product_from_template_dry_run_ignores_replicate_delivery_url():
+    result = gelato_client.create_product_from_template(
+        "tpl_real",
+        [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://replicate.delivery/xyz/out.png"}],
+        "Botanical print", store_id="store1", api_key="key1", dry_run=True,
+    )
+    assert result["_dry_run"] is True
+
+
+def test_create_product_from_template_allows_durable_url_when_live():
+    def fake_send(request, timeout=30):
+        return {"id": "prod_new", "status": "created", "previewUrl": None, "productImages": []}
+
+    with patch("pipeline.gelato_client.http.send", side_effect=fake_send) as mock_send:
+        result = gelato_client.create_product_from_template(
+            "tpl_real",
+            [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "https://pub-abc123.r2.dev/artwork/xyz.png"}],
+            "Botanical print",
+            store_id="store1", api_key="key1", dry_run=False,
+        )
+
+    mock_send.assert_called_once()
+    assert result["id"] == "prod_new"
+
+
 def test_get_etsy_listing_id_returns_external_id_when_present():
     with patch("pipeline.gelato_client.get_product") as mock_get:
         mock_get.return_value = {"id": "prod123", "externalId": "etsy-listing-999"}
