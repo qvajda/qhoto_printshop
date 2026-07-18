@@ -14,8 +14,10 @@ class ReplicatePredictionTimeoutError(Exception):
 
 
 UPSCALE_MODEL = "nightmareai/real-esrgan"  # pure super-resolution GAN, no diffusion/hallucinated
-# content - safer for compliance than a diffusion-based upscaler. A single scale=4 pass covers
-# the 8x12 primary size and closely covers A3; A2/A1/10x24 need more linear scale (see plan notes).
+# content - safer for compliance than a diffusion-based upscaler. scale=8 lifts the 832x1216 FLUX
+# master to 6656x9728 (~285 DPI at A1, the largest offered size), clearing Gelato's 150 DPI poster
+# minimum with margin; scale=4 (3328x4864) only reached ~142 DPI at A1 (B5). Task 10 verifies
+# Replicate accepts scale=8 at this input size live before the E2E burns a candidate on it.
 
 
 def _predict(model: str, input_body: dict, *, api_token: str) -> dict:
@@ -63,6 +65,6 @@ def upscale_image(image_url: str, *, api_token: str = None) -> dict:
     api_token = api_token or config.require_env("REPLICATE_API_TOKEN")
     return _predict(
         UPSCALE_MODEL,
-        {"image": image_url, "scale": 4, "face_enhance": False},
+        {"image": image_url, "scale": 8, "face_enhance": False},
         api_token=api_token,
     )

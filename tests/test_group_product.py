@@ -204,6 +204,7 @@ def test_create_or_reuse_group_product_falls_back_to_base_image_when_gelato_retu
     static_config = _static_config()
 
     with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch("pipeline.group_product._assert_print_dpi"), \
          patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
          patch("pipeline.group_product.poll_until_ready") as mock_poll, \
          patch("pipeline.image_crop.crop_for_group") as mock_crop:
@@ -246,6 +247,7 @@ def test_create_or_reuse_group_product_prefers_primary_group_image_over_dead_bas
     static_config = _static_config()
 
     with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch("pipeline.group_product._assert_print_dpi"), \
          patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
          patch("pipeline.group_product.poll_until_ready") as mock_poll, \
          patch("pipeline.gelato_client.get_product") as mock_get_product, \
@@ -366,3 +368,49 @@ def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
     mock_inventory.assert_called_once()
     gp_row = conn.execute("SELECT etsy_listing_id FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
     assert gp_row["etsy_listing_id"] == "DRY_RUN_ETSY_LISTING_ID"
+
+
+# --- B5 pre-create print-DPI guard ---
+
+def _make_image(tmp_path, name, size):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
+
+
+def test_assert_print_dpi_passes_for_adequate_master(tmp_path):
+    # 900x1350 clears 150 DPI at 5x7 (900/5=180, 1350/7=192 -> 180 DPI).
+    path = _make_image(tmp_path, "ok.png", (900, 1350))
+    group_product._assert_print_dpi(["5x7"], path)  # must not raise
+
+
+def test_assert_print_dpi_raises_for_undersized_master(tmp_path):
+    # Same 900x1350 is far too small for A1 (900/23.39 ~= 38 DPI).
+    path = _make_image(tmp_path, "small.png", (900, 1350))
+    with pytest.raises(group_product.PrintResolutionError) as exc:
+        group_product._assert_print_dpi(["A1"], path)
+    assert "A1" in str(exc.value)
+    assert "38 DPI" in str(exc.value)
+
+
+def test_assert_print_dpi_takes_worst_size_in_a_multi_size_group(tmp_path):
+    # A group offering 5x7 (passes) + A1 (fails) must fail on the worst size.
+    path = _make_image(tmp_path, "mixed.png", (900, 1350))
+    with pytest.raises(group_product.PrintResolutionError):
+        group_product._assert_print_dpi(["5x7", "A1"], path)
+
+
+def test_assert_print_dpi_raises_when_local_path_missing():
+    with pytest.raises(group_product.PrintResolutionError) as exc:
+        group_product._assert_print_dpi(["8x12"], None)
+    assert "missing or unreadable" in str(exc.value)
+
+
+def test_scale8_master_clears_150_dpi_at_every_offered_size():
+    # Documents the B5 fix constants: the scale=8 master (6656x9728) must clear the
+    # 150 DPI floor at every size, worst case A1. Pure arithmetic on the size table.
+    px_short, px_long = 6656, 9728
+    for size, (short_in, long_in) in group_product._SIZE_INCHES.items():
+        dpi = min(px_short / short_in, px_long / long_in)
+        assert dpi >= group_product.MIN_PRINT_DPI, f"{size} only {dpi:.0f} DPI"

@@ -77,7 +77,7 @@ def test_upscale_image_builds_correct_request_and_parses_response():
     assert captured["prefer_header"] == "wait"
     assert captured["body"]["input"] == {
         "image": "https://replicate.delivery/out.png",
-        "scale": 4,
+        "scale": 8,
         "face_enhance": False,
     }
     assert result == {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}

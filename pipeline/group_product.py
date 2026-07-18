@@ -2,6 +2,9 @@ import json
 import random
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+from PIL import Image
 
 import pipeline.config as config
 import pipeline.etsy_client as etsy_client
@@ -16,6 +19,55 @@ class GelatoMockupTimeoutError(Exception):
 
 class EtsyListingSyncTimeoutError(Exception):
     pass
+
+
+class PrintResolutionError(Exception):
+    pass
+
+
+MIN_PRINT_DPI = 150
+
+# Physical print dimensions (short_edge_in, long_edge_in) per offered size, for the
+# pre-create DPI guard only. Gelato enforces its own DPI at product creation; this
+# fails loud *before* a live call when the upscaled master can't clear 150 DPI
+# (Gelato's stated poster minimum) at a group's largest size (B5). A-series inches
+# are the ISO mm sizes converted (A3 297x420mm, A2 420x594mm, A1 594x841mm).
+_SIZE_INCHES = {
+    "5x7": (5, 7),
+    "8x12": (8, 12),
+    "A3": (11.69, 16.54),
+    "A2": (16.54, 23.39),
+    "A1": (23.39, 33.11),
+    "10x24": (10, 24),
+}
+
+
+def _assert_print_dpi(sizes: list, local_path) -> None:
+    """Refuse a live Gelato create if the archived master resolves below 150 DPI at
+    any offered size. Reads pixel dims from the local archive - no network call."""
+    if not local_path or not Path(local_path).exists():
+        raise PrintResolutionError(
+            f"Cannot verify print DPI: base_image_local_path missing or unreadable "
+            f"({local_path!r}). The upscaled master must be archived locally before a "
+            f"live Gelato create so its print resolution can be checked."
+        )
+    with Image.open(local_path) as im:
+        px_w, px_h = im.size
+    px_short, px_long = min(px_w, px_h), max(px_w, px_h)
+    worst = None
+    for size in sizes:
+        if size not in _SIZE_INCHES:
+            continue
+        short_in, long_in = _SIZE_INCHES[size]
+        dpi = min(px_short / short_in, px_long / long_in)
+        if worst is None or dpi < worst[1]:
+            worst = (size, dpi)
+    if worst is not None and worst[1] < MIN_PRINT_DPI:
+        raise PrintResolutionError(
+            f"Refusing a live Gelato create: master {px_w}x{px_h}px yields only "
+            f"{worst[1]:.0f} DPI at size {worst[0]} (min {MIN_PRINT_DPI} for posters). "
+            f"Upscale the master further before printing this group."
+        )
 
 
 def _jittered(interval: float) -> float:
@@ -150,6 +202,12 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
             (timestamp, stale_row["id"]),
         )
         conn.commit()
+
+    # DPI guard fires only on real creates (dry-run/test masters are synthetic and
+    # have no local archive). Placed before any DB write so a too-small master fails
+    # fast without orphaning a group_products row.
+    if config.is_live_mode("GELATO"):
+        _assert_print_dpi(sizes, candidate.get("base_image_local_path"))
 
     templates = [config.get_template_variant(static_config, size, orientation) for size in sizes]
     template_id = templates[0]["template_id"]

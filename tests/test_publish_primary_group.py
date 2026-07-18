@@ -269,6 +269,7 @@ def test_publish_primary_group_creates_one_listing_for_all_four_sizes(tmp_path, 
     static_config = config.load_static_config()
 
     with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product._assert_print_dpi"), \
          patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve:
         mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
         mock_resolve.return_value = "etsy-listing-42"

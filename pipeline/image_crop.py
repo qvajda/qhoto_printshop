@@ -7,6 +7,10 @@ import pipeline.http as http
 
 CROP_CACHE_DIR = Path(__file__).resolve().parent.parent / "db" / "group_preview_images"
 
+# Preview crops only need to look right in a Telegram gallery, not print - 2000px
+# long edge keeps the JPEG well under Telegram's photo size cap.
+PREVIEW_MAX_EDGE = 2000
+
 
 def target_ratio_for_group_type(group_type: str) -> float:
     """5x7 / 10x24 style group_type names are WIDTHxHEIGHT in inches - the exact
@@ -38,6 +42,12 @@ def crop_for_group(source_image_url: str, group_type: str, group_product_id: int
     raw = http.fetch_bytes(source_image_url)
     image = Image.open(io.BytesIO(raw)).convert("RGB")
     cropped = cover_crop(image, target_ratio_for_group_type(group_type))
+
+    # This is a *review/digest preview*, not the print file - Gelato prints from the
+    # full-res durable URL directly. A print-res master (now 6656x9728 after the B5
+    # scale=8 bump) saved as q90 JPEG blows past Telegram's ~10MB photo multipart cap
+    # (already bitten once, commit b3977d1), so cap the preview's long edge.
+    cropped.thumbnail((PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE))
 
     CROP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     out_path = CROP_CACHE_DIR / f"{group_product_id}.jpg"
