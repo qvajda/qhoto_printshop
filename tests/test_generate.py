@@ -66,6 +66,20 @@ def test_build_prompt_forces_flat_full_bleed_2d_art_with_no_scene_words():
         assert banned in prompt.lower()
 
 
+def test_build_prompt_includes_quality_guardrails_against_observed_failure_modes():
+    # H5 (prevent): the scaffold must steer against the 5 failure modes from run #1
+    # (near-empty gradients, too-sparse art, off-center/incoherent subject, floating
+    # disconnected parts, smudged detail).
+    prompt = generate.build_prompt({"niche": "monstera line art"}).lower()
+
+    assert "central subject" in prompt          # single clear subject
+    assert "centered" in prompt                 # composition
+    assert "occupies most of the frame" in prompt  # substantial coverage, not sparse
+    assert "no floating or disconnected" in prompt  # connected forms
+    assert "no smudging" in prompt              # crisp zone edges
+    assert "not a near-empty" in prompt or "near-empty background" in prompt  # not empty/gradient
+
+
 def test_build_prompt_strips_scene_tokens_from_niche_before_injection():
     candidate = {"niche": "botanical minimalist wall art - holiday_peak"}
 

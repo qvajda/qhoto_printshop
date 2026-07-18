@@ -8,9 +8,14 @@ import pipeline.replicate_client as replicate_client
 
 NICHE_STYLE_SCAFFOLD = (
     "Flat 2D artwork, full-bleed, fills the entire frame edge to edge: {niche}. "
-    "Clean composition, soft muted natural color palette, print-ready art, no text "
-    "or watermarks. No frame, no border, no wall, no room, no mockup, no photograph "
-    "of a poster - this is the flat artwork itself, not a lifestyle photo of it hanging."
+    "One clear, coherent central subject that occupies most of the frame, centered "
+    "and balanced. The subject is complete and anatomically/botanically correct - "
+    "well-formed, connected, not a nonsensical hybrid, no floating or disconnected "
+    "parts. Crisp clean edges between flat zones of color, no smudging or muddy "
+    "detail. Well-filled composition, not sparse, not a near-empty background or "
+    "plain gradient. Soft muted natural color palette, print-ready art, no text or "
+    "watermarks. No frame, no border, no wall, no room, no mockup, no photograph of "
+    "a poster - this is the flat artwork itself, not a lifestyle photo of it hanging."
 )
 
 # The niche string is a *scene* leak vector - it can come from a hardcoded
