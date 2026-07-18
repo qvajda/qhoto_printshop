@@ -85,6 +85,13 @@ def update_listing_state(
     shop_id: str, listing_id: str, state: str, *, api_key: str = None, api_secret: str = None,
     access_token: str = None, dry_run: bool = None
 ) -> dict:
+    # DELIBERATELY UNWIRED. Nothing in the pipeline calls this, by design (B1).
+    # Gelato syncs every listing as an Etsy *draft* (isVisibleInTheOnlineStore=False,
+    # confirmed live 2026-07-18) and the pipeline keeps it that way: Etsy charges
+    # $0.20 per listing activation, so activation is a manual, per-listing dashboard
+    # decision by the owner, not an automated step. This function exists for a future
+    # production go-live decision; wiring it in is a deliberate non-feature until then.
+    # See test_patch_etsy_listing_never_activates_a_listing for the guard.
     if dry_run is None:
         dry_run = not config.is_live_mode("ETSY")
 

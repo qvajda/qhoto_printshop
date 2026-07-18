@@ -110,6 +110,9 @@ def create_product_from_template(
     body = json.dumps({
         "templateId": template_id,
         "title": title,
+        # Lands the Gelato-pushed Etsy listing as a *draft* (confirmed live 2026-07-18):
+        # both a pre-review leak defense and the testing posture - listings stay drafts,
+        # the owner activates manually per listing ($0.20 each). See B1 / Task 6.
         "isVisibleInTheOnlineStore": False,
         "variants": [
             {

@@ -324,6 +324,50 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
     assert gp_row["status"] == "published"
 
 
+def test_patch_etsy_listing_never_activates_a_listing(tmp_path):
+    # B1 (inverted): drafts stay drafts. patch_etsy_listing must never call
+    # update_listing_state, and must never send a 'state' field in update_listing's
+    # payload - either would activate the listing ($0.20 each). group_products.status
+    # 'published' means "patched draft", not "live on Etsy". Guards against a future
+    # "helpful" wiring of the deliberately-unused update_listing_state.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id)
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
+    )
+    conn.commit()
+
+    listing_text = {
+        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
+        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
+    }
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch("pipeline.gelato_client.get_etsy_listing_id", return_value="etsy-listing-42"), \
+         patch("pipeline.etsy_client.update_listing_state") as mock_state, \
+         patch("pipeline.etsy_client.update_listing") as mock_update, \
+         patch("pipeline.etsy_client.update_listing_inventory"):
+        group_product.patch_etsy_listing(
+            conn, group_product_id, "primary", listing_text, static_config,
+            shop_id="shop1", dry_run=True, now=timestamp,
+        )
+
+    mock_state.assert_not_called()
+    patched_data = mock_update.call_args[0][2]
+    assert "state" not in patched_data
+    conn.close()
+
+
 def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
     # Regression test: patch_etsy_listing's dry_run parameter only gates the Etsy write calls.
     # Resolving etsy_listing_id is a Gelato-side read (gelato_client.get_product has no dry_run
