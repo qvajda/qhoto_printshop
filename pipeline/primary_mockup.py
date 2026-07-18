@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timezone
 
 import pipeline.config as config
@@ -59,7 +60,8 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
 
 def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str = None,
                               api_key: str = None, poll_interval: float = 3.0,
-                              poll_timeout: float = 300.0, now=None) -> list:
+                              poll_timeout: float = 300.0, now=None,
+                              inter_candidate_delay: float = 5.0, sleep_fn=time.sleep) -> list:
     candidate_ids = [
         row["id"] for row in conn.execute(
             """
@@ -69,14 +71,20 @@ def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str 
               AND id NOT IN (
                 SELECT g.candidate_id FROM groups g
                 JOIN group_products gp ON gp.group_id = g.id
-                WHERE g.group_type = 'primary'
+                WHERE g.group_type = 'primary' AND gp.status IN ('pending', 'created', 'published')
               )
             ORDER BY id
             """
         ).fetchall()
     ]
     processed_ids = []
-    for candidate_id in candidate_ids:
+    for index, candidate_id in enumerate(candidate_ids):
+        if index > 0:
+            # Live probe (2026-07-18): back-to-back Gelato create/delete calls across
+            # several candidates in the same run trip a Cloudflare WAF block (403,
+            # "error code: 1010"), even though the same calls succeed fine in isolation.
+            # A single-call retry never reproduced it - only the burst did.
+            sleep_fn(inter_candidate_delay)
         try:
             create_primary_mockup(
                 conn, candidate_id, static_config=static_config, store_id=store_id,

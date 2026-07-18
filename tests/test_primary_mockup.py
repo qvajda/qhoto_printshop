@@ -216,10 +216,39 @@ def test_run_primary_mockup_cycle_isolates_per_candidate_failures(tmp_path):
     ):
         processed_ids = primary_mockup.run_primary_mockup_cycle(
             conn, static_config=static_config, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 16, 12, 0, 0),
+            now=datetime(2026, 7, 16, 12, 0, 0), sleep_fn=lambda s: None,
         )
 
     assert processed_ids == [succeeding_id]
+    conn.close()
+
+
+def test_run_primary_mockup_cycle_retries_candidate_with_mockup_failed_product(tmp_path):
+    # A prior cycle's group_product row can be left in 'mockup_failed' (e.g. a Gelato
+    # timeout or transient 403) without ever reaching 'created'. The candidate-selection
+    # query used to exclude a candidate if *any* group_products row existed for its
+    # primary group, regardless of status - permanently orphaning it. It must still be
+    # picked up so create_or_reuse_group_product's own mockup_failed cleanup can run.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, niche="monstera line art", status="generating")
+    group_id = primary_mockup.get_or_create_primary_group(conn, candidate_id, now="2026-07-16T09:00:00")
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (?, 'template-1', 'mockup_failed', '2026-07-16T09:00:00', '2026-07-16T09:00:00')",
+        (group_id,),
+    )
+    conn.commit()
+    static_config = config.load_static_config()
+
+    with patch(
+        "pipeline.primary_mockup.group_product.create_or_reuse_group_product"
+    ) as mock_create:
+        mock_create.return_value = {"group_product_id": 99, "gelato_product_id": "gelato-prod-retry"}
+        processed_ids = primary_mockup.run_primary_mockup_cycle(
+            conn, static_config=static_config, now=datetime(2026, 7, 16, 12, 0, 0),
+        )
+
+    assert processed_ids == [candidate_id]
     conn.close()
 
 
