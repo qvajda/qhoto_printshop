@@ -259,6 +259,19 @@ research/fee layers are unchanged from v4.10.
    artwork is shared across all six sizes and all three groups; only the
    print dimensions, crop/composition, and Gelato variant differ per
    group.
+   - **`candidates.base_image_url` now means a durable public URL, not a
+     Replicate delivery URL (2026-07-18).** Replicate's `replicate.delivery`
+     output links expire ~1h after the prediction, well inside the hours-to-days
+     a design routinely waits for Telegram approval — a dead link broke
+     Gelato's server-side image fetch at print time. `generate.py` now
+     fetches the upscaled bytes while the Replicate URL is still live and
+     persists them via `pipeline/artwork_store.py` (local archive at
+     `db/base_artwork/`, plus Cloudflare R2 when configured) before writing
+     `base_image_url`; the raw Replicate URL survives only as the disposable
+     `base_replicate_delivery_url` debug column. A `replicate.delivery` URL
+     reaching a real (non-dry-run) Gelato create now fails loudly instead of
+     fetching a corpse. See
+     `docs/superpowers/specs/2026-07-17-base-artwork-persistence-prd.md`.
    - **The generated image must be the flat artwork itself — full-bleed 2D
      art that fills the frame edge to edge — NOT a photograph of a poster on
      a wall or in a room.** The first live run generated lifestyle/room

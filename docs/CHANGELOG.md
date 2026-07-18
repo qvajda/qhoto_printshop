@@ -364,3 +364,56 @@ shape shouldn't be locked in from memory. You added `ETSY_API_KEY` and
   of a normal live shop until it's reverted.
 - Section 9 unchanged (`None open`) — this was an implementation-time
   verification, not a tracked Decisions Needed item.
+
+---
+
+# Changelog — spec v0.4.11 patch: durable base-artwork persistence
+
+**Cause:** post-first-live-run discovery (2026-07-17) that
+`candidates.base_image_url` stored a Replicate `replicate.delivery` output
+URL, which expires ~1h after the prediction — confirmed via Replicate's own
+docs, not assumption. A design routinely sits hours to days between
+generation and Telegram approval, so the URL was already dead by publish
+time: `create_product_from_template` passes `image_url` straight through to
+Gelato, which fetches it server-side, so a dead link broke print submission
+outright, and no durable archive of the master existed anywhere. Full
+analysis and design in
+`docs/superpowers/specs/2026-07-17-base-artwork-persistence-prd.md`.
+
+- **`base_image_url` now means a durable public URL, not a Replicate
+  delivery URL** (section 3 step 2 updated). `generate.py` fetches the
+  upscaled bytes immediately after `replicate_client.upscale_image` returns
+  (URL still live) and persists them via new `pipeline/artwork_store.py`
+  before writing the column — every existing consumer already treated
+  `base_image_url` as "a fetchable URL for the master"
+  (`primary_mockup.py`, `group_product.py`, `image_crop.crop_for_group`),
+  so repointing it fixed them with zero consumer changes.
+- **New `pipeline/artwork_store.py`:** local archive (`db/base_artwork/`,
+  permanent, never pruned by `cleanup.py`) always runs; Cloudflare R2
+  upload (S3-compatible, stdlib-only hand-rolled SigV4 signer via
+  `hmac`/`hashlib` — no boto3/botocore, per the zero-new-dependency
+  constraint) runs additionally when `R2_*` env vars are configured,
+  returning the R2 public URL as `base_image_url`. Both paths are
+  idempotent (skip re-write/re-upload on matching content). R2 chosen over
+  Replicate's Files API (24h expiry — still not durable) and evaluated
+  against S3/Backblaze B2 for zero-egress cost; see the PRD section 6.
+  R2 setup is a one-time manual step, documented in
+  `docs/r2-setup-guide.md`.
+- **New `candidates` columns:** `base_image_local_path`,
+  `base_image_sha256`, `base_replicate_delivery_url` (the last one keeps
+  the raw Replicate URL only as a disposable debug field). Idempotent
+  migration script `migrate_base_artwork_columns.py` added at repo root,
+  matching the existing standalone-script convention
+  (`refresh_etsy_token.py`).
+- **Gelato create-time guard:** `create_product_from_template` now raises
+  `GelatoReplicateURLError` if an outgoing `image_url` still contains
+  `replicate.delivery` on a real (non-dry-run) call — mirrors the existing
+  placeholder-template-ID fail-loud guard. Never silently falls back.
+- **Ghost data reset:** every pre-existing `candidates` row pointed at a
+  now-expired Replicate URL with no recoverable source, so they were
+  dropped rather than migrated (no backfill is possible) — `db/qhoto.sqlite3`
+  backed up and recreated empty from the updated `schema.sql`, and the
+  `db/base_artwork/`/`db/group_preview_images/` local caches cleared to
+  match. Live external Gelato products/Etsy listings from prior test runs
+  were deliberately left untouched in their respective accounts (a
+  reversible-vs-external-account-action call, not an oversight).
