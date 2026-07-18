@@ -19,10 +19,14 @@ def test_build_critic_prompt_includes_rubric_and_listing_text():
     assert "Monstera Line Art Botanical Print" in prompt
     assert "A minimalist botanical print." in prompt
     assert "named artist's style" in prompt
-    assert "watermark-like elements" in prompt
-    assert "off-center or cut-off composition" in prompt
     assert "3 gallery images" in prompt
     assert "'passed' (boolean)" in prompt
+    # H5 rubric extension: subject/coherence/composition/detail/density criteria.
+    assert "near-empty" in prompt
+    assert "coherence" in prompt.lower()
+    assert "off-center or cut-off" in prompt
+    assert "smudging" in prompt
+    assert "sparse" in prompt
 
 
 def _fresh_conn(tmp_path):
@@ -161,6 +165,97 @@ def test_evaluate_critic_pass_raises_on_missing_key():
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         with pytest.raises(ValueError, match="reason"):
             critic_pass.evaluate_critic_pass(["https://gelato/a.jpg"], listing_text, api_key="key1")
+
+
+# --- H5 local near-empty gate ---
+
+def _save_png(tmp_path, name, image):
+    p = tmp_path / name
+    image.save(p, format="PNG")
+    return str(p)
+
+
+def test_check_local_image_sanity_fails_near_empty_image(tmp_path):
+    from PIL import Image
+    # Near-uniform cream fill (like run-#1 masters 2 & 6): low variance, no edges.
+    path = _save_png(tmp_path, "empty.png", Image.new("RGB", (600, 900), (238, 232, 210)))
+
+    result = critic_pass.check_local_image_sanity(path)
+
+    assert result is not None
+    assert result["passed"] is False
+    assert "near-empty image" in result["reason"]
+
+
+def test_check_local_image_sanity_passes_structured_image(tmp_path):
+    from PIL import Image, ImageDraw
+    # A structured image with real edges and variance (a normal botanical print stand-in).
+    img = Image.new("RGB", (600, 900), (240, 235, 215))
+    draw = ImageDraw.Draw(img)
+    for i in range(0, 600, 40):
+        draw.line([(i, 0), (i, 900)], fill=(30, 60, 40), width=6)
+        draw.ellipse([i, i, i + 120, i + 200], outline=(20, 40, 30), width=8)
+
+    result = critic_pass.check_local_image_sanity(_save_png(tmp_path, "art.png", img))
+
+    assert result is None  # inconclusive locally -> defer to vision critic (i.e. not blocked)
+
+
+def test_check_local_image_sanity_returns_none_for_missing_or_null_path(tmp_path):
+    assert critic_pass.check_local_image_sanity(None) is None
+    assert critic_pass.check_local_image_sanity(str(tmp_path / "does-not-exist.png")) is None
+
+
+def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
+    from PIL import Image
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+    # Point the candidate's local master at a near-empty file - attempt 1 must fail
+    # locally, no Anthropic call, then regenerate (mocked) to a nonexistent local path
+    # so attempt 2 defers to the vision critic, which passes.
+    empty_path = _save_png(tmp_path, "master.png", Image.new("RGB", (600, 900), (238, 232, 210)))
+    conn.execute("UPDATE candidates SET base_image_local_path = ? WHERE id = ?", (empty_path, candidate_id))
+    conn.commit()
+
+    def fake_create(*a, **k):
+        return {"id": "gelato_prod_retry", "isReadyToPublish": True,
+                "productImages": [{"fileUrl": "https://gelato-api-live.s3/v2.jpg", "isPrimary": True}]}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               return_value={"text": _json.dumps({"passed": True, "reason": "ok"})}) as mock_vision, \
+         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.generate.replicate_client.generate_image",
+               return_value={"image_url": "https://replicate.delivery/r.png", "prediction_id": "p"}), \
+         patch("pipeline.generate.replicate_client.upscale_image",
+               return_value={"image_url": "https://replicate.delivery/ru.png", "prediction_id": "pu"}), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork",
+               side_effect=lambda candidate_id, raw_bytes: {
+                   "durable_url": f"https://pub-fake.r2.dev/base/{candidate_id}.png",
+                   "local_path": f"/fake/nonexistent/{candidate_id}.png", "sha256": "x"}), \
+         patch("pipeline.group_product.gelato_client.create_product_from_template", side_effect=fake_create), \
+         patch("pipeline.group_product.gelato_client.get_product",
+               side_effect=lambda pid, *, store_id=None, api_key=None: fake_create()), \
+         patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value={"text": _json.dumps({"title": "T", "tags": ["a"], "description": "d", "alt_texts": ["x"]})}):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 2}
+    # Vision called exactly once (attempt 2) - attempt 1 was the zero-cost local fail.
+    assert mock_vision.call_count == 1
+    attempts = conn.execute(
+        "SELECT passed, failure_reason FROM critic_pass_attempts WHERE group_id = "
+        "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary') ORDER BY attempt_number",
+        (candidate_id,),
+    ).fetchall()
+    assert attempts[0]["passed"] == 0
+    assert "near-empty image" in attempts[0]["failure_reason"]
+    assert attempts[1]["passed"] == 1
+    conn.close()
 
 
 def test_record_critic_attempt_stores_pass(tmp_path):

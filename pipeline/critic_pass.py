@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from PIL import Image, ImageFilter, ImageStat
+
 import pipeline.anthropic_client as anthropic_client
 import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
@@ -15,15 +17,64 @@ CRITIC_RUBRIC_PROMPT_TEMPLATE = (
     "1. Hard no-go list: no named artist's style, no recognizable characters, franchises, or "
     "logos, no implied celebrity likeness, no claims of hand-painted or one-of-a-kind original "
     "artwork - this is a print reproduction.\n"
-    "2. Image quality: no obvious artifacts, no garbled or watermark-like elements, no "
-    "off-center or cut-off composition, in any image.\n"
-    "3. Text match: does this draft title and description actually match what's shown in the "
+    "2. Subject presence: reject if any image is near-empty, a plain gradient, or has no clear "
+    "subject at all.\n"
+    "3. Subject coherence: reject nonsensical or malformed subjects (e.g. anatomically/"
+    "botanically impossible hybrid forms, floating or disconnected parts).\n"
+    "4. Composition: reject an off-center or cut-off subject, or large dead/empty zones, unless "
+    "clearly intentional to the style.\n"
+    "5. Detail quality: reject smudging, muddiness, or blurred detail at the boundaries between "
+    "color zones (this is clean flat-zone art - smudging is conspicuous).\n"
+    "6. Visual density: reject overly sparse line work or a composition too empty to read as "
+    "finished wall art.\n"
+    "7. Text match: does this draft title and description actually match what's shown in the "
     "images and fit the niche?\n\n"
     "Title: {title}\n"
     "Description: {description}\n\n"
     "Reply with ONLY a JSON object with keys 'passed' (boolean) and 'reason' (string explaining "
     "the verdict - cite the specific rubric point if failing), no other text."
 )
+
+
+# Local near-empty gate, calibrated against the 7 run-#1 masters in db/base_artwork/
+# (labeled set: {2,6} near-empty cream must FAIL; {1,5} must PASS). Failure requires
+# BOTH low variance AND low edge density - a real print clears at least one, so this
+# never blocks structured art, only genuinely empty frames. Measured: masters 2/6 had
+# stddev 0.18/0.38 and edge_ratio 0.0096; the nearest pass had stddev 6.93 / edge 0.017.
+SANITY_MIN_STDDEV = 3.0
+SANITY_MIN_EDGE_RATIO = 0.012
+
+
+def compute_image_sanity_stats(local_path) -> dict:
+    with Image.open(local_path) as im:
+        gray = im.convert("L")
+    gray.thumbnail((512, 512))  # print masters are ~6656x9728 - stats don't need full res
+    stddev = ImageStat.Stat(gray).stddev[0]
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    hist = edges.histogram()
+    total = sum(hist) or 1
+    edge_ratio = sum(hist[30:]) / total  # fraction of pixels with a meaningful edge
+    return {"stddev": stddev, "edge_ratio": edge_ratio}
+
+
+def check_local_image_sanity(local_path) -> dict | None:
+    """Zero-API-cost near-empty gate run before the vision call. Returns a critic-fail
+    result dict if the master is near-empty (both variance and edge density below
+    floor), else None ("inconclusive locally - spend the vision call")."""
+    if not local_path:
+        return None
+    try:
+        stats = compute_image_sanity_stats(local_path)
+    except (FileNotFoundError, OSError):
+        return None  # unreadable locally -> defer to the vision critic
+    if stats["stddev"] < SANITY_MIN_STDDEV and stats["edge_ratio"] < SANITY_MIN_EDGE_RATIO:
+        return {
+            "passed": False,
+            "reason": (f"near-empty image: stddev {stats['stddev']:.2f} "
+                       f"(min {SANITY_MIN_STDDEV}), edge ratio {stats['edge_ratio']:.4f} "
+                       f"(min {SANITY_MIN_EDGE_RATIO})"),
+        }
+    return None
 
 
 def build_critic_prompt(listing_text: dict, image_count: int) -> str:
@@ -148,9 +199,16 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
 
     while True:
         state = get_primary_group_state(conn, candidate_id)
-        result = evaluate_critic_pass(
-            state["image_urls"], state["listing_text"], api_key=anthropic_api_key
-        )
+        # Cheap local near-empty gate first - fails obvious empty masters without
+        # spending an Anthropic vision call. Same attempt counter, same cap.
+        local_path = conn.execute(
+            "SELECT base_image_local_path FROM candidates WHERE id = ?", (candidate_id,)
+        ).fetchone()["base_image_local_path"]
+        result = check_local_image_sanity(local_path)
+        if result is None:
+            result = evaluate_critic_pass(
+                state["image_urls"], state["listing_text"], api_key=anthropic_api_key
+            )
         record_critic_attempt(conn, state["group_id"], attempt_number, result, now=now)
 
         if result["passed"]:
