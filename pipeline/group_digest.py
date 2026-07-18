@@ -58,6 +58,16 @@ def build_group_digest_message_text(candidate_id: int, group_id: int, group_type
 
 def send_group_digest(conn, group_id: int, *, static_config: dict = None,
                        bot_token: str = None, chat_id: str = None, now=None) -> dict:
+    # Duplicate-send guard (M1): if this group already has a group_messages row, the
+    # digest went out before - don't re-send the gallery. The two-call send isn't
+    # atomic (sendMediaGroup then sendMessage+row-insert), so a re-run must not
+    # re-fire the gallery for a group already surfaced.
+    existing = conn.execute(
+        "SELECT 1 FROM group_messages WHERE group_id = ? LIMIT 1", (group_id,)
+    ).fetchone()
+    if existing is not None:
+        return {"candidate_id": None, "group_id": group_id, "telegram_message_id": None, "skipped": True}
+
     review_group = get_review_group(conn, group_id)
     candidate_id = review_group["candidate_id"]
     group_type = review_group["group_type"]

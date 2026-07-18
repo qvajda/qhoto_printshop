@@ -643,6 +643,29 @@ def test_process_update_discards_callback_not_matching_group_messages(tmp_path):
     conn.close()
 
 
+def test_process_update_accepts_tap_on_second_of_two_group_messages_rows(tmp_path):
+    # M1: if a duplicate gallery ever produced two group_messages rows, a tap on the
+    # *second* message must still resolve (old code only checked the first row).
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)  # first
+    _insert_group_message(conn, group_id, "987654321", 303)  # duplicate send
+    update = _callback_update(
+        user_id=987654321, data=f"approve:{group_id}", message_id=303, chat_id=987654321, callback_id="cbq2",
+    )
+
+    with patch("pipeline.publish_primary_group.handle_decision", return_value={"action": "approve"}) as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result is not None
+    mock_handle.assert_called_once()
+    conn.close()
+
+
 def test_process_update_accepts_admin_callback_and_calls_handle_decision(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

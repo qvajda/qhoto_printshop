@@ -77,6 +77,17 @@ def build_digest_keyboard(group_id: int) -> dict:
 def send_primary_digest(conn, candidate_id: int, *, static_config: dict = None,
                          bot_token: str = None, chat_id: str = None, now=None) -> dict:
     group = get_primary_group(conn, candidate_id)
+
+    # Duplicate-send guard (M1): skip if this group's digest already went out - the
+    # sendMediaGroup/sendMessage pair isn't atomic, so a re-run must not re-fire the
+    # gallery for a group that already has a group_messages row.
+    existing = conn.execute(
+        "SELECT 1 FROM group_messages WHERE group_id = ? LIMIT 1", (group["group_id"],)
+    ).fetchone()
+    if existing is not None:
+        return {"candidate_id": candidate_id, "group_id": group["group_id"],
+                "telegram_message_id": None, "skipped": True}
+
     photo_urls = get_primary_gallery_urls(conn, candidate_id)
     listing_text = get_listing_text(conn, candidate_id)
     chat_id = chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")

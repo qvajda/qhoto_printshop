@@ -219,12 +219,20 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
                             "discarded: not admin", now=now)
         return None
 
-    message_row = conn.execute(
+    # Match the callback against ANY group_messages row for this group, not just the
+    # first (M1): if a duplicate gallery ever produced two rows, a tap on the second
+    # message must still resolve. The chat-id + message-id pair still has to match a
+    # real row (chat_id str-compared as before, since it may be stored as int), so the
+    # admin-only access guarantee is unchanged.
+    message_rows = conn.execute(
         "SELECT chat_id, telegram_message_id FROM group_messages WHERE group_id = ?",
         (parsed["group_id"],),
-    ).fetchone()
-    if message_row is None or str(message_row["chat_id"]) != str(parsed["chat_id"]) \
-            or message_row["telegram_message_id"] != parsed["message_id"]:
+    ).fetchall()
+    match = any(
+        str(row["chat_id"]) == str(parsed["chat_id"]) and row["telegram_message_id"] == parsed["message_id"]
+        for row in message_rows
+    )
+    if not match:
         log_telegram_event(conn, parsed["telegram_user_id"], update, False,
                             "discarded: callback does not match a known group_messages row", now=now)
         return None

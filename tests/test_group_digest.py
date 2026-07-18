@@ -200,6 +200,31 @@ def test_send_group_digest_sends_media_group_then_message_and_persists_id(tmp_pa
     conn.close()
 
 
+def test_send_group_digest_skips_when_group_messages_row_exists(tmp_path):
+    # M1 duplicate-send guard: a group already surfaced must not re-fire the gallery.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id, _ = _insert_group_gallery(conn, candidate_id, "5x7", "5x7", price_eur=19)
+    _insert_listing_text(conn, candidate_id)
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) "
+        "VALUES (?, 500, 'admin-chat', '2026-07-14T09:00:00')",
+        (group_id,),
+    )
+    conn.commit()
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group") as mock_media, \
+         patch("pipeline.group_digest.telegram_client.send_message") as mock_message:
+        result = group_digest.send_group_digest(conn, group_id, bot_token="t", chat_id="admin-chat")
+
+    mock_media.assert_not_called()
+    mock_message.assert_not_called()
+    assert result["skipped"] is True
+    # still exactly one row - no second insert
+    assert len(conn.execute("SELECT 1 FROM group_messages WHERE group_id = ?", (group_id,)).fetchall()) == 1
+    conn.close()
+
+
 def test_send_group_digest_uses_env_chat_id_when_not_passed(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEGRAM_ADMIN_CHAT_ID", "env-admin-chat")
     conn = _fresh_conn(tmp_path)

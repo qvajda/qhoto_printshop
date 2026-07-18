@@ -114,7 +114,7 @@ def poll_until_ready(product_id: str, *, store_id: str = None, api_key: str = No
 
 
 def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: str = None,
-                             poll_interval: float = 30.0, timeout: float = 600.0,
+                             poll_interval: float = 30.0, timeout: float = 1200.0,
                              sleep_fn=time.sleep, now_fn=time.monotonic) -> str:
     deadline = now_fn() + timeout
     while True:
