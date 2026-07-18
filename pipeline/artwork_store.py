@@ -28,11 +28,14 @@ def persist_base_artwork(candidate_id: int, raw_bytes: bytes) -> dict:
 
     The local write (Task 1) always happens - it's the permanent local backup
     per PRD 5.5. If all R2_* env vars are set (Task 2), the bytes are also
-    uploaded to R2 (Cloudflare, S3-compatible) at key base/<candidate_id>.png,
-    HEAD-checked first so an existing object is reused rather than
-    re-uploaded, and durable_url becomes the R2 public URL instead of the
-    local path. If R2 env vars are absent, durable_url stays the local path
-    and no network calls are made at all (this is the offline/dry-run mode).
+    PUT to R2 (Cloudflare, S3-compatible) at key base/<candidate_id>.png -
+    unconditionally, every call, no existence check first. A PUT is an
+    idempotent overwrite, so identical bytes re-uploading is just wasted
+    bandwidth; the alternative (skip-if-exists) would silently leave stale
+    bytes in R2 after a critic-reject regeneration produces new bytes for
+    the same candidate_id. If R2 env vars are absent, durable_url stays the
+    local path and no network calls are made at all (this is the
+    offline/dry-run mode).
     """
     sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -47,8 +50,7 @@ def persist_base_artwork(candidate_id: int, raw_bytes: bytes) -> dict:
     r2 = _r2_config()
     if r2 is not None:
         key = f"base/{candidate_id}.png"
-        if not _r2_object_exists(key, r2):
-            _r2_put_object(key, raw_bytes, r2)
+        _r2_put_object(key, raw_bytes, r2)
         durable_url = f"{r2['R2_PUBLIC_BASE_URL']}/{key}"
 
     return {
@@ -67,20 +69,7 @@ def _r2_config() -> dict | None:
     return {key: os.environ.get(key) for key in config.R2_ENV_VARS}
 
 
-# --- R2 object operations (S3-compatible PUT/HEAD, SigV4-signed) ---
-
-def _r2_object_exists(key: str, r2: dict) -> bool:
-    url = f"{r2['R2_ENDPOINT']}/{r2['R2_BUCKET']}/{key}"
-    headers = _sigv4_headers("HEAD", url, hashlib.sha256(b"").hexdigest(), r2)
-    request = urllib.request.Request(url, headers=headers, method="HEAD")
-    try:
-        with urllib.request.urlopen(request, timeout=30):
-            return True
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return False
-        raise
-
+# --- R2 object operations (S3-compatible PUT, SigV4-signed) ---
 
 def _r2_put_object(key: str, raw_bytes: bytes, r2: dict) -> None:
     url = f"{r2['R2_ENDPOINT']}/{r2['R2_BUCKET']}/{key}"

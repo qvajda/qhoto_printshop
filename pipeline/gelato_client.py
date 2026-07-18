@@ -21,6 +21,10 @@ class GelatoReplicateURLError(Exception):
     pass
 
 
+class GelatoInvalidImageURLError(Exception):
+    pass
+
+
 def _headers(api_key: str) -> dict:
     return {
         "X-API-KEY": api_key,
@@ -92,6 +96,13 @@ def create_product_from_template(
                 f"image_url ({image_url!r}). Replicate delivery URLs expire; Gelato "
                 f"needs a durable, persisted URL (e.g. R2/local artwork store) before "
                 f"making a live call."
+            )
+        if not image_url.startswith("http://") and not image_url.startswith("https://"):
+            raise GelatoInvalidImageURLError(
+                f"Refusing to create a real Gelato product with a non-http(s) "
+                f"image_url ({image_url!r}). Gelato needs a fetchable http(s) URL it "
+                f"can GET (e.g. an R2 public URL) - a local filesystem path only "
+                f"resolves on this machine and R2 is not configured for this call."
             )
 
     api_key = api_key or config.require_env("GELATO_API_KEY")

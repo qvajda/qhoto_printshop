@@ -161,6 +161,32 @@ def test_create_product_from_template_dry_run_ignores_replicate_delivery_url():
     assert result["_dry_run"] is True
 
 
+def test_create_product_from_template_raises_on_local_path_url_when_live():
+    with patch("pipeline.gelato_client.http.send") as mock_send:
+        with pytest.raises(gelato_client.GelatoInvalidImageURLError, match="http"):
+            gelato_client.create_product_from_template(
+                "tpl_real",
+                [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "C:\\Users\\x\\db\\base_artwork\\1.png"}],
+                "Botanical print",
+                store_id="store1", api_key="key1", dry_run=False,
+            )
+
+    mock_send.assert_not_called()
+
+
+def test_create_product_from_template_raises_on_unix_local_path_url_when_live():
+    with patch("pipeline.gelato_client.http.send") as mock_send:
+        with pytest.raises(gelato_client.GelatoInvalidImageURLError, match="http"):
+            gelato_client.create_product_from_template(
+                "tpl_real",
+                [{"template_variant_id": "variant_real", "image_placeholder_name": "image_slot_real.jpg", "image_url": "/tmp/base_artwork/1.png"}],
+                "Botanical print",
+                store_id="store1", api_key="key1", dry_run=False,
+            )
+
+    mock_send.assert_not_called()
+
+
 def test_create_product_from_template_allows_durable_url_when_live():
     def fake_send(request, timeout=30):
         return {"id": "prod_new", "status": "created", "previewUrl": None, "productImages": []}
