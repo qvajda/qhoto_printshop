@@ -76,3 +76,12 @@ def fetch_bytes(url: str, timeout: int = 30, sleep_fn=time.sleep) -> bytes:
 
 def head(url: str, timeout: int = 30, sleep_fn=time.sleep) -> httpx.Response:
     return _request("HEAD", url, timeout=timeout, sleep_fn=sleep_fn)
+
+
+def put_bytes(url: str, data: bytes, headers: dict, timeout: int = 30,
+              sleep_fn=time.sleep) -> httpx.Response:
+    """PUT raw bytes and return the response (no JSON parsing). Inherits the
+    shared client's keep-alive, honest UA, and 1010 backoff; non-2xx raises
+    HTTPError via _request. Caller-supplied headers (e.g. SigV4) pass through -
+    httpx's own default headers don't collide with what SigV4 signs."""
+    return _request("PUT", url, headers=headers, content=data, timeout=timeout, sleep_fn=sleep_fn)

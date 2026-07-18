@@ -2,12 +2,11 @@ import datetime
 import hashlib
 import hmac
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 from pipeline import config
+from pipeline import http
 
 ARTWORK_CACHE_DIR = Path(__file__).resolve().parent.parent / "db" / "base_artwork"
 
@@ -75,12 +74,11 @@ def _r2_put_object(key: str, raw_bytes: bytes, r2: dict) -> None:
     url = f"{r2['R2_ENDPOINT']}/{r2['R2_BUCKET']}/{key}"
     payload_hash = hashlib.sha256(raw_bytes).hexdigest()
     headers = _sigv4_headers("PUT", url, payload_hash, r2)
-    request = urllib.request.Request(url, data=raw_bytes, headers=headers, method="PUT")
-    # urlopen raises urllib.error.HTTPError for any non-2xx status - that
-    # propagates untouched, which is the "fail loud, don't leave a partial
-    # object uncaught" requirement.
-    with urllib.request.urlopen(request, timeout=30):
-        pass
+    # Route through the shared httpx client (keep-alive, honest UA, 1010 backoff)
+    # instead of a fresh urllib bot-fingerprint handshake per candidate against
+    # this Cloudflare-fronted endpoint. http.put_bytes raises HTTPError on any
+    # non-2xx - fail loud, don't leave a partial object uncaught.
+    http.put_bytes(url, raw_bytes, headers)
 
 
 # --- AWS SigV4 signer (hmac/hashlib only - no boto3/botocore) ---
