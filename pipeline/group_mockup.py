@@ -30,7 +30,7 @@ def _group_sizes(static_config: dict, group_type: str) -> list:
 
 def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_config: dict = None,
                          store_id: str = None, api_key: str = None,
-                         poll_interval: float = 3.0, poll_timeout: float = 300.0,
+                         poll_interval: float = 10.0, poll_timeout: float = 300.0,
                          now=None) -> dict | None:
     candidate_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if candidate_row is None:
@@ -82,7 +82,7 @@ GROUP_TYPES = ("5x7", "10x24")
 
 
 def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = None,
-                            api_key: str = None, poll_interval: float = 3.0,
+                            api_key: str = None, poll_interval: float = 10.0,
                             poll_timeout: float = 300.0, now=None) -> list:
     static_config = static_config if static_config is not None else config.load_static_config()
 

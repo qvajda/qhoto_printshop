@@ -356,3 +356,41 @@ def test_run_group_mockup_cycle_returns_empty_list_when_nothing_ready(tmp_path):
 
     assert processed == []
     conn.close()
+
+
+# H4 regression: the 1010 poll-calming fix (10s + jitter) has to reach the fan-out
+# path. group_mockup.py defaulted poll_interval=3.0, silently overriding the 10.0
+# default down in create_or_reuse_group_product - a 316-test-green run missed it
+# because nothing asserted the fan-out default. These lock it at >=10s.
+def test_create_group_mockup_defaults_poll_interval_to_at_least_10s(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="approved_published")
+    static_config = config.load_static_config()
+
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "g1"}
+        group_mockup.create_group_mockup(
+            conn, candidate_id, "5x7", static_config=static_config, now=datetime(2026, 7, 16, 12, 0, 0),
+        )
+
+    assert mock_create.call_args.kwargs["poll_interval"] >= 10.0
+    conn.close()
+
+
+def test_run_group_mockup_cycle_defaults_poll_interval_to_at_least_10s(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="approved_published")
+    static_config = config.load_static_config()
+
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "g1"}
+        group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, now=datetime(2026, 7, 16, 12, 0, 0),
+        )
+
+    assert mock_create.call_count >= 1
+    for call in mock_create.call_args_list:
+        assert call.kwargs["poll_interval"] >= 10.0
+    conn.close()

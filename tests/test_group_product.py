@@ -30,6 +30,13 @@ def test_poll_until_ready_jitters_the_sleep_interval():
     assert all(8.0 <= s <= 12.0 for s in slept)
 
 
+def test_jittered_stays_within_plus_minus_20_percent():
+    # H4 regression: direct bounds check on the jitter helper the fan-out relies on.
+    for _ in range(1000):
+        assert 8.0 <= group_product._jittered(10.0) <= 12.0
+    assert group_product._jittered(0.0) == 0.0
+
+
 def _fresh_conn(tmp_path):
     conn = db.get_connection(tmp_path / "test.sqlite3")
     db.init_db(conn)
