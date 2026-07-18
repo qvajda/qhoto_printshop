@@ -33,6 +33,11 @@ npm-debug.log*
 
 # Local runtime data
 db/*.sqlite3
+db/*.bak-*
+
+# Agent / tooling scratch dirs (local, not project source)
+.agents/
+.claude/
 
 # Git worktrees
 .worktrees/
