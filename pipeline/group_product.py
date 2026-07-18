@@ -1,13 +1,12 @@
 import json
 import random
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 
 import pipeline.config as config
 import pipeline.etsy_client as etsy_client
 import pipeline.gelato_client as gelato_client
+import pipeline.http as http
 import pipeline.image_crop as image_crop
 
 
@@ -27,9 +26,11 @@ def _jittered(interval: float) -> float:
 
 def _image_is_fetchable(url: str) -> bool:
     try:
-        urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=10)
+        http.head(url, timeout=10)
         return True
-    except (urllib.error.URLError, urllib.error.HTTPError):
+    except Exception:
+        # Any failure (non-2xx, connect/timeout) means the object isn't fetchable
+        # yet - same broad catch as the old urllib URLError/HTTPError pair.
         return False
 
 
