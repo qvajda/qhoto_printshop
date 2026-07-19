@@ -55,6 +55,21 @@ def research_web_search(prompt: str, *, api_key: str = None, max_tokens: int = 2
     return {"text": "\n".join(text_blocks), "raw": result}
 
 
+def _send_message(request) -> dict:
+    """http.send() maps an empty HTTP body to {} (meant for 204-style responses),
+    which silently strips out Anthropic's content and crashes json.loads('') far
+    from the real cause - seen live on both a critic-image call and a plain
+    compliance-regen call. Both self-healed on an immediate retry, so treat one
+    empty response as transient and retry once before failing loudly."""
+    for attempt in (1, 2):
+        result = http.send(request, timeout=60)
+        text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
+        if text_blocks:
+            return {"text": "\n".join(text_blocks), "raw": result}
+        if attempt == 2:
+            raise RuntimeError(f"Anthropic returned no text content after retry: {result!r}")
+
+
 def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024) -> dict:
     api_key = api_key or config.require_env("ANTHROPIC_API_KEY")
     body = json.dumps({
@@ -63,9 +78,7 @@ def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024) -> dic
         "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     request = urllib.request.Request(ANTHROPIC_API_BASE, data=body, headers=_headers(api_key), method="POST")
-    result = http.send(request, timeout=60)
-    text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
-    return {"text": "\n".join(text_blocks), "raw": result}
+    return _send_message(request)
 
 
 def _downscaled_base64_block(raw: bytes) -> dict:
@@ -117,6 +130,4 @@ def complete_with_images(prompt: str, image_urls: list, *, api_key: str = None, 
         "messages": [{"role": "user", "content": content}],
     }).encode("utf-8")
     request = urllib.request.Request(ANTHROPIC_API_BASE, data=body, headers=_headers(api_key), method="POST")
-    result = http.send(request, timeout=60)
-    text_blocks = [block["text"] for block in result.get("content", []) if block.get("type") == "text"]
-    return {"text": "\n".join(text_blocks), "raw": result}
+    return _send_message(request)

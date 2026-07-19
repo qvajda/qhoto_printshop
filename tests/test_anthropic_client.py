@@ -1,6 +1,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import pipeline.anthropic_client as anthropic_client
 
 
@@ -77,6 +79,32 @@ def test_complete_concatenates_multiple_text_blocks():
         result = anthropic_client.complete("prompt", api_key="key1")
 
     assert result["text"] == "line one\nline two"
+
+
+def test_complete_retries_once_on_empty_content_then_succeeds():
+    # http.send() maps an empty HTTP body to {} - seen live as a transient Anthropic
+    # hiccup that self-healed on an immediate retry. Confirm one retry recovers it.
+    responses = iter([{}, {"content": [{"type": "text", "text": '{"passed": true}'}]}])
+
+    def fake_send(request, timeout=30):
+        return next(responses)
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send) as mock_send:
+        result = anthropic_client.complete("prompt", api_key="key1")
+
+    assert mock_send.call_count == 2
+    assert result["text"] == '{"passed": true}'
+
+
+def test_complete_raises_if_content_still_empty_after_retry():
+    def fake_send(request, timeout=30):
+        return {}
+
+    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send) as mock_send:
+        with pytest.raises(RuntimeError, match="no text content"):
+            anthropic_client.complete("prompt", api_key="key1")
+
+    assert mock_send.call_count == 2
 
 
 def _fake_head_response(content_length=1024):
