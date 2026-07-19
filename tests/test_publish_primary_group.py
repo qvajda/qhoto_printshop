@@ -865,6 +865,44 @@ def test_retry_publish_failed_groups_repatches_and_flips_to_published(tmp_path):
     conn.close()
 
 
+def test_retry_publish_failed_groups_marks_primary_candidate_completed(tmp_path):
+    # A primary publish that only succeeds via the retry path must still mark the
+    # candidate 'completed' (mirror the happy path), not leave it stuck.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="primary_review")
+    group_id = _insert_publish_failed_group(conn, candidate_id, "primary", decision="approved")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_listing_text(conn, candidate_id)
+
+    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing", return_value="etsy-late"):
+        retried = publish_primary_group.retry_publish_failed_groups(
+            conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True, now="2026-07-18T12:00:00",
+        )
+
+    assert retried == [group_id]
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "completed"
+    conn.close()
+
+
+def test_retry_publish_failed_groups_does_not_complete_candidate_for_secondary(tmp_path):
+    # A secondary (5x7/10x24) retry must NOT touch candidate status.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="completed")
+    group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="approved")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_listing_text(conn, candidate_id)
+
+    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing", return_value="etsy-late"):
+        publish_primary_group.retry_publish_failed_groups(
+            conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True, now="2026-07-18T12:00:00",
+        )
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "completed"  # unchanged
+    conn.close()
+
+
 def test_retry_publish_failed_groups_leaves_group_failed_when_patch_still_fails(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

@@ -313,6 +313,14 @@ def retry_publish_failed_groups(conn, *, static_config=None, shop_id=None, etsy_
             "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",
             (timestamp, row["id"]),
         )
+        # A primary publish also marks the candidate 'completed' (mirror the happy
+        # path, publish_primary_group). Secondary groups leave candidate status alone
+        # (it was already 'completed' when the primary published).
+        if row["group_type"] == "primary":
+            conn.execute(
+                "UPDATE candidates SET status = 'completed', updated_at = ? WHERE id = ?",
+                (timestamp, row["candidate_id"]),
+            )
         conn.commit()
         retried.append(row["id"])
     return retried
