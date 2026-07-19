@@ -192,6 +192,47 @@ def test_create_or_reuse_group_product_deletes_orphan_before_retry(tmp_path):
     assert stale_row["status"] == "deleted"
 
 
+def test_create_or_reuse_group_product_reuses_mockup_failed_product_instead_of_recreating(tmp_path):
+    # Regression: a mockup_failed row means Gelato created the product (gelato_product_id set)
+    # but the readiness poll timed out on rehost lag. Retrying must REUSE + re-poll that same
+    # product, never delete + recreate it (idempotency; avoids churning real Gelato products).
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id)
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'live-prod-1', 'mockup_failed', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    conn.commit()
+    failed_id = conn.execute("SELECT id FROM group_products WHERE gelato_product_id = 'live-prod-1'").fetchone()["id"]
+
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll:
+        mock_poll.return_value = {
+            "isReadyToPublish": True,
+            "productImages": [{"fileUrl": f"https://{gelato_client.GELATO_IMAGE_HOST}/a.jpg", "isPrimary": True}],
+        }
+        result = group_product.create_or_reuse_group_product(
+            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:12:00",
+        )
+
+    mock_delete.assert_not_called()
+    mock_create.assert_not_called()
+    mock_poll.assert_called_once_with(
+        "live-prod-1", store_id=None, api_key=None, poll_interval=10.0, timeout=300.0,
+    )
+    assert result["group_product_id"] == failed_id
+    assert result["gelato_product_id"] == "live-prod-1"
+    row = conn.execute("SELECT status FROM group_products WHERE id = ?", (failed_id,)).fetchone()
+    assert row["status"] == "created"
+
+
 def test_create_or_reuse_group_product_falls_back_to_base_image_when_gelato_returns_no_images(tmp_path):
     # Regression: single-variant group products (5x7, 10x24) never get a Gelato-rendered
     # productImages entry - confirmed live 2026-07-17, Gelato's mockup preview defaults to a

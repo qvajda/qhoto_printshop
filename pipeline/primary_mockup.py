@@ -6,7 +6,9 @@ import pipeline.group_product as group_product
 
 
 def build_mockup_title(candidate: dict) -> str:
-    return f"{candidate['niche']} - primary mockup"
+    # Gelato pushes this as the Etsy draft title; Etsy hard-caps titles at 140 chars
+    # and rejects the create otherwise. The real title is set later on the listing patch.
+    return f"{candidate['niche']} - primary mockup"[:140]
 
 
 def get_or_create_primary_group(conn, candidate_id: int, *, now=None) -> int:

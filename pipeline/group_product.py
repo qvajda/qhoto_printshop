@@ -78,7 +78,12 @@ def _jittered(interval: float) -> float:
 
 def _image_is_fetchable(url: str) -> bool:
     try:
-        http.head(url, timeout=10)
+        # GET, not HEAD: Gelato's S3 preview URLs are SigV4-presigned for GET only -
+        # the method is part of the signed canonical request, so HEAD against a
+        # GET-signed URL 403s (SignatureDoesNotMatch) regardless of whether the
+        # object is actually there (confirmed live 2026-07-19: HEAD 403, GET 200
+        # on the same URL). A HEAD-based check can never observe true readiness.
+        http.fetch_bytes(url, timeout=10)
         return True
     except Exception:
         # Any failure (non-2xx, connect/timeout) means the object isn't fetchable
@@ -186,68 +191,94 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         )
         conn.commit()
 
+    # A mockup_failed row whose Gelato product was actually created (gelato_product_id is
+    # set) is NOT stale: the create succeeded and only the readiness poll timed out (Gelato
+    # image rehosting can lag past the poll window - seconds to >5 min). Reuse that product
+    # and just re-poll; deleting + recreating would restart the same slow clock and churn a
+    # real Gelato product every retry, which the idempotency constraint forbids. Genuinely
+    # stale rows (publish_failed, or a mockup_failed create that never returned a product id)
+    # are still deleted + recreated.
     stale_row = conn.execute(
-        "SELECT id, gelato_product_id FROM group_products WHERE group_id = ? "
+        "SELECT id, gelato_product_id, status FROM group_products WHERE group_id = ? "
         "AND status IN ('mockup_failed', 'publish_failed')",
         (group_id,),
     ).fetchone()
+    reuse_group_product_id = None
+    reuse_gelato_product_id = None
     if stale_row is not None:
-        if stale_row["gelato_product_id"]:
-            gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
-        conn.execute(
-            "DELETE FROM group_product_variants WHERE group_product_id = ?", (stale_row["id"],),
-        )
-        conn.execute(
-            "UPDATE group_products SET status = 'deleted', updated_at = ? WHERE id = ?",
-            (timestamp, stale_row["id"]),
+        if stale_row["status"] == "mockup_failed" and stale_row["gelato_product_id"]:
+            reuse_group_product_id = stale_row["id"]
+            reuse_gelato_product_id = stale_row["gelato_product_id"]
+            conn.execute(
+                "UPDATE group_products SET status = 'pending', updated_at = ? WHERE id = ?",
+                (timestamp, reuse_group_product_id),
+            )
+            conn.commit()
+        else:
+            if stale_row["gelato_product_id"]:
+                gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
+            conn.execute(
+                "DELETE FROM group_product_variants WHERE group_product_id = ?", (stale_row["id"],),
+            )
+            conn.execute(
+                "UPDATE group_products SET status = 'deleted', updated_at = ? WHERE id = ?",
+                (timestamp, stale_row["id"]),
+            )
+            conn.commit()
+
+    if reuse_group_product_id is not None:
+        group_product_id = reuse_group_product_id
+        gelato_product_id = reuse_gelato_product_id
+    else:
+        # DPI guard fires only on real creates (dry-run/test masters are synthetic and
+        # have no local archive). Placed before any DB write so a too-small master fails
+        # fast without orphaning a group_products row.
+        if config.is_live_mode("GELATO"):
+            _assert_print_dpi(sizes, candidate.get("base_image_local_path"))
+
+        templates = [config.get_template_variant(static_config, size, orientation) for size in sizes]
+        template_id = templates[0]["template_id"]
+
+        cursor = conn.execute(
+            "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
+            "VALUES (?, ?, 'pending', ?, ?)",
+            (group_id, template_id, timestamp, timestamp),
         )
         conn.commit()
+        group_product_id = cursor.lastrowid
 
-    # DPI guard fires only on real creates (dry-run/test masters are synthetic and
-    # have no local archive). Placed before any DB write so a too-small master fails
-    # fast without orphaning a group_products row.
-    if config.is_live_mode("GELATO"):
-        _assert_print_dpi(sizes, candidate.get("base_image_local_path"))
-
-    templates = [config.get_template_variant(static_config, size, orientation) for size in sizes]
-    template_id = templates[0]["template_id"]
-
-    cursor = conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
-        "VALUES (?, ?, 'pending', ?, ?)",
-        (group_id, template_id, timestamp, timestamp),
-    )
-    conn.commit()
-    group_product_id = cursor.lastrowid
-
-    for size, template in zip(sizes, templates):
-        conn.execute(
-            "INSERT INTO group_product_variants "
-            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (group_product_id, size, orientation, template["template_variant_id"],
-             static_config["prices_eur"][size], timestamp),
-        )
-    conn.commit()
+        for size, template in zip(sizes, templates):
+            conn.execute(
+                "INSERT INTO group_product_variants "
+                "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (group_product_id, size, orientation, template["template_variant_id"],
+                 static_config["prices_eur"][size], timestamp),
+            )
+        conn.commit()
 
     try:
-        response = gelato_client.create_product_from_template(
-            template_id,
-            [
-                {"template_variant_id": t["template_variant_id"], "image_placeholder_name": t["image_placeholder_name"],
-                 "image_url": candidate["base_image_url"]}
-                for t in templates
-            ],
-            title, store_id=store_id, api_key=api_key,
-        )
-        gelato_product_id = response["id"]
-        conn.execute(
-            "UPDATE group_products SET gelato_product_id = ?, updated_at = ? WHERE id = ?",
-            (gelato_product_id, timestamp, group_product_id),
-        )
-        conn.commit()
+        if reuse_group_product_id is None:
+            response = gelato_client.create_product_from_template(
+                template_id,
+                [
+                    {"template_variant_id": t["template_variant_id"], "image_placeholder_name": t["image_placeholder_name"],
+                     "image_url": candidate["base_image_url"]}
+                    for t in templates
+                ],
+                title, store_id=store_id, api_key=api_key,
+            )
+            gelato_product_id = response["id"]
+            conn.execute(
+                "UPDATE group_products SET gelato_product_id = ?, updated_at = ? WHERE id = ?",
+                (gelato_product_id, timestamp, group_product_id),
+            )
+            conn.commit()
+            is_dry_run = bool(response.get("_dry_run"))
+        else:
+            is_dry_run = False
 
-        if response.get("_dry_run"):
+        if is_dry_run:
             images = [{"fileUrl": response.get("previewUrl") or candidate["base_image_url"], "isPrimary": True}]
         else:
             product = poll_until_ready(
@@ -288,6 +319,9 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         conn.commit()
         raise
 
+    # Idempotent on reuse: a re-polled (previously timed-out) product may already have
+    # a partial gallery from an earlier attempt - clear it before reinserting.
+    conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
     ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
     for order, image in enumerate(ordered_images):
         image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"

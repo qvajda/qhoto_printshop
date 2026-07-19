@@ -36,9 +36,12 @@ def main():
     conn = db.get_connection(DB_PATH)
     db.init_db(conn)
 
-    existing = conn.execute("SELECT id FROM candidates WHERE status = 'pending'").fetchone()
+    # candidates.status has no state past 'generating' (see generate.py) - checking
+    # only for 'pending' missed already-generated candidates and reseeded a fresh
+    # (real, billed) one on every rerun. Any existing row means "already seeded".
+    existing = conn.execute("SELECT id FROM candidates ORDER BY id LIMIT 1").fetchone()
     if existing:
-        print(f"== research (skipped, candidate {existing['id']} already pending) ==")
+        print(f"== research (skipped, candidate {existing['id']} already seeded) ==")
     else:
         print("== research (skipped, seeding 1 new candidate for live test) ==")
         raw = {
