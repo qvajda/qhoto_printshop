@@ -141,6 +141,29 @@ def test_create_group_mockup_delegates_with_full_sizes_list_from_config(tmp_path
     conn.close()
 
 
+def test_create_group_mockup_caps_title_at_140_chars(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    long_niche = "a" * 150
+    candidate_id = _insert_candidate(conn, niche=long_niche)
+    _insert_primary_group(conn, candidate_id, status="approved_published")
+    static_config = {
+        "aspect_ratio_groups": {"primary": ["8x12", "A3", "A2", "A1"], "10x24": ["10x24"]},
+        "prices_eur": {"10x24": 45},
+    }
+
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "gelato-prod-1"}
+        group_mockup.create_group_mockup(
+            conn, candidate_id, "10x24", static_config=static_config, store_id="store1", api_key="key1",
+            poll_interval=1, poll_timeout=5, now=datetime(2026, 7, 16, 12, 0, 0),
+        )
+
+    args, _ = mock_create.call_args
+    title_arg = args[5]
+    assert len(title_arg) <= 140
+    conn.close()
+
+
 def test_create_group_mockup_skips_when_already_created(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

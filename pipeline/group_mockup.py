@@ -57,8 +57,11 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
     sizes = _group_sizes(static_config, group_type)
 
     def attempt():
+        # Gelato pushes this as the Etsy draft title; Etsy hard-caps titles at 140 chars
+        # and rejects the create otherwise. The real title is set later on the listing patch.
+        title = f"{candidate['niche']} - {group_type} mockup"[:140]
         return group_product.create_or_reuse_group_product(
-            conn, group_id, sizes, candidate, static_config, f"{candidate['niche']} - {group_type} mockup",
+            conn, group_id, sizes, candidate, static_config, title,
             store_id=store_id, api_key=api_key, poll_interval=poll_interval, poll_timeout=poll_timeout, now=now,
         )
 
