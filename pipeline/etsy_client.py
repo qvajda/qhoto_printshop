@@ -167,10 +167,20 @@ def update_listing_inventory(
     if dry_run:
         return {"products": [], "_dry_run": True}
 
+    # A single-size group has no Etsy variation property at all (Gelato only creates one
+    # when there's more than one size), so property_values is empty - the single product
+    # unambiguously IS that one size, no name-matching needed or possible.
+    single_size_no_variation = (
+        len(size_to_price) == 1 and len(inventory["products"]) == 1
+        and not inventory["products"][0]["property_values"]
+    )
+
     matched_sizes = set()
     products = []
     for product in inventory["products"]:
         matched_size = None
+        if single_size_no_variation:
+            matched_size = next(iter(size_to_price))
         for prop in product["property_values"]:
             for value in prop["values"]:
                 for size in size_to_price:

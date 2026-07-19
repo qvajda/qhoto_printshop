@@ -253,6 +253,27 @@ def test_update_listing_inventory_sets_price_on_matching_size_and_strips_readonl
     assert "offering_id" not in body["products"][0]["offerings"][0]
 
 
+def test_update_listing_inventory_matches_single_size_product_with_no_variation_property():
+    # A single-size group (5x7, 10x24) has no Etsy variation property at all - Gelato only
+    # creates one when there's more than one size - so property_values comes back empty.
+    inventory = {"products": [{"product_id": 1, "sku": "", "is_deleted": False,
+                                "property_values": [],
+                                "offerings": [{"offering_id": 10,
+                                               "price": {"amount": 1900, "divisor": 100, "currency_code": "EUR"},
+                                               "quantity": 999, "is_enabled": True}]}]}
+    with patch("pipeline.etsy_client.get_listing_inventory") as mock_get, \
+         patch("pipeline.http.send") as mock_send:
+        mock_get.return_value = inventory
+        mock_send.return_value = {"products": []}
+        etsy_client.update_listing_inventory(
+            "shop1", "555", {"5x7": 19.0}, api_key="k", api_secret="s", access_token="t", dry_run=False,
+        )
+
+    sent_request = mock_send.call_args[0][0]
+    body = json.loads(sent_request.data)
+    assert body["products"][0]["offerings"][0]["price"] == 19.0
+
+
 def test_update_listing_inventory_raises_if_a_size_has_no_matching_product():
     inventory = {"products": [{"product_id": 1, "sku": "", "is_deleted": False,
                                 "property_values": [{"property_id": 100, "property_name": "Size",
