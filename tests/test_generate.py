@@ -201,6 +201,37 @@ def test_generate_for_candidate_reuses_stored_art_brief_without_recalling_anthro
     conn.close()
 
 
+def test_generate_for_candidate_no_upscale_skips_esrgan_and_persists_raw_flux_output(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
+
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        return "A dense mid-century modern botanical bouquet."
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred123"}
+
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image") as mock_upscale, \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes") as mock_fetch, \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        result = generate.generate_for_candidate(
+            conn, candidate_id, api_token="test-token",
+            now=datetime(2026, 7, 9, 10, 0, 0), no_upscale=True,
+        )
+
+    mock_upscale.assert_not_called()
+    mock_fetch.assert_called_once_with("https://replicate.delivery/raw.png")
+    assert result["upscale_prediction_id"] is None
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["base_upscale_prediction_id"] is None
+    assert row["base_replicate_delivery_url"] == "https://replicate.delivery/raw.png"
+    assert row["base_replicate_prediction_id"] == "pred123"
+    conn.close()
+
+
 def test_generate_for_candidate_leaves_row_untouched_when_upscale_fails(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")

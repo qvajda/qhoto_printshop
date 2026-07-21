@@ -53,12 +53,20 @@ def approx_t5_tokens(text: str) -> int:
 
 
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
-                            api_token: str = None, now=None) -> dict:
+                            api_token: str = None, now=None, no_upscale: bool = False) -> dict:
     """Generate a base image for a candidate, then upscale it to a 300-DPI-capable master.
     Always overwrites base_image_url/base_replicate_prediction_id/base_upscale_prediction_id
     on its row (even on retry). If upscaling fails, no write happens - the row is left exactly
     as it was, so the caller's existing per-candidate retry handling picks it up again unchanged.
-    `now` is only for test determinism."""
+    `now` is only for test determinism.
+
+    `no_upscale` (Step 4 validation only, docs/2026-07-20-execution-steps-1-4-kickoff.md):
+    stops right after the FLUX prediction, skipping real-esrgan and the DPI gate that
+    upscaling exists to satisfy - the validation batch is judging raw generation quality,
+    and ESRGAN halo is a separate confounding variable (RC-E). Persists the raw FLUX
+    output as the base artwork instead of the upscaled one; base_upscale_prediction_id
+    stays NULL. Never used by the real pipeline path - a no-upscale row can never reach
+    a real Gelato product-create (no 300-DPI master exists for it)."""
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
@@ -77,6 +85,32 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
 
     prompt = build_prompt(candidate, correction_note=correction_note)
     generated = replicate_client.generate_image(prompt, api_token=api_token)
+
+    if no_upscale:
+        raw = http.fetch_bytes(generated["image_url"])
+        artwork = artwork_store.persist_base_artwork(candidate_id, raw)
+        timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+        conn.execute(
+            """
+            UPDATE candidates
+            SET base_image_url = ?, base_image_local_path = ?, base_image_sha256 = ?,
+                base_replicate_delivery_url = ?, base_replicate_prediction_id = ?,
+                base_upscale_prediction_id = NULL, status = 'generating', updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                artwork["durable_url"], artwork["local_path"], artwork["sha256"],
+                generated["image_url"], generated["prediction_id"],
+                timestamp, candidate_id,
+            ),
+        )
+        conn.commit()
+        return {
+            "image_url": artwork["durable_url"],
+            "prediction_id": generated["prediction_id"],
+            "upscale_prediction_id": None,
+        }
+
     upscaled = replicate_client.upscale_image(generated["image_url"], api_token=api_token)
 
     raw = http.fetch_bytes(upscaled["image_url"])
