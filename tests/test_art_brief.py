@@ -18,9 +18,9 @@ def test_build_brief_prompt_includes_niche_and_mandatory_fields():
     assert "monstera line art" in prompt
     assert "event_lookahead:fall_cozy_aesthetic" in prompt
     assert "NAMED art idiom" in prompt
-    assert "density/coverage clause" in prompt
+    assert "A density clause" in prompt
     assert "Mark boldness" in prompt
-    assert "backdrop shape" in prompt
+    assert "backdrop device" in prompt
     assert "accent colors" in prompt
     assert "60 words" in prompt
 
@@ -28,16 +28,77 @@ def test_build_brief_prompt_includes_niche_and_mandatory_fields():
 def test_build_brief_prompt_includes_round2_focal_hierarchy_and_backdrop_demotion():
     prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
 
-    # FM-2 fix: mandatory focal-hierarchy field + negative-space-occupant rule.
+    # FM-2 fix (round 2, still present): mandatory focal-hierarchy field.
     assert "Focal hierarchy" in prompt
-    assert "floating shape is never the occupant" in prompt
-    # FM-1 fix: backdrop demoted to a small-subject-only device, wider menu.
-    assert "SMALL, single-motif subject only" in prompt
+    # FM-1 fix (round 2, still present): wide backdrop-device menu.
     assert "arch, wash, band, sun disc" in prompt
     # FM-3 fix: boldness qualifies the medium, doesn't replace it.
     assert "never a replacement for it" in prompt
     # FM-4 stopgap: landscape-native scenes get a foreground-anchor nudge.
     assert "foreground anchor subject" in prompt
+
+
+def test_build_brief_prompt_subject_named_first():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # R3-a (FM-7 root cause 3 / research finding 1): subject-first ordering.
+    assert "named FIRST" in prompt
+    assert "naming the primary subject in the opening words" in prompt
+
+
+def test_build_brief_prompt_includes_conditional_sparse_density_clause():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # FM-13: sparse idiom legitimized - either dense or one large dominant
+    # subject with generous empty space; only a SMALL subject in empty space
+    # is invalid.
+    assert "one large dominant subject" in prompt
+    assert "generous, intentional empty space" in prompt
+    assert "Never describe a small subject adrift in a mostly empty frame" in prompt
+
+
+def test_build_brief_prompt_includes_occupant_conditionality_and_integration_vocab():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # FM-11: occupant conditionality - only when it genuinely helps, and
+    # "no occupant" / "closes over it" are equally valid choices.
+    assert "use it ONLY when it genuinely improves the composition" in prompt
+    assert "closes over the opening entirely" in prompt
+    assert "the subject has no secondary occupant at all" in prompt
+    assert "dynamic pose (in flight, mid-glide, mid-crawl)" in prompt
+    # FM-7: integration vocabulary - scale, physical contact, anatomy.
+    assert "large enough to read across a room" in prompt
+    assert "spanning a third of the frame width" in prompt
+    assert "physical-contact language" in prompt
+    assert "six legs gripping the stem" in prompt
+    assert "symmetrically and anatomically complete" in prompt
+
+
+def test_build_brief_prompt_forbids_shape_words_for_negative_space():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # FM-8: negative-space wording hygiene - describe position relative to
+    # subject matter, never the geometry of the gap.
+    assert "relative to the surrounding stems, fronds, or blooms only" in prompt
+    assert "never call it a triangle, rectangle, square, or circle of space" in prompt
+
+
+def test_build_brief_prompt_includes_bottom_edge_grounding_clause():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # FM-9: bottom-edge grounding for stem/bouquet/herbarium subjects.
+    assert "Edge contact" in prompt
+    assert "stems running off the bottom edge of the frame" in prompt
+
+
+def test_build_brief_prompt_backdrop_device_no_longer_small_subject_only():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # FM-10: backdrop rebalanced to a positive menu device for SOME designs,
+    # including behind a large dominant subject - not just small motifs.
+    assert "SMALL, single-motif subject only" not in prompt
+    assert "appropriate behind a large dominant subject" in prompt
+    assert "not the default and not forbidden" in prompt
 
 
 def test_build_brief_prompt_includes_sibling_diversity_note_only_when_given():
@@ -50,6 +111,38 @@ def test_build_brief_prompt_includes_sibling_diversity_note_only_when_given():
     )
     assert "Briefs already written earlier in this batch" in sibling_prompt
     assert "A sage and terracotta mid-century botanical." in sibling_prompt
+
+
+def test_sibling_note_floors_backdrop_device_when_none_used_yet():
+    # R3-a (FM-10): no earlier brief used a backdrop device -> strongly
+    # consider one here.
+    prompt = art_brief.build_brief_prompt(
+        {"niche": "monstera", "trend_source": None},
+        sibling_briefs=["A dense sage and terracotta mid-century botanical bouquet, filling the frame."],
+    )
+    assert "strongly consider one here" in prompt
+
+
+def test_sibling_note_caps_backdrop_device_when_two_already_used():
+    # R3-a (FM-10): two+ earlier briefs already used a backdrop device ->
+    # use none here (the pre-existing cap, still enforced).
+    prompt = art_brief.build_brief_prompt(
+        {"niche": "monstera", "trend_source": None},
+        sibling_briefs=[
+            "A sage botanical bouquet against a sun disc backdrop.",
+            "A terracotta sunburst behind an arch device.",
+        ],
+    )
+    assert "use none here" in prompt
+
+
+def test_sibling_note_neutral_when_exactly_one_backdrop_device_used():
+    prompt = art_brief.build_brief_prompt(
+        {"niche": "monstera", "trend_source": None},
+        sibling_briefs=["A sage botanical bouquet against a sun disc backdrop."],
+    )
+    assert "strongly consider one here" not in prompt
+    assert "use none here" not in prompt
 
 
 def test_build_brief_prompt_moves_no_go_list_into_instructions():

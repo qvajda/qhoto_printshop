@@ -72,10 +72,21 @@ def test_build_prompt_scaffold_is_positive_only_flat_2d_full_bleed():
     prompt = generate.build_prompt(candidate).lower()
 
     for guardrail in (
-        "flat 2d full-bleed", "coherent centered subject", "dense composition filling the frame",
+        "flat 2d full-bleed", "composition reaching the frame's edges",
         "bold filled color zones", "crisp clean edges", "warm muted palette", "soft cream ground",
     ):
         assert guardrail in prompt
+
+
+def test_build_prompt_scaffold_no_longer_mandates_centered_subject_or_density():
+    # R3-a (FM-7/FM-13): both phrases actively fought the round-3 brief
+    # template's hierarchy briefs and legitimized sparse idiom - dropped.
+    candidate = {"art_brief": "A dense mid-century modern botanical bouquet."}
+
+    prompt = generate.build_prompt(candidate).lower()
+
+    assert "coherent centered subject" not in prompt
+    assert "dense composition filling the frame" not in prompt
 
 
 def test_positive_scaffold_has_no_negation_no_go_language():
