@@ -133,23 +133,30 @@ def _has_boldness(text: str) -> bool:
 
 
 # FM-8: shape-words used to describe a GAP/OPENING/negative space get
-# rendered by FLUX as literal drawn lines/shapes. "circle" is deliberately
-# excluded - sun/moon discs are legitimate described OBJECTS, not a gap
-# shape, and "circle backdrop" is valid backdrop-device vocabulary (see
-# BACKDROP_DEVICES above). Only triangle/rectangle/square family words
-# count, and only when they sit near a gap/opening/space word.
+# rendered by FLUX as literal drawn lines/shapes. "circle"/"circular" is
+# only excluded when it's naming a legitimate backdrop-device OBJECT (a sun
+# disc, a moon, a circular badge) rather than the shape of an opening - a
+# "circular opening between fronds" is the exact same FM-8 defect as the
+# triangle/rectangle cases and must still be flagged. Only skip circle/
+# circular when sun/moon/disc/badge vocabulary sits in the same window.
 FM8_SHAPE_WORDS = ("triangle", "triangular", "rectangle", "rectangular", "square")
+FM8_CIRCLE_WORDS = ("circle", "circular")
 FM8_GAP_WORDS = ("gap", "opening", "space", "channel")
+FM8_CIRCLE_OBJECT_WORDS = ("sun", "moon", "disc", "badge")
 
 
 def _has_shape_word_for_gap(text: str) -> bool:
     words = _words(text)
     for i, word in enumerate(words):
-        if word not in FM8_SHAPE_WORDS:
+        is_circle = word in FM8_CIRCLE_WORDS
+        if word not in FM8_SHAPE_WORDS and not is_circle:
             continue
         window = words[max(0, i - 4) : i + 5]
-        if any(gap_word in window for gap_word in FM8_GAP_WORDS):
-            return True
+        if not any(gap_word in window for gap_word in FM8_GAP_WORDS):
+            continue
+        if is_circle and any(obj_word in window for obj_word in FM8_CIRCLE_OBJECT_WORDS):
+            continue  # legitimate backdrop-device object (sun disc, moon, badge), not a gap-shape
+        return True
     return False
 
 

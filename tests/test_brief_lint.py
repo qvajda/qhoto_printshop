@@ -166,6 +166,13 @@ def test_lint_brief_does_not_flag_circle_as_a_shape_word_for_gap():
     assert not any("FM-8" in e for e in errors)
 
 
+def test_lint_brief_flags_circular_opening_geometry_without_sun_or_disc_wording():
+    errors = brief_lint.lint_brief(_valid_brief(
+        art_brief="Bold filled fern study in sage and terracotta, a ladybug in the circular opening between fronds."
+    ))
+    assert any("FM-8" in e for e in errors)
+
+
 def test_lint_brief_does_not_flag_triangle_used_as_a_described_object_not_a_gap():
     errors = brief_lint.lint_brief(_valid_brief(
         art_brief="Bold filled art deco pattern in sage and terracotta, a triangle motif repeated along the border, dense full-frame."
