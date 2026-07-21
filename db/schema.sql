@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS critic_pass_attempts (
   passed INTEGER NOT NULL,
   failure_reason TEXT,
   correction_notes TEXT,
+  overall TEXT CHECK(overall IN ('good','refine','reject')),
+  criteria_json TEXT,
+  cov REAL,
   created_at TEXT NOT NULL,
   UNIQUE(group_id, attempt_number)
 );

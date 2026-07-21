@@ -1,5 +1,6 @@
 import json as _json
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -20,13 +21,38 @@ def test_build_critic_prompt_includes_rubric_and_listing_text():
     assert "A minimalist botanical print." in prompt
     assert "named artist's style" in prompt
     assert "3 gallery images" in prompt
-    assert "'passed' (boolean)" in prompt
+    # S4-d per-criterion verdict shape.
+    assert "criterion_1" in prompt
+    assert "criterion_7" in prompt
+    assert "good" in prompt and "refine" in prompt and "reject" in prompt
     # H5 rubric extension: subject/coherence/composition/detail/density criteria.
     assert "near-empty" in prompt
     assert "coherence" in prompt.lower()
     assert "off-center or cut-off" in prompt
     assert "smudging" in prompt
     assert "sparse" in prompt
+
+
+def _verdict_response(overall="good", failing=None):
+    """Builds a fake Anthropic critic response in the S4-d per-criterion shape.
+    failing is an optional {criterion_number: note} dict; all other criteria pass.
+    Also carries the flat legacy {passed, reason} keys (ignored by the per-criterion
+    parser, consumed by the tier-2 master-image sanity parser) so ONE fixture works as
+    the mocked complete_with_images return value regardless of which tier calls it -
+    tests that care which tier ran assert on call_count/prompts, not response shape."""
+    failing = failing or {}
+    payload = {}
+    for i in range(1, 8):
+        key = f"criterion_{i}"
+        if i in failing:
+            payload[key] = {"passed": False, "note": failing[i]}
+        else:
+            payload[key] = {"passed": True, "note": "ok"}
+    payload["overall"] = overall
+    notes = [v["note"] for v in payload.values() if isinstance(v, dict) and not v["passed"]]
+    payload["passed"] = overall != "reject"
+    payload["reason"] = "; ".join(notes) if notes else "meets rubric"
+    return {"text": _json.dumps(payload)}
 
 
 def _fresh_conn(tmp_path):
@@ -142,7 +168,7 @@ def test_get_primary_group_state_raises_when_no_listing_text(tmp_path):
 
 def test_evaluate_critic_pass_returns_parsed_result():
     listing_text = {"title": "Monstera Line Art Botanical Print", "description": "A minimalist botanical print."}
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                return_value=fake_response) as mock_call:
@@ -155,15 +181,29 @@ def test_evaluate_critic_pass_returns_parsed_result():
     assert "Monstera Line Art Botanical Print" in called_prompt
     assert called_images == ["https://gelato/a.jpg", "https://gelato/b.jpg"]
     assert mock_call.call_args.kwargs["api_key"] == "key1"
-    assert result == {"passed": True, "reason": "meets rubric"}
+    assert result["passed"] is True
+    assert result["reason"] == "meets rubric"
+    assert result["overall"] == "good"
+    assert set(result["criteria"]) == set(critic_pass.CRITERION_KEYS)
 
 
 def test_evaluate_critic_pass_raises_on_missing_key():
     listing_text = {"title": "A title", "description": "A description."}
-    fake_response = {"text": _json.dumps({"passed": False})}
+    fake_response = {"text": _json.dumps({"criterion_1": {"passed": True, "note": "ok"}})}
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
-        with pytest.raises(ValueError, match="reason"):
+        with pytest.raises(ValueError, match="missing required key"):
+            critic_pass.evaluate_critic_pass(["https://gelato/a.jpg"], listing_text, api_key="key1")
+
+
+def test_evaluate_critic_pass_raises_on_invalid_overall():
+    listing_text = {"title": "A title", "description": "A description."}
+    payload = {f"criterion_{i}": {"passed": True, "note": "ok"} for i in range(1, 8)}
+    payload["overall"] = "maybe"
+    fake_response = {"text": _json.dumps(payload)}
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        with pytest.raises(ValueError, match="overall"):
             critic_pass.evaluate_critic_pass(["https://gelato/a.jpg"], listing_text, api_key="key1")
 
 
@@ -206,6 +246,109 @@ def test_check_local_image_sanity_returns_none_for_missing_or_null_path(tmp_path
     assert critic_pass.check_local_image_sanity(str(tmp_path / "does-not-exist.png")) is None
 
 
+# --- S4-d calibration set: must-FAIL {4,6,7} / must-PASS {1,2,5} / borderline {3} ---
+# (docs/2026-07-20-s4a-failure-taxonomy.md) - run against the real current masters,
+# not synthetic stand-ins, so a threshold regression here is a real regression.
+
+_BASE_ARTWORK_DIR = Path(__file__).resolve().parent.parent / "db" / "base_artwork"
+
+
+@pytest.mark.parametrize("n", [1, 2, 5])
+def test_calibration_set_must_pass_clears_local_gate_clean(n):
+    path = _BASE_ARTWORK_DIR / f"{n}.png"
+    if not path.exists():
+        pytest.skip(f"{path} not present in this checkout")
+    stats = critic_pass.compute_image_sanity_stats(path)
+    assert critic_pass.check_local_image_sanity(path) is None
+    assert critic_pass.local_sanity_flag_note(stats) is None
+
+
+@pytest.mark.parametrize("n", [4, 6, 7])
+def test_calibration_set_must_fail_hard_fails_local_gate(n):
+    path = _BASE_ARTWORK_DIR / f"{n}.png"
+    if not path.exists():
+        pytest.skip(f"{path} not present in this checkout")
+    result = critic_pass.check_local_image_sanity(path)
+    assert result is not None
+    assert result["passed"] is False
+
+
+def test_calibration_set_borderline_is_flagged_not_hard_failed():
+    path = _BASE_ARTWORK_DIR / "3.png"
+    if not path.exists():
+        pytest.skip(f"{path} not present in this checkout")
+    stats = critic_pass.compute_image_sanity_stats(path)
+    assert critic_pass.check_local_image_sanity(path) is None  # not hard-failed
+    assert critic_pass.local_sanity_flag_note(stats) is not None  # but flagged
+
+
+# --- S4-d tier 2: cheap single-image vision pre-filter ---
+
+def test_check_master_image_ai_sanity_returns_none_when_passed():
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "looks fine"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               return_value=fake_response) as mock_call:
+        result = critic_pass.check_master_image_ai_sanity("https://gelato/flat.jpg", api_key="key1")
+
+    assert result is None
+    called_prompt, called_images = mock_call.call_args.args
+    assert called_images == ["https://gelato/flat.jpg"]  # single image, not the gallery
+    assert mock_call.call_args.kwargs["api_key"] == "key1"
+
+
+def test_check_master_image_ai_sanity_returns_fail_dict_when_rejected():
+    fake_response = {"text": _json.dumps({"passed": False, "reason": "blank canvas"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result = critic_pass.check_master_image_ai_sanity("https://gelato/flat.jpg")
+
+    assert result == {"passed": False, "reason": "blank canvas"}
+
+
+def test_check_master_image_ai_sanity_returns_none_for_missing_source():
+    assert critic_pass.check_master_image_ai_sanity(None) is None
+
+
+def test_check_master_image_ai_sanity_threads_flag_note_into_prompt():
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "ok"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               return_value=fake_response) as mock_call:
+        critic_pass.check_master_image_ai_sanity(
+            "https://gelato/flat.jpg", flag_note="Note: borderline-sparse (coverage 0.020)."
+        )
+
+    called_prompt = mock_call.call_args.args[0]
+    assert "borderline-sparse" in called_prompt
+
+
+def test_run_local_and_master_gate_hard_fails_locally_without_any_vision_call(tmp_path):
+    from PIL import Image
+    empty_path = _save_png(tmp_path, "empty.png", Image.new("RGB", (600, 900), (238, 232, 210)))
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images") as mock_call:
+        result, flag_note = critic_pass.run_local_and_master_gate(empty_path, ["https://gelato/flat.jpg"])
+
+    mock_call.assert_not_called()
+    assert result["passed"] is False
+    assert flag_note is None
+
+
+def test_run_local_and_master_gate_falls_through_to_none_with_flag_note(tmp_path):
+    from PIL import Image, ImageDraw
+    # Sparse but structured image (stand-in for master 3's "borderline" profile) - real
+    # thresholds against actual masters are covered by the calibration-set tests above;
+    # this just exercises the flag_note plumbing through run_local_and_master_gate.
+    img = Image.new("RGB", (600, 900), (240, 235, 215))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([200, 350, 400, 550], outline=(10, 10, 10), width=30)
+    path = _save_png(tmp_path, "sparse.png", img)
+
+    fake_response = {"text": _json.dumps({"passed": True, "reason": "looks fine"})}
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result, flag_note = critic_pass.run_local_and_master_gate(path, ["https://gelato/flat.jpg"])
+
+    assert result is None
+
+
 def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
     from PIL import Image
     conn = _fresh_conn(tmp_path)
@@ -221,8 +364,10 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
         return {"id": "gelato_prod_retry", "isReadyToPublish": True,
                 "productImages": [{"fileUrl": "https://gelato-api-live.s3/v2.jpg", "isPrimary": True}]}
 
+    # attempt 2's local gate is inconclusive (nonexistent file) -> falls through to tier 2
+    # (cheap master-image check) then tier 3 (full rubric) - two vision calls total.
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
-               return_value={"text": _json.dumps({"passed": True, "reason": "ok"})}) as mock_vision, \
+               return_value=_verdict_response("good")) as mock_vision, \
          patch("pipeline.critic_pass.gelato_client.delete_product"), \
          patch("pipeline.generate.replicate_client.generate_image",
                return_value={"image_url": "https://replicate.delivery/r.png", "prediction_id": "p"}), \
@@ -245,8 +390,9 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
         )
 
     assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 2}
-    # Vision called exactly once (attempt 2) - attempt 1 was the zero-cost local fail.
-    assert mock_vision.call_count == 1
+    # Vision called exactly twice (attempt 2's tier-2 master check + tier-3 full rubric)
+    # - attempt 1 was the zero-cost local fail, no vision call at all.
+    assert mock_vision.call_count == 2
     attempts = conn.execute(
         "SELECT passed, failure_reason FROM critic_pass_attempts WHERE group_id = "
         "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary') ORDER BY attempt_number",
@@ -388,7 +534,7 @@ def test_run_critic_pass_happy_path_sets_primary_review_on_first_pass(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
@@ -468,7 +614,7 @@ def test_run_critic_pass_resumes_attempt_count_after_crash_before_regenerate(tmp
     conn.commit()
     _insert_listing_text(conn, candidate_id, niche="monstera line art")
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
@@ -519,9 +665,12 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
 
+    # attempt 1's reject short-circuits at tier 2 (1 call); attempt 2's pass runs both
+    # tier 2 and tier 3 (2 calls) - 3 responses total.
     critic_responses = iter([
-        {"text": _json.dumps({"passed": False, "reason": "composition is off-center"})},
-        {"text": _json.dumps({"passed": True, "reason": "meets rubric"})},
+        _verdict_response("reject", {4: "composition is off-center"}),
+        _verdict_response("good"),
+        _verdict_response("good"),
     ])
 
     def fake_create_product_from_template(*args, **kwargs):
@@ -598,10 +747,11 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
 
+    # each reject short-circuits at tier 2 - 1 call per attempt, 3 total.
     critic_responses = iter([
-        {"text": _json.dumps({"passed": False, "reason": "reason one"})},
-        {"text": _json.dumps({"passed": False, "reason": "reason two"})},
-        {"text": _json.dumps({"passed": False, "reason": "reason three"})},
+        _verdict_response("reject", {1: "reason one"}),
+        _verdict_response("reject", {1: "reason two"}),
+        _verdict_response("reject", {1: "reason three"}),
     ])
 
     def fake_create_product_from_template(*args, **kwargs):
@@ -679,7 +829,7 @@ def test_run_critic_pass_abandons_candidate_when_retry_regeneration_crashes(tmp_
     ).fetchone()
     group_id = group_row["id"]
 
-    fake_critic_response = {"text": _json.dumps({"passed": False, "reason": "off-center composition"})}
+    fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
          patch("pipeline.critic_pass.gelato_client.delete_product"), \
@@ -711,7 +861,7 @@ def test_run_critic_pass_cycle_processes_ready_candidates_and_skips_undrafted(tm
     undrafted_id = _insert_candidate(conn, niche="pending one", status="generating")
     _insert_primary_gallery(conn, undrafted_id)  # gallery exists but no listing_texts row yet
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         processed_ids = critic_pass.run_critic_pass_cycle(
             conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
@@ -727,7 +877,7 @@ def test_run_critic_pass_cycle_skips_candidates_already_passed(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         first_run = critic_pass.run_critic_pass_cycle(
             conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
@@ -751,7 +901,7 @@ def test_run_critic_pass_cycle_isolates_per_candidate_operational_failures(tmp_p
     def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024):
         if "saturated term" in prompt:
             raise RuntimeError("Anthropic throttled")
-        return {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+        return _verdict_response("good")
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=fake_complete_with_images):

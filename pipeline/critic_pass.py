@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+import statistics
 
 from PIL import Image, ImageFilter, ImageStat
 
@@ -10,6 +12,9 @@ import pipeline.generate as generate
 import pipeline.primary_mockup as primary_mockup
 import pipeline.research as research
 
+
+CRITERION_KEYS = tuple(f"criterion_{i}" for i in range(1, 8))
+VALID_OVERALLS = ("good", "refine", "reject")
 
 CRITIC_RUBRIC_PROMPT_TEMPLATE = (
     "You are the compliance and quality critic for an Etsy AI-generated wall art listing. "
@@ -30,19 +35,44 @@ CRITIC_RUBRIC_PROMPT_TEMPLATE = (
     "7. Text match: does this draft title and description actually match what's shown in the "
     "images and fit the niche?\n\n"
     "Title: {title}\n"
-    "Description: {description}\n\n"
-    "Reply with ONLY a JSON object with keys 'passed' (boolean) and 'reason' (string explaining "
-    "the verdict - cite the specific rubric point if failing), no other text."
+    "Description: {description}\n"
+    "{flag_note}\n"
+    "Reply with ONLY a JSON object, no other text, shaped exactly like this: "
+    '{{"criterion_1": {{"passed": bool, "note": "..."}}, "criterion_2": {{"passed": bool, '
+    '"note": "..."}}, "criterion_3": {{...}}, "criterion_4": {{...}}, "criterion_5": {{...}}, '
+    '"criterion_6": {{...}}, "criterion_7": {{...}}, "overall": "good"|"refine"|"reject"}}. '
+    "One entry per rubric point above (criterion_1 = rubric point 1, etc.), 'note' explains that "
+    "point's verdict. 'overall' is your holistic three-tier verdict: 'good' (ready to publish), "
+    "'refine' (usable but flawed - minor issues like point 5 smudging, not disqualifying), or "
+    "'reject' (a hard rubric failure - do not publish)."
 )
 
 
-# Local near-empty gate, calibrated against the 7 run-#1 masters in db/base_artwork/
-# (labeled set: {2,6} near-empty cream must FAIL; {1,5} must PASS). Failure requires
-# BOTH low variance AND low edge density - a real print clears at least one, so this
-# never blocks structured art, only genuinely empty frames. Measured: masters 2/6 had
-# stddev 0.18/0.38 and edge_ratio 0.0096; the nearest pass had stddev 6.93 / edge 0.017.
+# Local sanity gate, run zero-API-cost before the vision call - two complementary
+# checks, restated 2026-07-20 against the CURRENT 7 masters in db/base_artwork/ (the
+# prior comment cited masters 1-3's now-overwritten fingerprints; see
+# docs/2026-07-20-s4a-failure-taxonomy.md for the full study). Current calibration
+# set: must-FAIL {4, 6, 7}, must-PASS {1, 2, 5}, borderline {3} (flagged to the vision
+# critic, not hard-failed - it's real, structured line art that's merely sparse, not
+# an empty frame). Measured (stddev / edge_ratio / cov):
+#   1 .56.6/.074/.265  2 23.6/.049/.148  3 15.7/.029/.020 (borderline)
+#   4  6.9/.017/.006   5 69.4/.047/.297  6  0.4/.010/.000  7  8.3/.024/.029
+#
+# Check A (original): BOTH variance and edge density below floor - only catches a
+# truly flat/empty frame (6).
+# Check B (cov, added 2026-07-20 - the S4-a headline fix): thin line art clears
+# edge_ratio while covering ~1-3% of the frame (4, 7 - the old gate's blind spot).
+# `cov` = fraction of grayscale pixels deviating >15 from the median gray value,
+# i.e. how much of the frame is actually "not background". Used alone it would also
+# hard-fail master 3 (cov .020, same ballpark as 4/7) - but 3's stddev (15.7) sits
+# far clear of 4/6/7's (0.4-8.3), so check B additionally requires stddev below a
+# ceiling well above the empty-frame range but well below 3's - the tie-breaker that
+# keeps 3 out of the hard-fail bucket while still catching 4/6/7.
 SANITY_MIN_STDDEV = 3.0
 SANITY_MIN_EDGE_RATIO = 0.012
+SANITY_COV_HARD_FAIL = 0.05
+SANITY_COV_HARD_FAIL_STDDEV_CEILING = 12.0
+SANITY_COV_FLAG_CEILING = 0.12  # below this (and not hard-failed) -> flag-to-critic, not silent pass
 
 
 def compute_image_sanity_stats(local_path) -> dict:
@@ -54,45 +84,164 @@ def compute_image_sanity_stats(local_path) -> dict:
     hist = edges.histogram()
     total = sum(hist) or 1
     edge_ratio = sum(hist[30:]) / total  # fraction of pixels with a meaningful edge
-    return {"stddev": stddev, "edge_ratio": edge_ratio}
+    pixels = list(gray.getdata())
+    median = statistics.median(pixels)
+    cov = sum(1 for p in pixels if abs(p - median) > 15) / len(pixels)  # subject-coverage proxy
+    return {"stddev": stddev, "edge_ratio": edge_ratio, "cov": cov}
 
 
 def check_local_image_sanity(local_path) -> dict | None:
     """Zero-API-cost near-empty gate run before the vision call. Returns a critic-fail
-    result dict if the master is near-empty (both variance and edge density below
-    floor), else None ("inconclusive locally - spend the vision call")."""
+    result dict if the master is near-empty (see the calibration comment above for the
+    two check types), else None ("inconclusive locally - spend the vision call")."""
     if not local_path:
         return None
     try:
         stats = compute_image_sanity_stats(local_path)
     except (FileNotFoundError, OSError):
         return None  # unreadable locally -> defer to the vision critic
-    if stats["stddev"] < SANITY_MIN_STDDEV and stats["edge_ratio"] < SANITY_MIN_EDGE_RATIO:
+    empty_by_variance = (
+        stats["stddev"] < SANITY_MIN_STDDEV and stats["edge_ratio"] < SANITY_MIN_EDGE_RATIO
+    )
+    sparse_by_coverage = (
+        stats["cov"] < SANITY_COV_HARD_FAIL
+        and stats["stddev"] < SANITY_COV_HARD_FAIL_STDDEV_CEILING
+    )
+    if empty_by_variance or sparse_by_coverage:
         return {
             "passed": False,
             "reason": (f"near-empty image: stddev {stats['stddev']:.2f} "
                        f"(min {SANITY_MIN_STDDEV}), edge ratio {stats['edge_ratio']:.4f} "
-                       f"(min {SANITY_MIN_EDGE_RATIO})"),
+                       f"(min {SANITY_MIN_EDGE_RATIO}), coverage {stats['cov']:.4f} "
+                       f"(min {SANITY_COV_HARD_FAIL})"),
+            "cov": stats["cov"],
         }
     return None
 
 
-def build_critic_prompt(listing_text: dict, image_count: int) -> str:
+def local_sanity_flag_note(stats: dict) -> str | None:
+    """Borderline-but-not-hard-failed signal (S4-d two-tier gate): cov below the
+    full-pass ceiling doesn't reject locally, but shouldn't silently pass through to
+    the vision critic unremarked either - surfaced as an addendum in its prompt."""
+    if stats["cov"] < SANITY_COV_FLAG_CEILING:
+        return (f"Note: the local sanity gate flagged this design as borderline-sparse "
+                f"(subject coverage {stats['cov']:.3f}, below the {SANITY_COV_FLAG_CEILING} "
+                f"full-pass floor) - scrutinize rubric points 2, 4, and 6 closely.")
+    return None
+
+
+MASTER_SANITY_PROMPT_TEMPLATE = (
+    "You are a cheap, narrow pre-filter before a full quality review. Look at this single "
+    "flat artwork image ONLY and answer one question: is it empty/near-blank, malformed/"
+    "garbled (rendering artifacts, incoherent shapes), or otherwise obviously unusable as "
+    "print-ready wall art? Do not evaluate style, composition subtlety, or text match - a "
+    "full rubric review happens later; you are only screening out the obviously broken.\n"
+    "{flag_note}\n"
+    "Reply with ONLY a JSON object with keys 'passed' (boolean - true unless obviously "
+    "broken) and 'reason' (string), no other text."
+)
+
+
+def check_master_image_ai_sanity(image_source: str, *, api_key: str = None,
+                                  flag_note: str = None) -> dict | None:
+    """Cheap single-image vision pre-filter (S4-d two-tier gate) between the free local
+    gate and the full multi-image rubric pass - screens the flat master alone for
+    empty/malformed/artifact defects before spending the expensive gallery+text call.
+    Returns a critic-fail result dict if rejected, else None (defer to the full rubric).
+
+    ponytail: routes through anthropic_client.complete_with_images, which currently
+    hardcodes the Sonnet model (no model override param) - so this doesn't yet get the
+    "Haiku-class" cost saving the plan calls for, only the narrower single-image prompt.
+    anthropic_client.py is a sibling agent's file; wire in a cheaper model at fan-in
+    once it exposes one.
+    """
+    if not image_source:
+        return None
+    prompt = MASTER_SANITY_PROMPT_TEMPLATE.format(flag_note=flag_note or "")
+    response = anthropic_client.complete_with_images(prompt, [image_source], api_key=api_key)
+    parsed = anthropic_client.parse_json_response(response["text"])
+    for key in ("passed", "reason"):
+        if key not in parsed:
+            raise ValueError(f"Claude master-sanity response missing required key {key!r}: {parsed!r}")
+    if parsed["passed"]:
+        return None
+    return {"passed": False, "reason": parsed["reason"]}
+
+
+def build_critic_prompt(listing_text: dict, image_count: int, *, flag_note: str = None) -> str:
     return CRITIC_RUBRIC_PROMPT_TEMPLATE.format(
         image_count=image_count,
         title=listing_text["title"],
         description=listing_text["description"],
+        flag_note=flag_note or "",
     )
 
 
-def evaluate_critic_pass(gallery_image_urls: list, listing_text: dict, *, api_key: str = None) -> dict:
-    prompt = build_critic_prompt(listing_text, len(gallery_image_urls))
+def _normalize_verdict(parsed: dict) -> dict:
+    """Validates and flattens the per-criterion {criterion_1..7, overall} verdict shape
+    (S4-d) into the dict the rest of the pipeline consumes. 'passed'/'reason' stay
+    present and derived, so existing consumers (record_critic_attempt, run_critic_pass's
+    retry/abandon branching, generate.py's correction_note) don't need to know about the
+    richer shape - the per-criterion detail is exposed alongside for the S4-b regen-brief
+    consumer via 'criteria'/'overall'."""
+    missing = [key for key in CRITERION_KEYS if key not in parsed]
+    if missing:
+        raise ValueError(f"Claude critic response missing required key(s) {missing}: {parsed!r}")
+    if parsed.get("overall") not in VALID_OVERALLS:
+        raise ValueError(
+            f"Claude critic response missing/invalid 'overall' (expected one of "
+            f"{VALID_OVERALLS}): {parsed!r}"
+        )
+    criteria = {}
+    for key in CRITERION_KEYS:
+        entry = parsed[key]
+        if not isinstance(entry, dict) or "passed" not in entry or "note" not in entry:
+            raise ValueError(f"Claude critic response criterion {key!r} malformed: {entry!r}")
+        criteria[key] = {"passed": bool(entry["passed"]), "note": entry["note"]}
+    overall = parsed["overall"]
+    failing_notes = [entry["note"] for entry in criteria.values() if not entry["passed"]]
+    reason = "; ".join(failing_notes) if failing_notes else "meets rubric"
+    return {
+        "passed": overall != "reject",
+        "reason": reason,
+        "overall": overall,
+        "criteria": criteria,
+    }
+
+
+def evaluate_critic_pass(gallery_image_urls: list, listing_text: dict, *, api_key: str = None,
+                          flag_note: str = None) -> dict:
+    prompt = build_critic_prompt(listing_text, len(gallery_image_urls), flag_note=flag_note)
     result = anthropic_client.complete_with_images(prompt, gallery_image_urls, api_key=api_key)
     parsed = anthropic_client.parse_json_response(result["text"])
-    for key in ("passed", "reason"):
-        if key not in parsed:
-            raise ValueError(f"Claude critic response missing required key {key!r}: {parsed!r}")
-    return {"passed": parsed["passed"], "reason": parsed["reason"]}
+    return _normalize_verdict(parsed)
+
+
+def run_local_and_master_gate(local_path, gallery_image_urls: list, *, api_key: str = None) -> tuple:
+    """Tiers 1-2 of the S4-d three-tier gate, shared by critic_pass.py (primary group,
+    has a local master) and group_critic_pass.py (5x7/10x24 groups, crops of that same
+    master - no group-level local file yet, so tier 1 is skipped and tier 2 runs
+    against the group's own flat gallery image instead). Returns
+    (fail_result_or_None, flag_note_or_None) - fail_result set means stop here (don't
+    spend the full rubric call); flag_note is only meaningful when fail_result is None,
+    and should be threaded into the full rubric prompt."""
+    hard_fail = check_local_image_sanity(local_path)
+    if hard_fail is not None:
+        return hard_fail, None
+
+    flag_note = None
+    if local_path:
+        try:
+            flag_note = local_sanity_flag_note(compute_image_sanity_stats(local_path))
+        except (FileNotFoundError, OSError):
+            pass
+
+    master_image = local_path or (gallery_image_urls[0] if gallery_image_urls else None)
+    master_fail = check_master_image_ai_sanity(master_image, api_key=api_key, flag_note=flag_note)
+    if master_fail is not None:
+        return master_fail, None
+
+    return None, flag_note
 
 
 def get_primary_group_state(conn, candidate_id: int) -> dict:
@@ -136,16 +285,20 @@ def get_primary_group_state(conn, candidate_id: int) -> dict:
 def record_critic_attempt(conn, group_id: int, attempt_number: int, result: dict,
                            correction_notes: str = None, *, now=None) -> int:
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    criteria = result.get("criteria")
     cursor = conn.execute(
         """
         INSERT INTO critic_pass_attempts (
-            group_id, attempt_number, passed, failure_reason, correction_notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+            group_id, attempt_number, passed, failure_reason, correction_notes,
+            overall, criteria_json, cov, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             group_id, attempt_number, 1 if result["passed"] else 0,
             None if result["passed"] else result["reason"],
-            correction_notes, timestamp,
+            correction_notes, result.get("overall"),
+            json.dumps(criteria) if criteria is not None else None,
+            result.get("cov"), timestamp,
         ),
     )
     conn.commit()
@@ -199,15 +352,19 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
 
     while True:
         state = get_primary_group_state(conn, candidate_id)
-        # Cheap local near-empty gate first - fails obvious empty masters without
-        # spending an Anthropic vision call. Same attempt counter, same cap.
+        # Three-tier gate before the full rubric call: free local sanity stats -> cheap
+        # single-image vision pre-filter -> full multi-image rubric. Same attempt
+        # counter, same cap, across all three tiers.
         local_path = conn.execute(
             "SELECT base_image_local_path FROM candidates WHERE id = ?", (candidate_id,)
         ).fetchone()["base_image_local_path"]
-        result = check_local_image_sanity(local_path)
+        result, flag_note = run_local_and_master_gate(
+            local_path, state["image_urls"], api_key=anthropic_api_key
+        )
         if result is None:
             result = evaluate_critic_pass(
-                state["image_urls"], state["listing_text"], api_key=anthropic_api_key
+                state["image_urls"], state["listing_text"], api_key=anthropic_api_key,
+                flag_note=flag_note,
             )
         record_critic_attempt(conn, state["group_id"], attempt_number, result, now=now)
 
