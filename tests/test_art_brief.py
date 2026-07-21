@@ -25,6 +25,33 @@ def test_build_brief_prompt_includes_niche_and_mandatory_fields():
     assert "60 words" in prompt
 
 
+def test_build_brief_prompt_includes_round2_focal_hierarchy_and_backdrop_demotion():
+    prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
+
+    # FM-2 fix: mandatory focal-hierarchy field + negative-space-occupant rule.
+    assert "Focal hierarchy" in prompt
+    assert "floating shape is never the occupant" in prompt
+    # FM-1 fix: backdrop demoted to a small-subject-only device, wider menu.
+    assert "SMALL, single-motif subject only" in prompt
+    assert "arch, wash, band, sun disc" in prompt
+    # FM-3 fix: boldness qualifies the medium, doesn't replace it.
+    assert "never a replacement for it" in prompt
+    # FM-4 stopgap: landscape-native scenes get a foreground-anchor nudge.
+    assert "foreground anchor subject" in prompt
+
+
+def test_build_brief_prompt_includes_sibling_diversity_note_only_when_given():
+    no_sibling_prompt = art_brief.build_brief_prompt({"niche": "monstera", "trend_source": None})
+    assert "Briefs already written earlier in this batch" not in no_sibling_prompt
+
+    sibling_prompt = art_brief.build_brief_prompt(
+        {"niche": "monstera", "trend_source": None},
+        sibling_briefs=["A sage and terracotta mid-century botanical."],
+    )
+    assert "Briefs already written earlier in this batch" in sibling_prompt
+    assert "A sage and terracotta mid-century botanical." in sibling_prompt
+
+
 def test_build_brief_prompt_moves_no_go_list_into_instructions():
     prompt = art_brief.build_brief_prompt({"niche": "monstera line art", "trend_source": None})
 
@@ -69,3 +96,19 @@ def test_generate_art_brief_calls_anthropic_complete_and_strips_result():
     assert "monstera line art" in captured["prompt"]
     assert captured["api_key"] == "test-key"
     assert captured["model"] == anthropic_client.HAIKU_MODEL
+
+
+def test_generate_art_brief_threads_sibling_briefs_into_prompt():
+    captured = {}
+
+    def fake_complete(prompt, *, api_key=None, max_tokens=1024, model=None):
+        captured["prompt"] = prompt
+        return {"text": "A distinct art deco sunburst study."}
+
+    with patch("pipeline.art_brief.anthropic_client.complete", side_effect=fake_complete):
+        art_brief.generate_art_brief(
+            {"niche": "sunburst deco", "trend_source": None},
+            sibling_briefs=["A sage mid-century botanical bouquet."],
+        )
+
+    assert "A sage mid-century botanical bouquet." in captured["prompt"]

@@ -53,7 +53,8 @@ def approx_t5_tokens(text: str) -> int:
 
 
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
-                            api_token: str = None, now=None, no_upscale: bool = False) -> dict:
+                            api_token: str = None, now=None, no_upscale: bool = False,
+                            sibling_briefs: list = None) -> dict:
     """Generate a base image for a candidate, then upscale it to a 300-DPI-capable master.
     Always overwrites base_image_url/base_replicate_prediction_id/base_upscale_prediction_id
     on its row (even on retry). If upscaling fails, no write happens - the row is left exactly
@@ -66,7 +67,11 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     and ESRGAN halo is a separate confounding variable (RC-E). Persists the raw FLUX
     output as the base artwork instead of the upscaled one; base_upscale_prediction_id
     stays NULL. Never used by the real pipeline path - a no-upscale row can never reach
-    a real Gelato product-create (no 300-DPI master exists for it)."""
+    a real Gelato product-create (no 300-DPI master exists for it).
+
+    `sibling_briefs` (round-2, FM-5 diversity fix): brief texts already written earlier
+    in the same batch run - see run_generate_cycle. Only used when a brief is actually
+    computed here (a retry with a stored art_brief never calls the writer again)."""
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
@@ -76,7 +81,8 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
         # S4-b: one Claude text call per candidate, computed once and persisted -
         # a retry (correction_note set) reuses the same brief, it only changes
         # what FLUX is told to fix, not the underlying visual concept.
-        candidate["art_brief"] = art_brief.generate_art_brief(candidate)
+        brief_kwargs = {"sibling_briefs": sibling_briefs} if sibling_briefs else {}
+        candidate["art_brief"] = art_brief.generate_art_brief(candidate, **brief_kwargs)
         conn.execute(
             "UPDATE candidates SET art_brief = ? WHERE id = ?",
             (candidate["art_brief"], candidate_id),
@@ -109,6 +115,7 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
             "image_url": artwork["durable_url"],
             "prediction_id": generated["prediction_id"],
             "upscale_prediction_id": None,
+            "art_brief": candidate["art_brief"],
         }
 
     upscaled = replicate_client.upscale_image(generated["image_url"], api_token=api_token)
@@ -136,21 +143,32 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
         "image_url": artwork["durable_url"],
         "prediction_id": generated["prediction_id"],
         "upscale_prediction_id": upscaled["prediction_id"],
+        "art_brief": candidate["art_brief"],
     }
 
 
 def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list[int]:
+    """Round-2 (FM-5): threads the briefs already written earlier in this same batch
+    run into each subsequent generate_for_candidate call as sibling_briefs, so the
+    brief writer sees its siblings and picks a distinct palette/device/focal-subject
+    instead of the whole batch herding toward the same choices."""
     pending_ids = [
         row["id"] for row in conn.execute(
             "SELECT id FROM candidates WHERE status = 'pending' ORDER BY id"
         ).fetchall()
     ]
     processed_ids = []
+    sibling_briefs = []
     for candidate_id in pending_ids:
         try:
-            generate_for_candidate(conn, candidate_id, api_token=api_token, now=now)
+            result = generate_for_candidate(
+                conn, candidate_id, api_token=api_token, now=now,
+                sibling_briefs=list(sibling_briefs),
+            )
         except Exception as exc:
             print(f"generate_for_candidate failed for candidate {candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
+        if result.get("art_brief"):
+            sibling_briefs.append(result["art_brief"])
     return processed_ids

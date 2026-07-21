@@ -282,8 +282,10 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
     abandoned_id = _insert_pending_candidate(conn, niche="saturated term", status="abandoned")
 
     call_count = {"n": 0}
+    captured_siblings = []
 
-    def fake_generate_art_brief(candidate, *, api_key=None):
+    def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
+        captured_siblings.append(list(sibling_briefs) if sibling_briefs else [])
         return f"A dense brief for {candidate['niche']}."
 
     def fake_generate_image(prompt, *, api_token=None):
@@ -302,6 +304,10 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
 
     assert sorted(processed_ids) == sorted([pending_id_1, pending_id_2])
     assert call_count["n"] == 2
+    # FM-5 sibling-diversity plumbing: first candidate sees no siblings, second sees
+    # the first candidate's brief.
+    assert captured_siblings[0] == []
+    assert len(captured_siblings[1]) == 1
 
     row_1 = conn.execute("SELECT * FROM candidates WHERE id = ?", (pending_id_1,)).fetchone()
     row_2 = conn.execute("SELECT * FROM candidates WHERE id = ?", (pending_id_2,)).fetchone()
@@ -321,7 +327,7 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
     failing_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
     succeeding_id = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
 
-    def fake_generate_art_brief(candidate, *, api_key=None):
+    def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
         return f"A dense brief for {candidate['niche']}."
 
     def fake_generate_image(prompt, *, api_token=None):
