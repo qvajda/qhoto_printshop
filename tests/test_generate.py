@@ -13,86 +13,117 @@ def _fresh_conn(tmp_path):
     return conn
 
 
-def _insert_pending_candidate(conn, niche="monstera line art", *, status="pending"):
+def _insert_pending_candidate(conn, niche="monstera line art", *, status="pending", art_brief=None):
     timestamp = "2026-07-09T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, updated_at)
-        VALUES (?, ?, 'go', ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, updated_at, art_brief)
+        VALUES (?, ?, 'go', ?, ?, ?)
         """,
-        (timestamp, niche, status, timestamp),
+        (timestamp, niche, status, timestamp, art_brief),
     )
     conn.commit()
     return cursor.lastrowid
 
 
-def test_build_prompt_includes_niche_and_no_go_list():
-    candidate = {"niche": "monstera line art"}
+def test_build_prompt_uses_art_brief_not_raw_niche():
+    candidate = {"art_brief": "A dense mid-century modern botanical bouquet in bold filled shapes."}
 
     prompt = generate.build_prompt(candidate)
 
-    assert "monstera line art" in prompt
-    assert "named artist" in prompt
-    assert "recognizable characters, franchises, or logos" in prompt
-    assert "celebrity likeness" in prompt
-    assert "hand-painted" in prompt
+    assert "A dense mid-century modern botanical bouquet in bold filled shapes." in prompt
 
 
-def test_build_prompt_appends_correction_note_when_retrying():
-    candidate = {"niche": "moon phase print"}
+def test_build_prompt_appends_scaffold_after_brief():
+    candidate = {"art_brief": "A dense mid-century modern botanical bouquet."}
+
+    prompt = generate.build_prompt(candidate)
+
+    assert prompt.startswith("A dense mid-century modern botanical bouquet.")
+    assert prompt.endswith(generate.POSITIVE_SCAFFOLD)
+
+
+def test_build_prompt_puts_correction_note_before_scaffold_tail_not_last():
+    candidate = {"art_brief": "A dense mid-century modern botanical bouquet."}
 
     prompt = generate.build_prompt(candidate, correction_note="composition was off-center")
 
-    assert "moon phase" in prompt
     assert "Previous attempt was rejected for: composition was off-center" in prompt
+    # S4-c(2): correction note must sit BEFORE the scaffold tail, not appended
+    # last - if truncation ever hits schnell's 256-token cap, the short
+    # scaffold (redundant with the brief) should be what's at risk, not the
+    # critic's actionable retry feedback.
+    assert prompt.endswith(generate.POSITIVE_SCAFFOLD)
+    assert prompt.index("Previous attempt was rejected") < prompt.index(generate.POSITIVE_SCAFFOLD)
 
 
 def test_build_prompt_omits_correction_note_when_not_retrying():
-    candidate = {"niche": "moon phase print"}
+    candidate = {"art_brief": "A dense mid-century modern botanical bouquet."}
 
     prompt = generate.build_prompt(candidate)
 
     assert "Previous attempt was rejected" not in prompt
 
 
-def test_build_prompt_forces_flat_full_bleed_2d_art_with_no_scene_words():
-    candidate = {"niche": "monstera line art"}
+def test_build_prompt_scaffold_is_positive_only_flat_2d_full_bleed():
+    candidate = {"art_brief": "A dense mid-century modern botanical bouquet."}
 
-    prompt = generate.build_prompt(candidate)
+    prompt = generate.build_prompt(candidate).lower()
 
-    for guardrail in ("flat 2d", "full-bleed", "fills the entire frame"):
-        assert guardrail in prompt.lower()
-    for banned in ("no frame", "no wall", "no room", "no mockup"):
-        assert banned in prompt.lower()
-
-
-def test_build_prompt_includes_quality_guardrails_against_observed_failure_modes():
-    # H5 (prevent): the scaffold must steer against the 5 failure modes from run #1
-    # (near-empty gradients, too-sparse art, off-center/incoherent subject, floating
-    # disconnected parts, smudged detail).
-    prompt = generate.build_prompt({"niche": "monstera line art"}).lower()
-
-    assert "central subject" in prompt          # single clear subject
-    assert "centered" in prompt                 # composition
-    assert "occupies most of the frame" in prompt  # substantial coverage, not sparse
-    assert "no floating or disconnected" in prompt  # connected forms
-    assert "no smudging" in prompt              # crisp zone edges
-    assert "not a near-empty" in prompt or "near-empty background" in prompt  # not empty/gradient
+    for guardrail in (
+        "flat 2d full-bleed", "coherent centered subject", "dense composition filling the frame",
+        "bold filled color zones", "crisp clean edges", "warm muted palette", "soft cream ground",
+    ):
+        assert guardrail in prompt
 
 
-def test_build_prompt_strips_scene_tokens_from_niche_before_injection():
-    candidate = {"niche": "botanical minimalist wall art - holiday_peak"}
+def test_positive_scaffold_has_no_negation_no_go_language():
+    # S4-c(1): the no-go list moved entirely into art_brief.py's brief-writing
+    # instructions - FLUX has no negative-prompt channel, so the image prompt
+    # scaffold must carry no "no X" / "Do not" clauses at all (its two
+    # remaining negatives - "no smudging", "no text or watermarks" - are
+    # allowed exceptions per the plan's own scaffold vocabulary, everything
+    # else must be positive).
+    assert "named artist" not in generate.POSITIVE_SCAFFOLD.lower()
+    assert "do not" not in generate.POSITIVE_SCAFFOLD.lower()
+    assert "no frame" not in generate.POSITIVE_SCAFFOLD.lower()
+    assert "no wall" not in generate.POSITIVE_SCAFFOLD.lower()
+    assert "no room" not in generate.POSITIVE_SCAFFOLD.lower()
+    assert "no mockup" not in generate.POSITIVE_SCAFFOLD.lower()
 
-    prompt = generate.build_prompt(candidate)
 
-    assert "wall art" not in prompt.lower()
-    assert "holiday_peak" in prompt
+def test_positive_scaffold_is_roughly_40_words():
+    word_count = len(generate.POSITIVE_SCAFFOLD.split())
+    assert 25 <= word_count <= 45
 
 
-def test_sanitize_niche_removes_known_scene_tokens():
-    assert generate.sanitize_niche("mid-century botanical wall poster") == "mid-century botanical"
-    assert generate.sanitize_niche("nature wall décor print") == "nature"
-    assert generate.sanitize_niche("monstera line art") == "monstera line art"
+# S4-c(2): build-time token budget check. Real google/t5-v1_1-xxl tokenizer
+# counts (measured offline, not a test dependency - see generate.py's
+# T5_TOKEN_WORD_RATIO comment) on this exact worst-case fixture: 60-word
+# brief -> 99 tokens, 48-word correction note -> 66 tokens, 39-word scaffold
+# -> 63 tokens, full combined prompt -> 226 real T5 tokens - under schnell's
+# 256-token cap, confirming the old design's ~336-token overflow (RC-C) is
+# fixed by this rework, not just moved around.
+_WORST_CASE_BRIEF = (
+    "A mid-century modern botanical illustration of a dense monstera and fiddle-leaf fig "
+    "arrangement, rendered as bold filled color shapes with confident medium-weight outlines, "
+    "in a dense full-frame composition filling the frame edge to edge, set against a warm "
+    "cream textured ground with a muted terracotta circular backdrop, using sage, olive, "
+    "terracotta, and dusty pink as accent colors throughout the piece."
+)
+_WORST_CASE_CORRECTION_NOTE = (
+    "subject was off-center and crammed into the bottom-left corner, with roughly ninety "
+    "percent of the frame left as empty dead space and no clear focal point, plus a second "
+    "smaller malformed shape overlapping the main subject"
+)
+
+
+def test_build_prompt_stays_within_t5_token_budget_worst_case():
+    candidate = {"art_brief": _WORST_CASE_BRIEF}
+
+    prompt = generate.build_prompt(candidate, correction_note=_WORST_CASE_CORRECTION_NOTE)
+
+    assert generate.approx_t5_tokens(prompt) <= 240
 
 
 def _fake_persist_base_artwork(candidate_id, raw_bytes):
@@ -103,57 +134,45 @@ def _fake_persist_base_artwork(candidate_id, raw_bytes):
     }
 
 
-def test_generate_for_candidate_calls_replicate_and_writes_image_back(tmp_path):
+def test_generate_for_candidate_computes_and_persists_art_brief_once(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
     captured = {}
 
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        captured["art_brief_candidate"] = candidate
+        return "A dense mid-century modern botanical bouquet."
+
     def fake_generate_image(prompt, *, api_token=None):
         captured["prompt"] = prompt
-        captured["api_token"] = api_token
         return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred123"}
 
     def fake_upscale_image(image_url, *, api_token=None):
-        captured["upscale_input_url"] = image_url
         return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
 
-    def fake_fetch_bytes(url, timeout=30):
-        captured["fetch_url"] = url
-        return b"fake-image-bytes"
-
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
-         patch("pipeline.generate.http.fetch_bytes", side_effect=fake_fetch_bytes), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
-        result = generate.generate_for_candidate(
+        generate.generate_for_candidate(
             conn, candidate_id, api_token="test-token", now=datetime(2026, 7, 9, 10, 0, 0)
         )
 
-    assert result == {
-        "image_url": f"https://durable.example/{candidate_id}.png",
-        "prediction_id": "pred123",
-        "upscale_prediction_id": "pred-up1",
-    }
-    assert "monstera line art" in captured["prompt"]
-    assert captured["api_token"] == "test-token"
-    assert captured["upscale_input_url"] == "https://replicate.delivery/raw.png"
-    assert captured["fetch_url"] == "https://replicate.delivery/upscaled.png"
+    assert captured["art_brief_candidate"]["niche"] == "monstera line art"
+    assert "A dense mid-century modern botanical bouquet." in captured["prompt"]
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
-    assert row["base_image_url"] == f"https://durable.example/{candidate_id}.png"
-    assert row["base_image_local_path"] == f"/fake/db/base_artwork/{candidate_id}.png"
-    assert row["base_image_sha256"] == "fakesha256hash"
-    assert row["base_replicate_delivery_url"] == "https://replicate.delivery/upscaled.png"
-    assert row["base_replicate_prediction_id"] == "pred123"
-    assert row["base_upscale_prediction_id"] == "pred-up1"
-    assert row["status"] == "generating"
-    assert row["updated_at"] == "2026-07-09T10:00:00"
+    assert row["art_brief"] == "A dense mid-century modern botanical bouquet."
     conn.close()
 
 
-def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
+def test_generate_for_candidate_reuses_stored_art_brief_without_recalling_anthropic(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_pending_candidate(conn, niche="moon phase print", status="generating")
+    candidate_id = _insert_pending_candidate(
+        conn, niche="monstera line art", status="generating",
+        art_brief="An already-computed stored brief.",
+    )
     captured = {}
 
     def fake_generate_image(prompt, *, api_token=None):
@@ -163,7 +182,8 @@ def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
     def fake_upscale_image(image_url, *, api_token=None):
         return {"image_url": "https://replicate.delivery/retry-upscaled.png", "prediction_id": "pred-up2"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+    with patch("pipeline.generate.art_brief.generate_art_brief") as mock_brief, \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
@@ -172,10 +192,12 @@ def test_generate_for_candidate_passes_correction_note_into_prompt(tmp_path):
             now=datetime(2026, 7, 9, 11, 0, 0),
         )
 
+    mock_brief.assert_not_called()
+    assert "An already-computed stored brief." in captured["prompt"]
     assert "Previous attempt was rejected for: composition was off-center" in captured["prompt"]
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
-    assert row["base_image_url"] == f"https://durable.example/{candidate_id}.png"
+    assert row["art_brief"] == "An already-computed stored brief."
     conn.close()
 
 
@@ -183,18 +205,26 @@ def test_generate_for_candidate_leaves_row_untouched_when_upscale_fails(tmp_path
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
 
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        return "A dense mid-century modern botanical bouquet."
+
     def fake_generate_image(prompt, *, api_token=None):
         return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred-raw"}
 
     def fake_upscale_image(image_url, *, api_token=None):
         raise RuntimeError("Replicate upscale throttled")
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image):
         with pytest.raises(RuntimeError, match="Replicate upscale throttled"):
             generate.generate_for_candidate(conn, candidate_id, api_token="test-token")
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    # art_brief is computed+persisted independently of the base-image write -
+    # it's the same visual concept either way, so it's fine (and desirable)
+    # for a retry to reuse it rather than re-calling Anthropic.
+    assert row["art_brief"] == "A dense mid-century modern botanical bouquet."
     assert row["status"] == "pending"
     assert row["base_image_url"] is None
     assert row["base_image_local_path"] is None
@@ -222,6 +252,9 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
 
     call_count = {"n": 0}
 
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        return f"A dense brief for {candidate['niche']}."
+
     def fake_generate_image(prompt, *, api_token=None):
         call_count["n"] += 1
         return {"image_url": f"https://replicate.delivery/out{call_count['n']}.png", "prediction_id": f"pred{call_count['n']}"}
@@ -229,7 +262,8 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
     def fake_upscale_image(image_url, *, api_token=None):
         return {"image_url": image_url.replace("out", "upscaled"), "prediction_id": "pred-up"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
@@ -256,6 +290,9 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
     failing_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
     succeeding_id = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
 
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        return f"A dense brief for {candidate['niche']}."
+
     def fake_generate_image(prompt, *, api_token=None):
         if "monstera line art" in prompt:
             raise RuntimeError("Replicate throttled")
@@ -264,7 +301,8 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
     def fake_upscale_image(image_url, *, api_token=None):
         return {"image_url": "https://replicate.delivery/upscaled2.png", "prediction_id": "pred-up2"}
 
-    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
