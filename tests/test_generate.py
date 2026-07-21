@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
+import pipeline.art_brief as art_brief
 import pipeline.db as db
 import pipeline.generate as generate
 
@@ -300,7 +301,9 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
-        processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
+        processed_ids = generate.run_generate_cycle(
+            conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
+        )
 
     assert sorted(processed_ids) == sorted([pending_id_1, pending_id_2])
     assert call_count["n"] == 2
@@ -343,7 +346,9 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
-        processed_ids = generate.run_generate_cycle(conn, now=datetime(2026, 7, 9, 12, 0, 0))
+        processed_ids = generate.run_generate_cycle(
+            conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
+        )
 
     assert processed_ids == [succeeding_id]
 
@@ -362,7 +367,145 @@ def test_run_generate_cycle_returns_empty_list_when_no_pending_candidates(tmp_pa
     conn = _fresh_conn(tmp_path)
     _insert_pending_candidate(conn, niche="saturated term", status="abandoned")
 
-    processed_ids = generate.run_generate_cycle(conn)
+    processed_ids = generate.run_generate_cycle(conn, sleep_fn=lambda seconds: None)
 
     assert processed_ids == []
     conn.close()
+
+
+# R2-c (docs/2026-07-21-generation-quality-round2-plan.md): provenance write path.
+def test_generate_for_candidate_records_generation_attempt_on_success(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(
+        conn, niche="monstera line art", art_brief="An already-computed stored brief."
+    )
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred-attempt-1"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        generate.generate_for_candidate(
+            conn, candidate_id, api_token="test-token", now=datetime(2026, 7, 21, 10, 0, 0),
+        )
+
+    row = conn.execute(
+        "SELECT * FROM generation_attempts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    assert row["attempt_number"] == 1
+    assert "An already-computed stored brief." in row["prompt_text"]
+    assert row["art_brief_snapshot"] == "An already-computed stored brief."
+    assert row["correction_note"] is None
+    assert row["brief_template_version"] == art_brief.BRIEF_TEMPLATE_VERSION
+    assert row["scaffold_version"] == generate.SCAFFOLD_VERSION
+    assert row["model"] == "black-forest-labs/flux-schnell"
+    assert row["prediction_id"] == "pred-attempt-1"
+    conn.close()
+
+
+def test_generate_for_candidate_records_generation_attempt_with_correction_note_on_retry(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(
+        conn, niche="monstera line art", status="generating", art_brief="Stored brief."
+    )
+    # Simulate a prior attempt already logged (first critic-pass regeneration).
+    conn.execute(
+        """
+        INSERT INTO generation_attempts (
+            candidate_id, attempt_number, prompt_text, art_brief_snapshot, correction_note,
+            brief_template_version, scaffold_version, model, prediction_id, created_at
+        ) VALUES (?, 1, 'prior prompt', 'Stored brief.', NULL, 'v1', 'v1', 'black-forest-labs/flux-schnell',
+                  'pred-prior', '2026-07-21T09:00:00')
+        """,
+        (candidate_id,),
+    )
+    conn.commit()
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred-attempt-2"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/upscaled2.png", "prediction_id": "pred-up2"}
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        generate.generate_for_candidate(
+            conn, candidate_id, correction_note="composition was off-center",
+            now=datetime(2026, 7, 21, 11, 0, 0),
+        )
+
+    rows = conn.execute(
+        "SELECT * FROM generation_attempts WHERE candidate_id = ? ORDER BY attempt_number", (candidate_id,)
+    ).fetchall()
+    assert len(rows) == 2
+    assert rows[1]["attempt_number"] == 2
+    assert rows[1]["correction_note"] == "composition was off-center"
+    assert rows[1]["prediction_id"] == "pred-attempt-2"
+    conn.close()
+
+
+def test_generate_for_candidate_records_failed_attempt_with_null_prediction_id(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(
+        conn, niche="monstera line art", art_brief="Stored brief."
+    )
+
+    def fake_generate_image(prompt, *, api_token=None):
+        raise RuntimeError("Replicate throttled")
+
+    with patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+        with pytest.raises(RuntimeError, match="Replicate throttled"):
+            generate.generate_for_candidate(conn, candidate_id, now=datetime(2026, 7, 21, 12, 0, 0))
+
+    row = conn.execute(
+        "SELECT * FROM generation_attempts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    assert row is not None
+    assert row["prediction_id"] is None
+    conn.close()
+
+
+# R2-d: inter-call pacing between candidates in a batch.
+def test_run_generate_cycle_paces_between_candidates_not_before_the_first(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    id_1 = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
+    id_2 = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
+    id_3 = _insert_pending_candidate(conn, niche="desert mesa", status="pending")
+    sleep_calls = []
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred-x"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up-x"}
+
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        return f"A dense brief for {candidate['niche']}."
+
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        processed_ids = generate.run_generate_cycle(
+            conn, now=datetime(2026, 7, 21, 12, 0, 0), sleep_fn=sleep_calls.append
+        )
+
+    assert sorted(processed_ids) == sorted([id_1, id_2, id_3])
+    # 3 candidates -> 2 inter-call gaps, none before the first call.
+    assert sleep_calls == [generate.DEFAULT_GENERATE_CYCLE_PACING_SECONDS] * 2
+    conn.close()
+
+
+def test_generate_cycle_pacing_seconds_reads_env_override(monkeypatch):
+    monkeypatch.setenv("GENERATE_CYCLE_PACING_SECONDS", "5")
+    assert generate._generate_cycle_pacing_seconds() == 5.0
+    monkeypatch.delenv("GENERATE_CYCLE_PACING_SECONDS")
+    assert generate._generate_cycle_pacing_seconds() == generate.DEFAULT_GENERATE_CYCLE_PACING_SECONDS

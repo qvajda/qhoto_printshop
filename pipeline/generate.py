@@ -1,9 +1,32 @@
+import os
+import time
 from datetime import datetime, timezone
 
 import pipeline.art_brief as art_brief
 import pipeline.artwork_store as artwork_store
 import pipeline.http as http
 import pipeline.replicate_client as replicate_client
+
+# R2-c (docs/2026-07-21-generation-quality-round2-plan.md): bumped whenever
+# generate.py's POSITIVE_SCAFFOLD text changes, alongside art_brief.py's
+# BRIEF_TEMPLATE_VERSION - both are stamped onto every generation_attempts
+# row so round-N prompt text is queryable/diffable against the version that
+# produced it. No prior versioning existed for this scaffold, so "v1" is the
+# baseline, not a re-numbering of something that came before.
+SCAFFOLD_VERSION = "v1"
+
+# R2-d (same plan, FM-6): Replicate's documented cap for granted-credit
+# accounts without a payment method on file is 1 request/second, 6/minute
+# (replicate.com/docs/topics/predictions/rate-limits) - NOT the low-balance
+# throttle round 1 misdiagnosed it as. This stays conservative (comfortably
+# under 6/min) until the owner adds a payment method / auto-reload; loosen
+# by lowering GENERATE_CYCLE_PACING_SECONDS once that account action lands.
+DEFAULT_GENERATE_CYCLE_PACING_SECONDS = 11.0
+
+
+def _generate_cycle_pacing_seconds() -> float:
+    override = os.environ.get("GENERATE_CYCLE_PACING_SECONDS")
+    return float(override) if override else DEFAULT_GENERATE_CYCLE_PACING_SECONDS
 
 
 # S4-c(1) (docs/2026-07-20-remediation-plan-consolidated.md): positive-only,
@@ -52,6 +75,34 @@ def approx_t5_tokens(text: str) -> int:
     return round(len(text.split()) * T5_TOKEN_WORD_RATIO)
 
 
+def _record_generation_attempt(conn, candidate_id: int, *, prompt: str, art_brief_snapshot: str,
+                                correction_note: str, prediction_id: str, now=None) -> None:
+    """R2-c: one row per FLUX call (including critic-retry regenerations) -
+    generate_for_candidate is the single choke point every call routes
+    through, so this is the one place that needs to log. Logged even when
+    the call raises (prediction_id=None) - a failed-attempt row is useful
+    for debugging throttle/outage failures, not just successes."""
+    attempt_number = conn.execute(
+        "SELECT COALESCE(MAX(attempt_number), 0) FROM generation_attempts WHERE candidate_id = ?",
+        (candidate_id,),
+    ).fetchone()[0] + 1
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        """
+        INSERT INTO generation_attempts (
+            candidate_id, attempt_number, prompt_text, art_brief_snapshot, correction_note,
+            brief_template_version, scaffold_version, model, prediction_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            candidate_id, attempt_number, prompt, art_brief_snapshot, correction_note,
+            art_brief.BRIEF_TEMPLATE_VERSION, SCAFFOLD_VERSION, replicate_client.FLUX_SCHNELL_MODEL,
+            prediction_id, timestamp,
+        ),
+    )
+    conn.commit()
+
+
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
                             api_token: str = None, now=None, no_upscale: bool = False,
                             sibling_briefs: list = None) -> dict:
@@ -90,7 +141,18 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
         conn.commit()
 
     prompt = build_prompt(candidate, correction_note=correction_note)
-    generated = replicate_client.generate_image(prompt, api_token=api_token)
+    try:
+        generated = replicate_client.generate_image(prompt, api_token=api_token)
+    except Exception:
+        _record_generation_attempt(
+            conn, candidate_id, prompt=prompt, art_brief_snapshot=candidate["art_brief"],
+            correction_note=correction_note, prediction_id=None, now=now,
+        )
+        raise
+    _record_generation_attempt(
+        conn, candidate_id, prompt=prompt, art_brief_snapshot=candidate["art_brief"],
+        correction_note=correction_note, prediction_id=generated["prediction_id"], now=now,
+    )
 
     if no_upscale:
         raw = http.fetch_bytes(generated["image_url"])
@@ -147,7 +209,7 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     }
 
 
-def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list[int]:
+def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.sleep) -> list[int]:
     """Round-2 (FM-5): threads the briefs already written earlier in this same batch
     run into each subsequent generate_for_candidate call as sibling_briefs, so the
     brief writer sees its siblings and picks a distinct palette/device/focal-subject
@@ -159,7 +221,12 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None) -> list[int]:
     ]
     processed_ids = []
     sibling_briefs = []
-    for candidate_id in pending_ids:
+    for index, candidate_id in enumerate(pending_ids):
+        if index > 0:
+            # R2-d: conservative inter-call pacing to stay under Replicate's
+            # granted-credit 6/min cap (FM-6) until the owner adds a payment
+            # method - see DEFAULT_GENERATE_CYCLE_PACING_SECONDS above.
+            sleep_fn(_generate_cycle_pacing_seconds())
         try:
             result = generate_for_candidate(
                 conn, candidate_id, api_token=api_token, now=now,

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
+import pipeline.http as http
 import pipeline.replicate_client as replicate_client
 
 
@@ -105,3 +106,55 @@ def test_upscale_image_api_token_defaults_to_env_var(monkeypatch):
         replicate_client.upscale_image("https://replicate.delivery/out.png")
 
     assert captured["auth_header"] == "Bearer env-token"
+
+
+# R2-d (docs/2026-07-21-generation-quality-round2-plan.md, FM-6): typed 429 handling.
+def test_generate_image_raises_typed_throttle_error_on_429_honoring_retry_after_header():
+    def fake_send(request, timeout=30):
+        raise http.HTTPError(429, "rate limited", headers={"Retry-After": "23"})
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        with pytest.raises(replicate_client.ReplicateThrottledError) as exc_info:
+            replicate_client.generate_image("a prompt", api_token="test-token")
+
+    assert exc_info.value.retry_after == 23.0
+    assert "429" in str(exc_info.value)
+    assert "payment method" in str(exc_info.value)
+
+
+def test_generate_image_throttle_error_falls_back_when_no_retry_after_header():
+    def fake_send(request, timeout=30):
+        raise http.HTTPError(429, "rate limited", headers={})
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        with pytest.raises(replicate_client.ReplicateThrottledError) as exc_info:
+            replicate_client.generate_image("a prompt", api_token="test-token")
+
+    assert exc_info.value.retry_after == replicate_client._DEFAULT_THROTTLE_RETRY_AFTER_SECONDS
+
+
+def test_generate_image_non_429_http_error_is_not_wrapped_as_throttle_error():
+    def fake_send(request, timeout=30):
+        raise http.HTTPError(500, "server error", headers={})
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        with pytest.raises(http.HTTPError) as exc_info:
+            replicate_client.generate_image("a prompt", api_token="test-token")
+
+    assert exc_info.value.status_code == 500
+
+
+def test_timeout_error_text_does_not_speculate_generic_throttling():
+    # R2-d: the misleading "outage or throttling, not a pipeline bug" text is
+    # replaced - throttling is now a distinct typed error (429), so a genuine
+    # non-succeeded status should read as an outage, not a re-guess at throttling.
+    def fake_send(request, timeout=30):
+        return {"id": "pred999", "status": "processing", "output": None}
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        with pytest.raises(replicate_client.ReplicatePredictionTimeoutError) as exc_info:
+            replicate_client.generate_image("a prompt", api_token="test-token")
+
+    message = str(exc_info.value)
+    assert "outage" in message.lower()
+    assert "rate cap" in message.lower() or "ReplicateThrottledError" in message

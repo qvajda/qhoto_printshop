@@ -13,6 +13,49 @@ class ReplicatePredictionTimeoutError(Exception):
     pass
 
 
+# R2-d (docs/2026-07-21-generation-quality-round2-plan.md, FM-6): round 1
+# misdiagnosed a 6/min throttle as low balance. Replicate's docs state the
+# real cause: an account with granted credit and no payment method on file
+# is capped at 1 request/second, 6 requests/minute (replicate.com/docs/
+# topics/predictions/rate-limits) - this is a HARD documented cap, not a
+# generic "outage or throttling" the old _predict error text speculated.
+# The fix is primarily an owner account action (add a payment method /
+# enable auto-reload); this typed error exists so callers can tell a 429
+# apart from a real timeout/outage and so pacing logic has something to
+# catch and back off on.
+_DEFAULT_THROTTLE_RETRY_AFTER_SECONDS = 10.0  # 6/min cap -> ~10s min safe gap
+
+
+class ReplicateThrottledError(Exception):
+    """Raised on HTTP 429. `retry_after` is the seconds to wait before the
+    next call - taken from Replicate's `Retry-After` response header when
+    present, else a sane fallback consistent with the documented 6/min cap."""
+
+    def __init__(self, retry_after: float = None):
+        self.retry_after = (
+            retry_after if retry_after is not None else _DEFAULT_THROTTLE_RETRY_AFTER_SECONDS
+        )
+        super().__init__(
+            "Replicate rate limit hit (HTTP 429): accounts with granted credit and no "
+            "payment method on file are capped at 1 request/second, 6 requests/minute "
+            "(replicate.com/docs/topics/predictions/rate-limits). This is not a generic "
+            "outage - add a payment method or enable credit auto-reload to lift the cap. "
+            f"Retry after {self.retry_after}s."
+        )
+
+
+def _parse_retry_after(headers: dict) -> float:
+    """Case-insensitive lookup - httpx preserves the header's original casing
+    when converted to a plain dict. Returns None if absent or unparseable."""
+    for key, value in (headers or {}).items():
+        if key.lower() == "retry-after":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 UPSCALE_MODEL = "nightmareai/real-esrgan"  # pure super-resolution GAN, no diffusion/hallucinated
 # content - safer for compliance than a diffusion-based upscaler. scale=8 lifts the 832x1216 FLUX
 # master to 6656x9728 (~285 DPI at A1, the largest offered size), clearing Gelato's 150 DPI poster
@@ -38,13 +81,19 @@ def _predict(model: str, input_body: dict, *, api_token: str) -> dict:
     # a cold boot - hasn't been measured against it; if upscale calls routinely exceed
     # this window, they'll need either a longer timeout or a polling fallback instead of
     # synchronous "Prefer: wait".
-    result = http.send(request, timeout=65)
+    try:
+        result = http.send(request, timeout=65)
+    except http.HTTPError as exc:
+        if exc.status_code == 429:
+            raise ReplicateThrottledError(retry_after=_parse_retry_after(exc.headers)) from exc
+        raise
 
     if result.get("status") != "succeeded":
         raise ReplicatePredictionTimeoutError(
             f"Replicate prediction {result.get('id')} on {model} did not complete within "
-            f"the 60s synchronous wait window (status: {result.get('status')}). This likely "
-            f"indicates a Replicate-side outage or throttling, not a pipeline bug."
+            f"the 60s synchronous wait window (status: {result.get('status')}). This is not "
+            f"the granted-credit rate cap (that raises HTTP 429 as ReplicateThrottledError) - "
+            f"it likely indicates a genuine Replicate-side outage, not a pipeline bug."
         )
 
     output = result["output"]

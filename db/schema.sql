@@ -65,6 +65,21 @@ CREATE TABLE IF NOT EXISTS critic_pass_attempts (
   UNIQUE(group_id, attempt_number)
 );
 
+CREATE TABLE IF NOT EXISTS generation_attempts (
+  id INTEGER PRIMARY KEY,
+  candidate_id INTEGER NOT NULL REFERENCES candidates(id),
+  attempt_number INTEGER NOT NULL,
+  prompt_text TEXT NOT NULL,
+  art_brief_snapshot TEXT NOT NULL,
+  correction_note TEXT,
+  brief_template_version TEXT NOT NULL,
+  scaffold_version TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prediction_id TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(candidate_id, attempt_number)
+);
+
 CREATE TABLE IF NOT EXISTS group_products (
   id INTEGER PRIMARY KEY,
   group_id INTEGER NOT NULL REFERENCES groups(id),

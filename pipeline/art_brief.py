@@ -2,6 +2,12 @@ import re
 
 import pipeline.anthropic_client as anthropic_client
 
+# R2-c (docs/2026-07-21-generation-quality-round2-plan.md): bumped whenever
+# ART_BRIEF_PROMPT_TEMPLATE's text changes, so generation_attempts rows can
+# be diffed round-N vs round-(N-1). No prior versioning existed for this
+# template, so "v1" is the baseline, not a re-numbering of something earlier.
+BRIEF_TEMPLATE_VERSION = "v1"
+
 # The niche string is a *scene* leak vector - it can come from a hardcoded
 # research.py template, an LLM's free-text trend research, or a raw Telegram
 # /research topic, and any of those can carry "wall poster" / "wall art" /
