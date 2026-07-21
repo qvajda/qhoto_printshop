@@ -27,13 +27,20 @@ CRITIC_RUBRIC_PROMPT_TEMPLATE = (
     "3. Subject coherence: reject nonsensical or malformed subjects (e.g. anatomically/"
     "botanically impossible hybrid forms, floating or disconnected parts).\n"
     "4. Composition: reject an off-center or cut-off subject, or large dead/empty zones, unless "
-    "clearly intentional to the style.\n"
+    "clearly intentional to the style. Also reject two round-2 defect classes: (a) a backdrop "
+    "shape or orb (circle, arch, wash, etc.) that floats unintegrated in leftover negative space "
+    "instead of sitting behind and touching a subject, and (b) an enclosed negative-space opening "
+    "or channel within the composition that has no focal occupant (no secondary subject like a "
+    "butterfly, ladybug, or bloom, and not closed over) - an empty hole is a defect even when the "
+    "rest of the frame is dense.\n"
     "5. Detail quality: reject smudging, muddiness, or blurred detail at the boundaries between "
     "color zones (this is clean flat-zone art - smudging is conspicuous).\n"
     "6. Visual density: reject overly sparse line work or a composition too empty to read as "
     "finished wall art.\n"
     "7. Text match: does this draft title and description actually match what's shown in the "
-    "images and fit the niche?\n\n"
+    "images and fit the niche? Also check brief adherence: does the image actually realize the "
+    "named primary focal subject and the stated medium (e.g. a line-art brief should render as "
+    "line art, not filled shapes)?\n\n"
     "Title: {title}\n"
     "Description: {description}\n"
     "{flag_note}\n"
@@ -68,6 +75,26 @@ CRITIC_RUBRIC_PROMPT_TEMPLATE = (
 # far clear of 4/6/7's (0.4-8.3), so check B additionally requires stddev below a
 # ceiling well above the empty-frame range but well below 3's - the tie-breaker that
 # keeps 3 out of the hard-fail bucket while still catching 4/6/7.
+#
+# NOTE (2026-07-21, out-of-scope known gap - see MEMORY): the round-1/round-2 validation
+# batch (candidates 5-14, same base_artwork/N.png filenames as the old masters) overwrote
+# db/base_artwork/6.png and 7.png, so the "must-FAIL {4,6,7}" numbers above are stale for
+# 6/7 specifically - the two calibration tests parametrized on them are a known, already-
+# logged failure, not a regression to fix here.
+#
+# Round-2 recalibration (docs/2026-07-21-generation-quality-round2-plan.md sec 1/3, R2-b-3)
+# is against the FULL 7-criterion vision rubric's 'overall' verdict, not this local gate -
+# this local gate's numeric thresholds (SANITY_COV_HARD_FAIL 0.05, SANITY_COV_FLAG_CEILING
+# 0.12) are UNCHANGED. New frozen baseline: candidates 5-14, owner grades 3 good (8, 10, 12)
+# / 7 refine (5, 6, 7, 9, 11, 13, 14) / 0 reject. Every one of the 10 clears this local
+# gate's 0.05 hard-fail cov floor (measured range 0.058-0.933) - none hard-fail locally, all
+# 10 reach the full rubric. Calibration caveat: candidate 12 (owner-graded "great") measures
+# cov 0.058, inside the 0.05-0.12 flag-to-critic band above - it gets local-gate-flagged (not
+# hard-failed) and the amended criterion 4/6 wording must still let the full rubric grade it
+# 'good' despite the flag: a single-stem/sparse botanical study is a legitimate low-coverage
+# idiom, not a defect, and criterion 4's new floating-orb/unoccupied-negative-space language
+# targets the *other* masters' actual defect (5, 6, 7, 9, 11, 13, 14's missing focal subject
+# or floating backdrop), not sparse-but-intentional compositions like 12's.
 SANITY_MIN_STDDEV = 3.0
 SANITY_MIN_EDGE_RATIO = 0.012
 SANITY_COV_HARD_FAIL = 0.05

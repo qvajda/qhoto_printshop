@@ -31,6 +31,11 @@ def test_build_critic_prompt_includes_rubric_and_listing_text():
     assert "off-center or cut-off" in prompt
     assert "smudging" in prompt
     assert "sparse" in prompt
+    # R2-b: criterion 4 names the two new round-2 defect classes.
+    assert "floats unintegrated in leftover negative space" in prompt
+    assert "no focal occupant" in prompt
+    # R2-b: criterion 7 gains a brief-vs-image adherence check.
+    assert "brief adherence" in prompt
 
 
 def _verdict_response(overall="good", failing=None):
