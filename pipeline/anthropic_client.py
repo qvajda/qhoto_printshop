@@ -24,6 +24,11 @@ _MAX_PAUSE_TURN_CONTINUATIONS = 5
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
 ANTHROPIC_MODEL = "claude-sonnet-5"
+# Cheap-tier model for calls that don't need Sonnet's full reasoning (S4-b's art-brief
+# text call, S4-d's single-image sanity pre-filter) - both were built against complete()/
+# complete_with_images() before those functions could pick a model, so they silently rode
+# Sonnet; wired here at fan-in via the new `model` param on both functions.
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
 # Verified 2026-07-21 against the installed `anthropic` SDK's shipped type defs
 # (anthropic.types.web_search_tool_20250305_param.WebSearchTool20250305Param and
 # anthropic.types.stop_reason.StopReason) - this clears the standing UNVERIFIED
@@ -131,11 +136,11 @@ def research_web_search(prompt: str, *, api_key: str = None, max_tokens: int = 2
     )
 
 
-def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024) -> dict:
+def complete(prompt: str, *, api_key: str = None, max_tokens: int = 1024, model: str = None) -> dict:
     client = _client(api_key)
     return _send_message(
         client,
-        model=ANTHROPIC_MODEL,
+        model=model or ANTHROPIC_MODEL,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -180,13 +185,14 @@ def _image_content_block(image_url: str) -> dict:
     return _downscaled_base64_block(raw)
 
 
-def complete_with_images(prompt: str, image_urls: list, *, api_key: str = None, max_tokens: int = 1024) -> dict:
+def complete_with_images(prompt: str, image_urls: list, *, api_key: str = None, max_tokens: int = 1024,
+                          model: str = None) -> dict:
     client = _client(api_key)
     content = [_image_content_block(image_url) for image_url in image_urls]
     content.append({"type": "text", "text": prompt})
     return _send_message(
         client,
-        model=ANTHROPIC_MODEL,
+        model=model or ANTHROPIC_MODEL,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": content}],
     )

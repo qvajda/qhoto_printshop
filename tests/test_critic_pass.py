@@ -898,7 +898,7 @@ def test_run_critic_pass_cycle_isolates_per_candidate_operational_failures(tmp_p
     failing_id = _insert_ready_candidate(conn, niche="saturated term")
     succeeding_id = _insert_ready_candidate(conn, niche="moon phase print")
 
-    def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024):
+    def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024, model=None):
         if "saturated term" in prompt:
             raise RuntimeError("Anthropic throttled")
         return _verdict_response("good")

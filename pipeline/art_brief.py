@@ -70,5 +70,7 @@ def generate_art_brief(candidate: dict, *, api_key: str = None) -> str:
     niche into a <=60-word positive visual brief. Pure function - does not
     touch the DB; callers persist the result to candidates.art_brief."""
     prompt = build_brief_prompt(candidate)
-    result = anthropic_client.complete(prompt, api_key=api_key, max_tokens=200)
+    result = anthropic_client.complete(
+        prompt, api_key=api_key, max_tokens=200, model=anthropic_client.HAIKU_MODEL
+    )
     return result["text"].strip()

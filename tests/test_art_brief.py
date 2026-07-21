@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import pipeline.anthropic_client as anthropic_client
 import pipeline.art_brief as art_brief
 
 
@@ -51,10 +52,11 @@ def test_build_brief_prompt_handles_missing_trend_source():
 def test_generate_art_brief_calls_anthropic_complete_and_strips_result():
     captured = {}
 
-    def fake_complete(prompt, *, api_key=None, max_tokens=1024):
+    def fake_complete(prompt, *, api_key=None, max_tokens=1024, model=None):
         captured["prompt"] = prompt
         captured["api_key"] = api_key
         captured["max_tokens"] = max_tokens
+        captured["model"] = model
         return {"text": "  A dense mid-century modern botanical bouquet.  \n"}
 
     with patch("pipeline.art_brief.anthropic_client.complete", side_effect=fake_complete):
@@ -66,3 +68,4 @@ def test_generate_art_brief_calls_anthropic_complete_and_strips_result():
     assert result == "A dense mid-century modern botanical bouquet."
     assert "monstera line art" in captured["prompt"]
     assert captured["api_key"] == "test-key"
+    assert captured["model"] == anthropic_client.HAIKU_MODEL

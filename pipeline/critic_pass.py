@@ -148,17 +148,13 @@ def check_master_image_ai_sanity(image_source: str, *, api_key: str = None,
     gate and the full multi-image rubric pass - screens the flat master alone for
     empty/malformed/artifact defects before spending the expensive gallery+text call.
     Returns a critic-fail result dict if rejected, else None (defer to the full rubric).
-
-    ponytail: routes through anthropic_client.complete_with_images, which currently
-    hardcodes the Sonnet model (no model override param) - so this doesn't yet get the
-    "Haiku-class" cost saving the plan calls for, only the narrower single-image prompt.
-    anthropic_client.py is a sibling agent's file; wire in a cheaper model at fan-in
-    once it exposes one.
     """
     if not image_source:
         return None
     prompt = MASTER_SANITY_PROMPT_TEMPLATE.format(flag_note=flag_note or "")
-    response = anthropic_client.complete_with_images(prompt, [image_source], api_key=api_key)
+    response = anthropic_client.complete_with_images(
+        prompt, [image_source], api_key=api_key, model=anthropic_client.HAIKU_MODEL
+    )
     parsed = anthropic_client.parse_json_response(response["text"])
     for key in ("passed", "reason"):
         if key not in parsed:

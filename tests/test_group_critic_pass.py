@@ -413,7 +413,7 @@ def test_run_group_critic_pass_cycle_isolates_per_group_operational_failures(tmp
     _insert_group_gallery(conn, succeeding_id, "10x24", "10x24")
     _insert_listing_text(conn, succeeding_id, niche="moon phase print")
 
-    def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024):
+    def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024, model=None):
         if "saturated term" in prompt:
             raise RuntimeError("Anthropic throttled")
         return _verdict_response("good")
