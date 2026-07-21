@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 # row so round-N prompt text is queryable/diffable against the version that
 # produced it. No prior versioning existed for this scaffold, so "v1" is the
 # baseline, not a re-numbering of something that came before.
-SCAFFOLD_VERSION = "v1"
+# R3-a (docs/2026-07-21-generation-quality-round3-plan.md sec 3, open
+# question 2, owner-approved): bumped to "v2" for the round-3 scaffold
+# rework (drops "centered subject"/"dense composition" - see below).
+SCAFFOLD_VERSION = "v2"
 
 # R2-d (same plan, FM-6): Replicate's documented cap for granted-credit
 # accounts without a payment method on file is 1 request/second, 6/minute
@@ -39,13 +42,23 @@ def _generate_cycle_pacing_seconds() -> float:
 # weight at best, prompt-corrupting at worst. The no-go list now lives only
 # in art_brief.py's brief-writing instructions (a text LLM honors "don't
 # reference named artists" reliably; the image model never sees it).
-# Vocabulary is S4-a's bestseller-study wording verbatim - density/coverage
-# was the single biggest lever separating good from condemned masters.
+#
+# R3-a (docs/2026-07-21-generation-quality-round3-plan.md sec 3, FM-7/FM-13):
+# dropped "one coherent centered subject" and "dense composition filling the
+# frame edge to edge" - both actively fought the round-3 brief template's new
+# hierarchy briefs (a named primary subject + optional small secondary
+# occupant is not "one coherent centered subject") and its legitimized
+# sparse idiom (a large dominant subject with generous empty space is not
+# "dense"). The brief now carries density/hierarchy explicitly per design,
+# so the scaffold no longer needs to assert either universally. Replaced
+# with edge-contact wording (compatible with FM-9's bottom-edge grounding
+# clause) that's compatible with both dense and sparse briefs - it describes
+# how the composition should meet the frame, not how densely it must fill it.
 POSITIVE_SCAFFOLD = (
-    "Flat 2D full-bleed artwork, one coherent centered subject, dense composition "
-    "filling the frame edge to edge. Bold filled color zones with crisp clean "
-    "edges, no smudging. Warm muted palette on a soft cream ground. Print-ready, "
-    "no text or watermarks."
+    "Flat 2D full-bleed artwork, composition reaching the frame's edges wherever "
+    "the subject meets them. Bold filled color zones with crisp clean edges, no "
+    "smudging. Warm muted palette on a soft cream ground. Print-ready, no text "
+    "or watermarks."
 )
 
 

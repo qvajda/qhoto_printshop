@@ -36,6 +36,16 @@ def test_build_critic_prompt_includes_rubric_and_listing_text():
     assert "no focal occupant" in prompt
     # R2-b: criterion 7 gains a brief-vs-image adherence check.
     assert "brief adherence" in prompt
+    # R3-b (FM-7/9): criterion 3 names anatomical incompleteness + smudge-merging.
+    assert "anatomically incomplete" in prompt
+    assert "smudges/merges into a neighboring element" in prompt
+    # R3-b (FM-7/8/9): criterion 4 names the three round-3 defect classes.
+    assert "no physical contact or integration" in prompt
+    assert "literal drawn containment geometry" in prompt
+    assert "unintended one-sided blank band" in prompt
+    # R3-b (FM-13): criterion 6's text itself carries the owner's sparse-gate ruling.
+    assert "legitimate, deliberate style" in prompt
+    assert "the subject itself is small" in prompt
 
 
 def _verdict_response(overall="good", failing=None):
@@ -251,9 +261,12 @@ def test_check_local_image_sanity_returns_none_for_missing_or_null_path(tmp_path
     assert critic_pass.check_local_image_sanity(str(tmp_path / "does-not-exist.png")) is None
 
 
-# --- S4-d calibration set: must-FAIL {4,6,7} / must-PASS {1,2,5} / borderline {3} ---
+# --- S4-d calibration set: must-FAIL {4} / must-PASS {1,2,5} / borderline {3} ---
 # (docs/2026-07-20-s4a-failure-taxonomy.md) - run against the real current masters,
 # not synthetic stand-ins, so a threshold regression here is a real regression.
+# 6.png/7.png were the original must-FAIL masters for this set but got overwritten
+# locally with no backup - retired from the parametrize since there's nothing left
+# to calibrate against.
 
 _BASE_ARTWORK_DIR = Path(__file__).resolve().parent.parent / "db" / "base_artwork"
 
@@ -268,7 +281,7 @@ def test_calibration_set_must_pass_clears_local_gate_clean(n):
     assert critic_pass.local_sanity_flag_note(stats) is None
 
 
-@pytest.mark.parametrize("n", [4, 6, 7])
+@pytest.mark.parametrize("n", [4])
 def test_calibration_set_must_fail_hard_fails_local_gate(n):
     path = _BASE_ARTWORK_DIR / f"{n}.png"
     if not path.exists():
@@ -285,6 +298,75 @@ def test_calibration_set_borderline_is_flagged_not_hard_failed():
     stats = critic_pass.compute_image_sanity_stats(path)
     assert critic_pass.check_local_image_sanity(path) is None  # not hard-failed
     assert critic_pass.local_sanity_flag_note(stats) is not None  # but flagged
+
+
+# --- R3-b FM-13 fix: subject-extent stat + sparse-gate rework ---
+# Owner ruling: one large dominant subject with generous empty space is a legitimate
+# style and must PASS; the defect is a mostly-empty frame where the subject itself is
+# ALSO small. Candidates 12 (round-2 fan-in's headline finding) and 22 (round-3) are the
+# key sparse anchors: both measure low cov but a large subject_extent, and must clear the
+# gate unflagged (not merely non-hard-failed - unflagged, so the vision critic never sees
+# an alarming note steering it toward rejecting a legitimate sparse design).
+
+@pytest.mark.parametrize("n", [12, 22])
+def test_sparse_anchor_candidates_skip_the_flag_entirely(n):
+    path = _BASE_ARTWORK_DIR / f"{n}.png"
+    if not path.exists():
+        pytest.skip(f"{path} not present in this checkout")
+    stats = critic_pass.compute_image_sanity_stats(path)
+    assert stats["cov"] < critic_pass.SANITY_COV_FLAG_CEILING  # low cov, as FM-13 requires
+    assert stats["subject_extent"] >= critic_pass.SANITY_SUBJECT_EXTENT_SMALL  # but a big subject
+    assert critic_pass.check_local_image_sanity(path) is None  # not hard-failed
+    assert critic_pass.local_sanity_flag_note(stats) is None  # and not flagged at all
+
+
+def test_compute_image_sanity_stats_includes_subject_extent(tmp_path):
+    from PIL import Image
+    path = _save_png(tmp_path, "flat.png", Image.new("RGB", (600, 900), (238, 232, 210)))
+
+    stats = critic_pass.compute_image_sanity_stats(path)
+
+    assert "subject_extent" in stats
+
+
+def test_subject_extent_high_for_one_big_subject_low_cov(tmp_path):
+    from PIL import Image, ImageDraw
+    # A single large filled subject on a plain background: low ink coverage overall
+    # (the shape is thin relative to the frame) but the shape's bounding box spans most
+    # of the frame - the FM-13 "legitimate sparse" case.
+    img = Image.new("RGB", (600, 900), (245, 242, 235))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([80, 100, 520, 800], outline=(15, 15, 15), width=6)
+
+    stats = critic_pass.compute_image_sanity_stats(_save_png(tmp_path, "big.png", img))
+
+    assert stats["subject_extent"] > 0.5
+    assert critic_pass.local_sanity_flag_note(stats) is None
+
+
+def test_subject_extent_low_for_tiny_subject_in_empty_frame(tmp_path):
+    from PIL import Image, ImageDraw
+    # A tiny motif adrift in a large empty field - the actual FM-13 defect.
+    img = Image.new("RGB", (600, 900), (245, 242, 235))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([280, 420, 320, 460], outline=(15, 15, 15), width=4)
+
+    stats = critic_pass.compute_image_sanity_stats(_save_png(tmp_path, "tiny.png", img))
+
+    assert stats["subject_extent"] < critic_pass.SANITY_SUBJECT_EXTENT_SMALL
+    note = critic_pass.local_sanity_flag_note(stats)
+    assert note is not None
+    assert "small" in note and "mostly-empty" in note
+
+
+def test_local_sanity_flag_note_wording_carries_the_owner_distinction():
+    stats = {"cov": 0.02, "subject_extent": 0.1}
+
+    note = critic_pass.local_sanity_flag_note(stats)
+
+    assert "legitimate style" in note
+    assert "mostly-empty frame" in note
+    assert "subject itself is ALSO small" in note
 
 
 # --- S4-d tier 2: cheap single-image vision pre-filter ---

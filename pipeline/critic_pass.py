@@ -25,18 +25,31 @@ CRITIC_RUBRIC_PROMPT_TEMPLATE = (
     "2. Subject presence: reject if any image is near-empty, a plain gradient, or has no clear "
     "subject at all.\n"
     "3. Subject coherence: reject nonsensical or malformed subjects (e.g. anatomically/"
-    "botanically impossible hybrid forms, floating or disconnected parts).\n"
+    "botanically impossible hybrid forms, floating or disconnected parts). Also reject a small "
+    "secondary subject (e.g. a butterfly, ladybug, or bird) that is anatomically incomplete "
+    "(missing a wing, leg, or other expected part) or that smudges/merges into a neighboring "
+    "element (e.g. a ladybug half-absorbed into a flower) instead of reading as a distinct, "
+    "complete creature.\n"
     "4. Composition: reject an off-center or cut-off subject, or large dead/empty zones, unless "
     "clearly intentional to the style. Also reject two round-2 defect classes: (a) a backdrop "
     "shape or orb (circle, arch, wash, etc.) that floats unintegrated in leftover negative space "
     "instead of sitting behind and touching a subject, and (b) an enclosed negative-space opening "
     "or channel within the composition that has no focal occupant (no secondary subject like a "
     "butterfly, ladybug, or bloom, and not closed over) - an empty hole is a defect even when the "
-    "rest of the frame is dense.\n"
+    "rest of the frame is dense. Also reject three round-3 defect classes: (c) a secondary "
+    "subject layered onto the composition with no physical contact or integration (e.g. a beetle "
+    "floating disconnected from the stem it's supposedly on) - it must visibly touch, grip, or "
+    "overlap the subject matter it sits against; (d) literal drawn containment geometry - a "
+    "triangle, rectangle, circle, or other outline literally drawn around or framing a subject as "
+    "if enclosing it; and (e) a composition that visibly stops short of one frame edge, leaving "
+    "an unintended one-sided blank band (e.g. stems or fronds ending well above the bottom edge "
+    "instead of running off it).\n"
     "5. Detail quality: reject smudging, muddiness, or blurred detail at the boundaries between "
     "color zones (this is clean flat-zone art - smudging is conspicuous).\n"
-    "6. Visual density: reject overly sparse line work or a composition too empty to read as "
-    "finished wall art.\n"
+    "6. Visual density: one large dominant subject with generous empty space around it "
+    "(optionally on a badge/backdrop shape) is a legitimate, deliberate style - PASS it. Reject "
+    "only when the frame is mostly empty AND the subject itself is small (a tiny motif adrift in "
+    "a large empty field) - that combination, not sparseness alone, is the defect.\n"
     "7. Text match: does this draft title and description actually match what's shown in the "
     "images and fit the niche? Also check brief adherence: does the image actually realize the "
     "named primary focal subject and the stated medium (e.g. a line-art brief should render as "
@@ -88,24 +101,81 @@ CRITIC_RUBRIC_PROMPT_TEMPLATE = (
 # 0.12) are UNCHANGED. New frozen baseline: candidates 5-14, owner grades 3 good (8, 10, 12)
 # / 7 refine (5, 6, 7, 9, 11, 13, 14) / 0 reject. Every one of the 10 clears this local
 # gate's 0.05 hard-fail cov floor (measured range 0.058-0.933) - none hard-fail locally, all
-# 10 reach the full rubric. Calibration caveat: candidate 12 (owner-graded "great") measures
-# cov 0.058, inside the 0.05-0.12 flag-to-critic band above - it gets local-gate-flagged (not
-# hard-failed) and the amended criterion 4/6 wording must still let the full rubric grade it
-# 'good' despite the flag: a single-stem/sparse botanical study is a legitimate low-coverage
-# idiom, not a defect, and criterion 4's new floating-orb/unoccupied-negative-space language
-# targets the *other* masters' actual defect (5, 6, 7, 9, 11, 13, 14's missing focal subject
-# or floating backdrop), not sparse-but-intentional compositions like 12's.
+# 10 reach the full rubric.
+#
+# FM-13 fix (round 3, docs/2026-07-21-generation-quality-round3-plan.md sec 3 R3-b): the
+# round-2 fan-in's critic re-run REJECTED candidate 12 (owner: "great") because the low-cov
+# flag_note steered the vision rubric into treating sparseness itself as a defect - the "this
+# is a legitimate idiom" caveat lived only in this doc comment, enforced by nothing. Owner
+# ruling (now in the rubric TEXT, criterion 6, and enforced in the gate logic below, not just
+# here): one large dominant subject with generous empty space is a legitimate style and must
+# PASS; the actual defect is a mostly-empty frame where the subject ITSELF is also small. `cov`
+# (ink fraction) alone can't distinguish these - a big subject on a plain ground and a tiny
+# subject in a huge void can share the same low cov. Added stat: `subject_extent` (bounding-box
+# area fraction of the largest connected non-background component on the same 512px thumbnail).
+# The flag now gates on cov-low AND subject_extent-small; a big-subject/low-cov design skips the
+# flag entirely (see local_sanity_flag_note) - it never reaches the critic looking suspicious.
+#
+# Recalibrated (round 3) against candidates 15-24, owner grades 5 good (15, 17, 18, 19, 21) /
+# 5 refine (16, 20, 22, 23, 24) / 0 reject. The two key sparse anchors - 12 (round-2 batch,
+# the FM-13 case) and 22 (round-3 batch, "single stem study, beetle on stem", Refine but for
+# an unrelated integration reason, not sparseness) - both measure low cov but a LARGE
+# subject_extent, so both now skip the flag entirely:
+#   12  stddev 22.75  cov 0.0534  extent 0.4020  -> low cov, big subject -> flag skipped
+#   22  stddev 28.09  cov 0.1179  extent 0.5942  -> low cov, big subject -> flag skipped
+# Contrast with master 3 (borderline calibration fixture, must stay flagged-not-hard-failed):
+#   3   stddev 15.73  cov 0.0200  extent 0.2899  -> low cov, small subject -> flag stays alarming
+# SANITY_SUBJECT_EXTENT_SMALL = 0.35 sits between 3's 0.29 (small) and 12's 0.40 (big), with
+# clear margin on both sides.
 SANITY_MIN_STDDEV = 3.0
 SANITY_MIN_EDGE_RATIO = 0.012
 SANITY_COV_HARD_FAIL = 0.05
 SANITY_COV_HARD_FAIL_STDDEV_CEILING = 12.0
 SANITY_COV_FLAG_CEILING = 0.12  # below this (and not hard-failed) -> flag-to-critic, not silent pass
+SANITY_SUBJECT_EXTENT_SMALL = 0.35  # below this the largest subject blob is itself small (FM-13)
+
+
+def _largest_component_bbox_fraction(pixels: list, width: int, height: int) -> float:
+    """FM-13 subject-extent stat: cheap connected-component analysis (BFS/flood-fill,
+    4-connectivity, pure PIL + stdlib - no new image-processing dependency) over the
+    non-background mask already used for `cov`. Returns the bounding-box area fraction
+    of the largest connected non-background blob - a big dominant subject scores high
+    even at low ink coverage; a tiny subject in a mostly-empty frame scores low."""
+    from collections import deque
+
+    visited = bytearray(len(pixels))
+    best_bbox_area = 0
+    for start in range(len(pixels)):
+        if not pixels[start] or visited[start]:
+            continue
+        visited[start] = 1
+        queue = deque([start])
+        min_x = max_x = start % width
+        min_y = max_y = start // width
+        while queue:
+            idx = queue.popleft()
+            x, y = idx % width, idx // width
+            if x < min_x: min_x = x
+            if x > max_x: max_x = x
+            if y < min_y: min_y = y
+            if y > max_y: max_y = y
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < width and 0 <= ny < height:
+                    nidx = ny * width + nx
+                    if pixels[nidx] and not visited[nidx]:
+                        visited[nidx] = 1
+                        queue.append(nidx)
+        bbox_area = (max_x - min_x + 1) * (max_y - min_y + 1)
+        if bbox_area > best_bbox_area:
+            best_bbox_area = bbox_area
+    return best_bbox_area / (width * height)
 
 
 def compute_image_sanity_stats(local_path) -> dict:
     with Image.open(local_path) as im:
         gray = im.convert("L")
     gray.thumbnail((512, 512))  # print masters are ~6656x9728 - stats don't need full res
+    width, height = gray.size
     stddev = ImageStat.Stat(gray).stddev[0]
     edges = gray.filter(ImageFilter.FIND_EDGES)
     hist = edges.histogram()
@@ -113,8 +183,10 @@ def compute_image_sanity_stats(local_path) -> dict:
     edge_ratio = sum(hist[30:]) / total  # fraction of pixels with a meaningful edge
     pixels = list(gray.getdata())
     median = statistics.median(pixels)
-    cov = sum(1 for p in pixels if abs(p - median) > 15) / len(pixels)  # subject-coverage proxy
-    return {"stddev": stddev, "edge_ratio": edge_ratio, "cov": cov}
+    non_background = [1 if abs(p - median) > 15 else 0 for p in pixels]
+    cov = sum(non_background) / len(non_background)  # subject-coverage proxy
+    subject_extent = _largest_component_bbox_fraction(non_background, width, height)
+    return {"stddev": stddev, "edge_ratio": edge_ratio, "cov": cov, "subject_extent": subject_extent}
 
 
 def check_local_image_sanity(local_path) -> dict | None:
@@ -149,12 +221,27 @@ def check_local_image_sanity(local_path) -> dict | None:
 def local_sanity_flag_note(stats: dict) -> str | None:
     """Borderline-but-not-hard-failed signal (S4-d two-tier gate): cov below the
     full-pass ceiling doesn't reject locally, but shouldn't silently pass through to
-    the vision critic unremarked either - surfaced as an addendum in its prompt."""
-    if stats["cov"] < SANITY_COV_FLAG_CEILING:
-        return (f"Note: the local sanity gate flagged this design as borderline-sparse "
-                f"(subject coverage {stats['cov']:.3f}, below the {SANITY_COV_FLAG_CEILING} "
-                f"full-pass floor) - scrutinize rubric points 2, 4, and 6 closely.")
-    return None
+    the vision critic unremarked either - surfaced as an addendum in its prompt.
+
+    FM-13 fix (round 3): low cov alone used to trigger this note regardless of subject
+    size, which is what steered the round-2 fan-in into rejecting candidate 12 (owner:
+    "great") - a legitimate big-subject/sparse-background idiom. cov can't tell a big
+    subject on a plain ground apart from a tiny subject in a huge void, so the note is
+    now additionally gated on `subject_extent`: a big subject (extent at/above
+    SANITY_SUBJECT_EXTENT_SMALL) skips the flag entirely - it never reaches the critic
+    looking suspicious. Only a small subject in a mostly-empty frame gets flagged, and
+    the note now carries the owner's actual distinction instead of a vague
+    "scrutinize closely"."""
+    if stats["cov"] >= SANITY_COV_FLAG_CEILING:
+        return None
+    if stats["subject_extent"] >= SANITY_SUBJECT_EXTENT_SMALL:
+        return None  # big dominant subject, low cov is just its sparse background - not a defect
+    return (f"Note: the local sanity gate flagged this design as sparse with a small subject "
+            f"(ink coverage {stats['cov']:.3f}, largest-subject bounding box "
+            f"{stats['subject_extent']:.3f} of the frame). Owner ruling: one large dominant "
+            f"subject with generous empty space is a legitimate style and must PASS; the actual "
+            f"defect is a mostly-empty frame where the subject itself is ALSO small - which this "
+            f"looks like. Scrutinize rubric points 4 and 6 against that distinction.")
 
 
 MASTER_SANITY_PROMPT_TEMPLATE = (
