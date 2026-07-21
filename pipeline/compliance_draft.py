@@ -146,37 +146,43 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
     image_types = [image["image_type"] for image in gallery]
     metadata = resolve_compliance_metadata(static_config)
 
-    # LLMs don't reliably obey character-count instructions on the first try, so retry
-    # with the validation failure fed back as feedback before giving up (cap 3, same
-    # retry budget as critic_pass).
-    feedback = None
-    last_exc = None
-    draft = None
-    for attempt in range(3):
-        try:
-            draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key,
-                                         retry_feedback=feedback)
-            validate_listing_text(draft["title"], draft["tags"])
-            last_exc = None
-            break
-        except Exception as exc:
-            last_exc = exc
-            feedback = f"Your previous attempt failed validation: {exc}. Fix this and keep every other requirement."
+    try:
+        # LLMs don't reliably obey character-count instructions on the first try, so
+        # retry with the validation failure fed back as feedback before giving up (cap
+        # 3, same retry budget as critic_pass). Only catch ValueError in *this inner
+        # retry loop* (missing/invalid draft fields, Etsy limit violations, and
+        # anthropic_client.MalformedJSONError - which subclasses ValueError): those are
+        # real model-output problems worth feeding back as correction text. Anything
+        # else (e.g. anthropic_client.NoTextContentError/TruncatedResponseError, or the
+        # SDK's own transport errors) is not something a "fix this and keep every other
+        # requirement" message can meaningfully address, so it isn't retried here - it
+        # falls through to the outer except below, which still marks the candidate
+        # failed (bookkeeping), just without wasting the retry budget on it.
+        feedback = None
+        draft = None
+        last_value_error = None
+        for attempt in range(3):
+            try:
+                draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key,
+                                             retry_feedback=feedback)
+                validate_listing_text(draft["title"], draft["tags"])
+                last_value_error = None
+                break
+            except ValueError as exc:
+                last_value_error = exc
+                feedback = f"Your previous attempt failed validation: {exc}. Fix this and keep every other requirement."
+        if last_value_error is not None:
+            raise last_value_error
 
-    if last_exc is None:
-        try:
-            listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
-            update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
-        except Exception as exc:
-            last_exc = exc
-
-    if last_exc is not None:
+        listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
+        update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
+    except Exception as exc:
         conn.execute(
             "UPDATE candidates SET status = 'compliance_failed', failed_reason = ?, updated_at = ? WHERE id = ?",
-            (str(last_exc), timestamp, candidate_id),
+            (str(exc), timestamp, candidate_id),
         )
         conn.commit()
-        raise last_exc
+        raise
 
     return {"listing_text_id": listing_text_id, "candidate_id": candidate_id}
 

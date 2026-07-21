@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+import pipeline.anthropic_client as anthropic_client
 import pipeline.compliance_draft as compliance_draft
 import pipeline.db as db
 
@@ -340,6 +341,28 @@ def test_build_compliance_draft_marks_compliance_failed_when_claude_call_raises(
         "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
     ).fetchall()
     assert listing_rows == []
+    conn.close()
+
+
+def test_build_compliance_draft_does_not_retry_non_value_errors(tmp_path):
+    # A NoTextContentError/TruncatedResponseError (or any non-ValueError, e.g. an
+    # SDK transport error) is not something "fix this and keep every other
+    # requirement" feedback can address - it must fail on the first attempt, not
+    # burn the 3-attempt retry budget, while still marking the candidate failed.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=anthropic_client.NoTextContentError(["tool_use"])) as mock_complete:
+        with pytest.raises(anthropic_client.NoTextContentError):
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    assert mock_complete.call_count == 1
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "compliance_failed"
     conn.close()
 
 

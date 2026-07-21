@@ -1,4 +1,4 @@
-import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -6,45 +6,62 @@ import pytest
 import pipeline.anthropic_client as anthropic_client
 
 
+def _usage(input_tokens=10, output_tokens=5):
+    return SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
+
+
+def _text_block(text):
+    return SimpleNamespace(type="text", text=text)
+
+
+def _message(content, stop_reason="end_turn", request_id="req_123"):
+    message = SimpleNamespace(
+        content=content, stop_reason=stop_reason, usage=_usage(), id="msg_1",
+    )
+    message._request_id = request_id
+    return message
+
+
+def _fake_client(create_side_effect):
+    """A stand-in for anthropic.Anthropic() exposing only .messages.create,
+    which is all anthropic_client touches on the client object."""
+    client = MagicMock()
+    client.messages.create.side_effect = create_side_effect
+    return client
+
+
+def _patch_anthropic(client):
+    return patch("pipeline.anthropic_client.anthropic.Anthropic", return_value=client)
+
+
 def test_research_web_search_builds_correct_request():
     captured = {}
 
-    def fake_send(request, timeout=30):
-        captured["url"] = request.full_url
-        captured["method"] = request.get_method()
-        captured["headers"] = {
-            "x-api-key": request.get_header("X-api-key"),
-            "anthropic-version": request.get_header("Anthropic-version"),
-        }
-        captured["body"] = json.loads(request.data)
-        return {
-            "content": [
-                {"type": "server_tool_use", "id": "srvtoolu_1", "name": "web_search"},
-                {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_1", "content": []},
-                {"type": "text", "text": '[{"keyword": "monstera line art", "rationale": "rising interest"}]'},
-            ]
-        }
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return _message([
+            SimpleNamespace(type="server_tool_use", id="srvtoolu_1", name="web_search"),
+            SimpleNamespace(type="web_search_tool_result", tool_use_id="srvtoolu_1", content=[]),
+            _text_block('[{"keyword": "monstera line art", "rationale": "rising interest"}]'),
+        ])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+    client = _fake_client(fake_create)
+    with _patch_anthropic(client):
         result = anthropic_client.research_web_search("find trending botanical keywords", api_key="key1")
 
-    assert captured["url"] == "https://api.anthropic.com/v1/messages"
-    assert captured["method"] == "POST"
-    assert captured["headers"]["x-api-key"] == "key1"
-    assert captured["headers"]["anthropic-version"] == anthropic_client.ANTHROPIC_API_VERSION
-    assert captured["body"]["model"] == anthropic_client.ANTHROPIC_MODEL
-    assert captured["body"]["messages"] == [{"role": "user", "content": "find trending botanical keywords"}]
-    assert captured["body"]["tools"] == [
+    assert captured["model"] == anthropic_client.ANTHROPIC_MODEL
+    assert captured["messages"] == [{"role": "user", "content": "find trending botanical keywords"}]
+    assert captured["tools"] == [
         {"type": anthropic_client.WEB_SEARCH_TOOL_TYPE, "name": "web_search", "max_uses": 5}
     ]
     assert result["text"] == '[{"keyword": "monstera line art", "rationale": "rising interest"}]'
 
 
 def test_research_web_search_concatenates_multiple_text_blocks():
-    def fake_send(request, timeout=30):
-        return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
+    def fake_create(**kwargs):
+        return _message([_text_block("line one"), _text_block("line two")])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+    with _patch_anthropic(_fake_client(fake_create)):
         result = anthropic_client.research_web_search("prompt", api_key="key1")
 
     assert result["text"] == "line one\nline two"
@@ -53,58 +70,72 @@ def test_research_web_search_concatenates_multiple_text_blocks():
 def test_complete_builds_correct_request_without_tools():
     captured = {}
 
-    def fake_send(request, timeout=30):
-        captured["url"] = request.full_url
-        captured["method"] = request.get_method()
-        captured["body"] = json.loads(request.data)
-        return {"content": [{"type": "text", "text": '{"title": "Botanical Wall Art"}'}]}
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return _message([_text_block('{"title": "Botanical Wall Art"}')])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+    with _patch_anthropic(_fake_client(fake_create)):
         result = anthropic_client.complete("draft some listing text", api_key="key1")
 
-    assert captured["url"] == "https://api.anthropic.com/v1/messages"
-    assert captured["method"] == "POST"
-    assert captured["body"]["model"] == anthropic_client.ANTHROPIC_MODEL
-    assert captured["body"]["max_tokens"] == 1024
-    assert captured["body"]["messages"] == [{"role": "user", "content": "draft some listing text"}]
-    assert "tools" not in captured["body"]
+    assert captured["model"] == anthropic_client.ANTHROPIC_MODEL
+    assert captured["max_tokens"] == 1024
+    assert captured["messages"] == [{"role": "user", "content": "draft some listing text"}]
+    assert "tools" not in captured
     assert result["text"] == '{"title": "Botanical Wall Art"}'
 
 
 def test_complete_concatenates_multiple_text_blocks():
-    def fake_send(request, timeout=30):
-        return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
+    def fake_create(**kwargs):
+        return _message([_text_block("line one"), _text_block("line two")])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send):
+    with _patch_anthropic(_fake_client(fake_create)):
         result = anthropic_client.complete("prompt", api_key="key1")
 
     assert result["text"] == "line one\nline two"
 
 
-def test_complete_retries_once_on_empty_content_then_succeeds():
-    # http.send() maps an empty HTTP body to {} - seen live as a transient Anthropic
-    # hiccup that self-healed on an immediate retry. Confirm one retry recovers it.
-    responses = iter([{}, {"content": [{"type": "text", "text": '{"passed": true}'}]}])
+def test_complete_raises_no_text_content_error_when_no_text_blocks():
+    # A tool-only turn (or any turn that ends without ever emitting text) is a real,
+    # nameable failure - not a transport hiccup the SDK's retries could fix.
+    def fake_create(**kwargs):
+        return _message([SimpleNamespace(type="tool_use", id="t1", name="whatever", input={})])
 
-    def fake_send(request, timeout=30):
-        return next(responses)
-
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send) as mock_send:
-        result = anthropic_client.complete("prompt", api_key="key1")
-
-    assert mock_send.call_count == 2
-    assert result["text"] == '{"passed": true}'
-
-
-def test_complete_raises_if_content_still_empty_after_retry():
-    def fake_send(request, timeout=30):
-        return {}
-
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send) as mock_send:
-        with pytest.raises(RuntimeError, match="no text content"):
+    with _patch_anthropic(_fake_client(fake_create)) as _:
+        with pytest.raises(anthropic_client.NoTextContentError) as excinfo:
             anthropic_client.complete("prompt", api_key="key1")
 
-    assert mock_send.call_count == 2
+    assert excinfo.value.block_types == ["tool_use"]
+
+
+def test_complete_raises_truncated_response_error_on_max_tokens():
+    def fake_create(**kwargs):
+        return _message([_text_block("cut off mid")], stop_reason="max_tokens")
+
+    with _patch_anthropic(_fake_client(fake_create)):
+        with pytest.raises(anthropic_client.TruncatedResponseError):
+            anthropic_client.complete("prompt", api_key="key1", max_tokens=50)
+
+
+def test_complete_continues_a_paused_turn_and_returns_the_final_text():
+    # stop_reason == "pause_turn": per the API docs, resend the response's content
+    # back as an assistant turn to let a long-running turn continue.
+    responses = iter([
+        _message([SimpleNamespace(type="server_tool_use", id="t1", name="web_search")], stop_reason="pause_turn"),
+        _message([_text_block("final answer")], stop_reason="end_turn"),
+    ])
+    captured_messages = []
+
+    def fake_create(**kwargs):
+        captured_messages.append(kwargs["messages"])
+        return next(responses)
+
+    with _patch_anthropic(_fake_client(fake_create)):
+        result = anthropic_client.complete("prompt", api_key="key1")
+
+    assert result["text"] == "final answer"
+    assert len(captured_messages) == 2
+    # second call continues with the first response's content as an assistant turn
+    assert captured_messages[1][-1]["role"] == "assistant"
 
 
 def _fake_head_response(content_length=1024):
@@ -116,23 +147,19 @@ def _fake_head_response(content_length=1024):
 def test_complete_with_images_builds_correct_request_with_image_blocks_before_text():
     captured = {}
 
-    def fake_send(request, timeout=30):
-        captured["url"] = request.full_url
-        captured["method"] = request.get_method()
-        captured["body"] = json.loads(request.data)
-        return {"content": [{"type": "text", "text": '{"passed": true, "reason": "ok"}'}]}
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return _message([_text_block('{"passed": true, "reason": "ok"}')])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+    with _patch_anthropic(_fake_client(fake_create)), \
          patch("pipeline.anthropic_client.http.head", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images(
             "review these images", ["https://gelato/a.jpg", "https://gelato/b.jpg"], api_key="key1"
         )
 
-    assert captured["url"] == "https://api.anthropic.com/v1/messages"
-    assert captured["method"] == "POST"
-    assert captured["body"]["model"] == anthropic_client.ANTHROPIC_MODEL
-    assert captured["body"]["max_tokens"] == 1024
-    content = captured["body"]["messages"][0]["content"]
+    assert captured["model"] == anthropic_client.ANTHROPIC_MODEL
+    assert captured["max_tokens"] == 1024
+    content = captured["messages"][0]["content"]
     assert content == [
         {"type": "image", "source": {"type": "url", "url": "https://gelato/a.jpg"}},
         {"type": "image", "source": {"type": "url", "url": "https://gelato/b.jpg"}},
@@ -142,10 +169,10 @@ def test_complete_with_images_builds_correct_request_with_image_blocks_before_te
 
 
 def test_complete_with_images_concatenates_multiple_text_blocks():
-    def fake_send(request, timeout=30):
-        return {"content": [{"type": "text", "text": "line one"}, {"type": "text", "text": "line two"}]}
+    def fake_create(**kwargs):
+        return _message([_text_block("line one"), _text_block("line two")])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+    with _patch_anthropic(_fake_client(fake_create)), \
          patch("pipeline.anthropic_client.http.head", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images("prompt", ["https://gelato/a.jpg"], api_key="key1")
 
@@ -163,22 +190,22 @@ def test_complete_with_images_falls_back_to_base64_when_over_size_cap():
 
     captured = {}
 
-    def fake_send(request, timeout=30):
-        captured["body"] = json.loads(request.data)
-        return {"content": [{"type": "text", "text": "ok"}]}
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return _message([_text_block("ok")])
 
     big_image = Image.new("RGB", (10, 10), color="red")
     buffer = io.BytesIO()
     big_image.save(buffer, format="PNG")
     raw_bytes = buffer.getvalue()
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+    with _patch_anthropic(_fake_client(fake_create)), \
          patch("pipeline.anthropic_client.http.head",
                return_value=_fake_head_response(content_length=10 * 1024 * 1024)), \
          patch("pipeline.anthropic_client.http.fetch_bytes", return_value=raw_bytes):
         anthropic_client.complete_with_images("prompt", ["https://replicate.delivery/huge.png"], api_key="key1")
 
-    content = captured["body"]["messages"][0]["content"]
+    content = captured["messages"][0]["content"]
     assert content[0]["type"] == "image"
     assert content[0]["source"]["type"] == "base64"
     assert content[0]["source"]["media_type"] == "image/jpeg"
@@ -198,17 +225,30 @@ def test_complete_with_images_sends_local_paths_as_base64_without_http_fetch(tmp
 
     captured = {}
 
-    def fake_send(request, timeout=30):
-        captured["body"] = json.loads(request.data)
-        return {"content": [{"type": "text", "text": "ok"}]}
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return _message([_text_block("ok")])
 
-    with patch("pipeline.anthropic_client.http.send", side_effect=fake_send), \
+    with _patch_anthropic(_fake_client(fake_create)), \
          patch("pipeline.anthropic_client.http.head") as mock_head, \
          patch("pipeline.anthropic_client.http.fetch_bytes") as mock_fetch:
         anthropic_client.complete_with_images("prompt", [str(image_path)], api_key="key1")
 
     mock_head.assert_not_called()
     mock_fetch.assert_not_called()
-    content = captured["body"]["messages"][0]["content"]
+    content = captured["messages"][0]["content"]
     assert content[0]["source"]["type"] == "base64"
     assert content[0]["source"]["media_type"] == "image/jpeg"
+
+
+def test_parse_json_response_raises_malformed_json_error_on_bad_json():
+    with pytest.raises(anthropic_client.MalformedJSONError) as excinfo:
+        anthropic_client.parse_json_response("not json at all")
+
+    assert "not json at all" in excinfo.value.snippet
+
+
+def test_parse_json_response_still_strips_json_fence():
+    result = anthropic_client.parse_json_response('```json\n{"a": 1}\n```')
+
+    assert result == {"a": 1}
