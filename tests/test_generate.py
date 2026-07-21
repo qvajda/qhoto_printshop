@@ -486,7 +486,7 @@ def test_run_generate_cycle_paces_between_candidates_not_before_the_first(tmp_pa
     def fake_upscale_image(image_url, *, api_token=None):
         return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up-x"}
 
-    def fake_generate_art_brief(candidate, *, api_key=None):
+    def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
         return f"A dense brief for {candidate['niche']}."
 
     with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
