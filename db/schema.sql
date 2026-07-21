@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS candidates (
   base_image_local_path TEXT,
   base_image_sha256 TEXT,
   base_replicate_delivery_url TEXT,
+  art_brief TEXT,
   status TEXT NOT NULL CHECK(status IN (
     'pending','generating','primary_review','compliance_failed','failed','abandoned','completed'
   )),

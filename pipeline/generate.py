@@ -1,58 +1,55 @@
-import re
 from datetime import datetime, timezone
 
+import pipeline.art_brief as art_brief
 import pipeline.artwork_store as artwork_store
 import pipeline.http as http
 import pipeline.replicate_client as replicate_client
 
 
-NICHE_STYLE_SCAFFOLD = (
-    "Flat 2D artwork, full-bleed, fills the entire frame edge to edge: {niche}. "
-    "One clear, coherent central subject that occupies most of the frame, centered "
-    "and balanced. The subject is complete and anatomically/botanically correct - "
-    "well-formed, connected, not a nonsensical hybrid, no floating or disconnected "
-    "parts. Crisp clean edges between flat zones of color, no smudging or muddy "
-    "detail. Well-filled composition, not sparse, not a near-empty background or "
-    "plain gradient. Soft muted natural color palette, print-ready art, no text or "
-    "watermarks. No frame, no border, no wall, no room, no mockup, no photograph of "
-    "a poster - this is the flat artwork itself, not a lifestyle photo of it hanging."
-)
-
-# The niche string is a *scene* leak vector - it can come from a hardcoded
-# research.py template, an LLM's free-text trend research, or a raw Telegram
-# /research topic, and any of those can carry "wall poster" / "wall art" /
-# "print" as a product-container word. FLUX.1 then renders the container (a
-# framed poster on a wall) instead of the flat art. Stripped here, once, at
-# the single point every niche funnels through before hitting the prompt -
-# not at each niche source.
-SCENE_TOKENS = sorted(
-    ("wall poster", "wall art", "wall décor", "wall decor", "framed poster", "poster", "print"),
-    key=len, reverse=True,
-)
-
-
-def sanitize_niche(niche: str) -> str:
-    result = niche
-    for token in SCENE_TOKENS:
-        result = re.sub(re.escape(token), "", result, flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", result).strip(" -,")
-
-# Hard no-go list per SPEC_v4.10.md section 2 / CLAUDE.md - baked into generation
-# prompts as best-effort steering, not a guarantee. The critic pass (future stage)
-# is the authoritative compliance gate that checks the rendered image itself.
-NO_GO_LIST = (
-    "Do not depict any named artist's style, recognizable characters, franchises, or "
-    "logos. Do not imply celebrity likeness. Do not claim or resemble hand-painted or "
-    "one-of-a-kind original artwork - this is a print reproduction."
+# S4-c(1) (docs/2026-07-20-remediation-plan-consolidated.md): positive-only,
+# ~40 words. FLUX.1 has no negative-prompt channel - the old scaffold's ~10
+# negated clauses ("no frame", "not sparse", "Do not depict...") were dead
+# weight at best, prompt-corrupting at worst. The no-go list now lives only
+# in art_brief.py's brief-writing instructions (a text LLM honors "don't
+# reference named artists" reliably; the image model never sees it).
+# Vocabulary is S4-a's bestseller-study wording verbatim - density/coverage
+# was the single biggest lever separating good from condemned masters.
+POSITIVE_SCAFFOLD = (
+    "Flat 2D full-bleed artwork, one coherent centered subject, dense composition "
+    "filling the frame edge to edge. Bold filled color zones with crisp clean "
+    "edges, no smudging. Warm muted palette on a soft cream ground. Print-ready, "
+    "no text or watermarks."
 )
 
 
 def build_prompt(candidate: dict, *, correction_note: str = None) -> str:
-    niche = sanitize_niche(candidate['niche'])
-    prompt = f"{NICHE_STYLE_SCAFFOLD.format(niche=niche)} {NO_GO_LIST}"
+    """art_brief (the per-candidate visual brief, see art_brief.py) + the
+    positive scaffold tail. S4-c(2): the correction note sits BETWEEN the
+    brief and the scaffold, not appended last - if the schnell 256-token T5
+    cap is ever hit, truncation eats the end of the prompt, so the critic's
+    actionable retry feedback (correction_note) must not be the last thing
+    in the string; the short, redundant-with-the-brief scaffold can afford
+    to be there instead."""
+    parts = [candidate['art_brief']]
     if correction_note:
-        prompt += f" Previous attempt was rejected for: {correction_note}. Avoid this issue in the new image."
-    return prompt
+        parts.append(f"Previous attempt was rejected for: {correction_note}. Avoid this issue in the new image.")
+    parts.append(POSITIVE_SCAFFOLD)
+    return " ".join(parts)
+
+
+# Calibrated against the real google/t5-v1_1-xxl tokenizer offline (not a
+# runtime/test dependency - transformers+sentencepiece+protobuf is a heavy,
+# network-fetching one-time install, not worth carrying in requirements.txt
+# for one build-time check). Measured ratios on realistic brief/scaffold/
+# correction-note text ranged 1.375-1.650 tokens/word (full worst-case
+# prompt: 147 words -> 226 real tokens, ratio 1.537). 1.6 is above every
+# observed per-fragment ratio except the single densest fragment (1.65), so
+# it will not meaningfully under-count on prose of this style.
+T5_TOKEN_WORD_RATIO = 1.6
+
+
+def approx_t5_tokens(text: str) -> int:
+    return round(len(text.split()) * T5_TOKEN_WORD_RATIO)
 
 
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
@@ -66,7 +63,19 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
 
-    prompt = build_prompt(dict(row), correction_note=correction_note)
+    candidate = dict(row)
+    if not candidate.get("art_brief"):
+        # S4-b: one Claude text call per candidate, computed once and persisted -
+        # a retry (correction_note set) reuses the same brief, it only changes
+        # what FLUX is told to fix, not the underlying visual concept.
+        candidate["art_brief"] = art_brief.generate_art_brief(candidate)
+        conn.execute(
+            "UPDATE candidates SET art_brief = ? WHERE id = ?",
+            (candidate["art_brief"], candidate_id),
+        )
+        conn.commit()
+
+    prompt = build_prompt(candidate, correction_note=correction_note)
     generated = replicate_client.generate_image(prompt, api_token=api_token)
     upscaled = replicate_client.upscale_image(generated["image_url"], api_token=api_token)
 
