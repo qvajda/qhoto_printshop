@@ -75,9 +75,17 @@ def run_group_critic_pass(conn, candidate_id: int, group_type: str, *, static_co
 
     while True:
         state = get_group_critic_state(conn, candidate_id, group_type)
-        result = critic_pass.evaluate_critic_pass(
-            state["image_urls"], state["listing_text"], api_key=anthropic_api_key
+        # Same three-tier gate as the primary group (S4-d) - no group-level local
+        # master file exists yet, so tier 1 (local stats) is a no-op here and tier 2
+        # (cheap vision pre-filter) runs against this group's own flat crop instead.
+        result, flag_note = critic_pass.run_local_and_master_gate(
+            None, state["image_urls"], api_key=anthropic_api_key
         )
+        if result is None:
+            result = critic_pass.evaluate_critic_pass(
+                state["image_urls"], state["listing_text"], api_key=anthropic_api_key,
+                flag_note=flag_note,
+            )
         critic_pass.record_critic_attempt(conn, group_id, attempt_number, result, now=now)
 
         if result["passed"]:

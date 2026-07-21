@@ -8,6 +8,26 @@ import pipeline.db as db
 import pipeline.group_critic_pass as group_critic_pass
 
 
+def _verdict_response(overall="good", failing=None):
+    """Builds a fake Anthropic critic response in the S4-d per-criterion shape (see
+    tests/test_critic_pass.py's twin helper for the full rationale). Also carries the
+    flat legacy {passed, reason} keys so one fixture serves both the tier-2 master-image
+    check and the tier-3 full rubric parser regardless of which one consumes it."""
+    failing = failing or {}
+    payload = {}
+    for i in range(1, 8):
+        key = f"criterion_{i}"
+        if i in failing:
+            payload[key] = {"passed": False, "note": failing[i]}
+        else:
+            payload[key] = {"passed": True, "note": "ok"}
+    payload["overall"] = overall
+    notes = [v["note"] for v in payload.values() if isinstance(v, dict) and not v["passed"]]
+    payload["passed"] = overall != "reject"
+    payload["reason"] = "; ".join(notes) if notes else "meets rubric"
+    return {"text": _json.dumps(payload)}
+
+
 def _fresh_conn(tmp_path):
     conn = db.get_connection(tmp_path / "test.sqlite3")
     db.init_db(conn)
@@ -172,7 +192,7 @@ def test_run_group_critic_pass_passes_on_first_attempt(tmp_path):
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7")
     _insert_listing_text(conn, candidate_id)
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         result = group_critic_pass.run_group_critic_pass(
             conn, candidate_id, "5x7", static_config=STATIC_CONFIG, anthropic_api_key="key1",
@@ -201,9 +221,12 @@ def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
     _insert_listing_text(conn, candidate_id)
 
+    # attempt 1's reject short-circuits at tier 2 (1 call); attempt 2's pass runs both
+    # tier 2 and tier 3 (2 calls) - 3 responses total.
     critic_responses = iter([
-        {"text": _json.dumps({"passed": False, "reason": "crop cuts off the composition"})},
-        {"text": _json.dumps({"passed": True, "reason": "meets rubric"})},
+        _verdict_response("reject", {4: "crop cuts off the composition"}),
+        _verdict_response("good"),
+        _verdict_response("good"),
     ])
 
     def fake_create_product_from_template(*args, **kwargs):
@@ -257,10 +280,11 @@ def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp
     _insert_group_gallery(conn, candidate_id, "10x24", "10x24", gelato_product_id="gelato_prod_other")
     _insert_listing_text(conn, candidate_id)
 
+    # each reject short-circuits at tier 2 - 1 call per attempt, 3 total.
     critic_responses = iter([
-        {"text": _json.dumps({"passed": False, "reason": "reason one"})},
-        {"text": _json.dumps({"passed": False, "reason": "reason two"})},
-        {"text": _json.dumps({"passed": False, "reason": "reason three"})},
+        _verdict_response("reject", {1: "reason one"}),
+        _verdict_response("reject", {1: "reason two"}),
+        _verdict_response("reject", {1: "reason three"}),
     ])
 
     def fake_create_product_from_template(*args, **kwargs):
@@ -312,7 +336,7 @@ def test_run_group_critic_pass_cycle_processes_ready_groups_and_skips_uncreated(
     _insert_group_gallery(conn, not_ready_id, "10x24", "10x24", group_product_status="mockup_failed")
     _insert_listing_text(conn, not_ready_id, niche="moon phase print")
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         processed = group_critic_pass.run_group_critic_pass_cycle(
             conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
@@ -329,7 +353,7 @@ def test_run_group_critic_pass_cycle_skips_groups_already_passed(tmp_path):
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7")
     _insert_listing_text(conn, candidate_id)
 
-    fake_response = {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+    fake_response = _verdict_response("good")
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         first_run = group_critic_pass.run_group_critic_pass_cycle(
             conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
@@ -351,7 +375,7 @@ def test_run_group_critic_pass_cycle_excludes_abandoned_group_from_rerun(tmp_pat
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
     _insert_listing_text(conn, candidate_id)
 
-    fail_response = {"text": _json.dumps({"passed": False, "reason": "reason"})}
+    fail_response = _verdict_response("reject", {1: "reason"})
 
     def fake_create_product_from_template(*args, **kwargs):
         return {"id": "gelato_prod_retry", "isReadyToPublish": False, "productImages": []}
@@ -392,7 +416,7 @@ def test_run_group_critic_pass_cycle_isolates_per_group_operational_failures(tmp
     def fake_complete_with_images(prompt, image_urls, *, api_key=None, max_tokens=1024):
         if "saturated term" in prompt:
             raise RuntimeError("Anthropic throttled")
-        return {"text": _json.dumps({"passed": True, "reason": "meets rubric"})}
+        return _verdict_response("good")
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=fake_complete_with_images):
