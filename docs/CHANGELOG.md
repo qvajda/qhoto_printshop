@@ -417,3 +417,38 @@ analysis and design in
   match. Live external Gelato products/Etsy listings from prior test runs
   were deliberately left untouched in their respective accounts (a
   reversible-vs-external-account-action call, not an oversight).
+
+---
+
+# Changelog — S4-a executed (failure taxonomy + bestseller trait study), 2026-07-20
+
+**Cause:** owner-directed execution and refinement of remediation-plan item
+S4-a (`docs/2026-07-19-post-test-remediation-plan.md`, Finding 4), extended
+with an Etsy bestseller trait study. Analysis only — no pipeline code
+changed. Full artifact: `docs/2026-07-20-s4a-failure-taxonomy.md`.
+
+- **Sample redefined:** `db/base_artwork/` 1–3 are new designs generated
+  over the original run-#1 masters (owner grades: 1 good, 2 refine,
+  3 borderline); 4–7 remain from the condemned run-#1 set. S4-a therefore
+  ran as a graded-calibration study, not a pure failure post-mortem.
+- **Dominant failure mode identified:** low subject coverage/sparseness
+  (4 of 5 non-good designs), not empty canvases. The local sanity gate
+  misses condemned masters 4 and 7 (thin line art clears `edge_ratio`
+  while covering ~1–3% of the frame).
+- **New metric proposed:** `cov` (fraction of pixels deviating >15 from
+  median gray) separates owner-acceptable (≥ .148) from condemned sparse
+  (≤ .029) with a ~5x gap; recommended hard-fail < 0.05, flag 0.05–0.12.
+- **Calibration set restated:** `critic_pass.py` thresholds still cite
+  fingerprints of overwritten files (old master 2); new labeled set is
+  must-FAIL {4,6,7}, must-PASS {1,2,5}, borderline {3}.
+- **Bestseller study (live Etsy, `is_best_seller=true`, BE locale):**
+  bestsellers across the pipeline's niches converge on high coverage, bold
+  marks, warm non-white grounds, backdrop shapes, and style-specific
+  idioms; sparse hairline art essentially never carries a badge. Converges
+  independently on the same levers as the failure taxonomy (RC-A/RC-B →
+  S4-b/S4-c). Retro-travel niche flagged structurally disadvantaged under
+  the no-text constraint.
+- **Plan-doc deltas:** rubric points 4/6 softening (S4-d-2) shows no
+  supporting evidence in this set — hold until live telemetry; three-tier
+  verdicts (good/refine/reject) recommended for S4-d-1's per-criterion
+  schema; §1 scorecard frozen as the regression baseline for S4-b/c.

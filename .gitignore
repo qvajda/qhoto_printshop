@@ -34,6 +34,8 @@ npm-debug.log*
 # Local runtime data
 db/*.sqlite3
 db/*.bak-*
+db/base_artwork/
+db/group_preview_images/
 
 # Agent / tooling scratch dirs (local, not project source)
 .agents/
