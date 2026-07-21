@@ -4,24 +4,24 @@ section 3). Validates a BATCH of art briefs against:
   (b) batch-diversity rules: reject a batch where more than 2 briefs share the
       same backdrop device, or more than 2 share the same palette family.
 
-Intended call sites (both mode A and mode B must run the SAME lint - a shared
+Intended call sites (both mode A and mode B run the SAME lint - a shared
 gate is the point):
-  - Mode A: `run_generate_cycle`'s per-batch loop in generate.py, after each
-    art_brief.generate_art_brief() call and before any Replicate spend (that
-    loop is owned by a sibling agent working in parallel on R2-a/R2-b - NOT
-    wired here, this module is a standalone drop-in).
-  - Mode B: pipeline/seed_candidates.py's seed_candidates_from_briefs, wired
-    directly (see that module).
+  - Mode A: `generate.generate_for_candidate` runs `lint_batch` (log-only,
+    via logging.warning - mode A is the autonomous cron path, a wording/
+    diversity miss shouldn't abort a live batch, only surface it) on the
+    cumulative sibling briefs + the newly written one, right after each
+    art_brief.generate_art_brief() call and before the Replicate spend.
+  - Mode B: pipeline/seed_candidates.py's seed_candidates_from_briefs calls
+    `assert_batch_valid` (hard-fails, all-or-nothing insert) since that's a
+    human-gated one-shot ingest, not a scheduled batch.
 
-ponytail: MANDATORY_FIELD keyword lists (BOLDNESS_TERMS, PALETTE_FAMILIES,
-BACKDROP_DEVICES) are built against the CURRENT plan doc's field list
-(focal-hierarchy subject, backdrop-device-or-none, medium-consistent
-boldness, palette, niche) as a PLACEHOLDER - agent A is rewriting
-art_brief.py's ART_BRIEF_PROMPT_TEMPLATE in parallel and its final wording
-(new backdrop menu, new boldness phrasing) is not known yet. This needs
-reconciling against A's final template at fan-in (coordinator's job, not
-this agent's) - if A's rewrite adds new boldness/backdrop vocabulary, add it
-here or these checks will false-fail on perfectly good round-2 briefs.
+Reconciled at fan-in against A's final ART_BRIEF_PROMPT_TEMPLATE
+(pipeline/art_brief.py): BOLDNESS_TERMS and PALETTE_FAMILIES already match
+A's shipped field 4/6 wording verbatim (both agents drew the same vocabulary
+from the round-2 plan doc), so no changes were needed. BACKDROP_DEVICES is
+intentionally over-inclusive (covers legacy terms like "vignette"/"halo"
+alongside A's new menu) - harmless, since it's only used for diversity
+counting, never a mandatory-field failure.
 """
 
 MANDATORY_FIELDS = (

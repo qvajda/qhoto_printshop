@@ -1,11 +1,15 @@
+import logging
 import os
 import time
 from datetime import datetime, timezone
 
 import pipeline.art_brief as art_brief
 import pipeline.artwork_store as artwork_store
+import pipeline.brief_lint as brief_lint
 import pipeline.http as http
 import pipeline.replicate_client as replicate_client
+
+logger = logging.getLogger(__name__)
 
 # R2-c (docs/2026-07-21-generation-quality-round2-plan.md): bumped whenever
 # generate.py's POSITIVE_SCAFFOLD text changes, alongside art_brief.py's
@@ -139,6 +143,16 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
             (candidate["art_brief"], candidate_id),
         )
         conn.commit()
+        # R2-e: same shared lint mode B hard-enforces at ingest (brief_lint.py),
+        # run here as a log-only signal - mode A is the autonomous cron path, so
+        # a wording/diversity miss shouldn't abort a live batch, just surface it.
+        batch_so_far = [{"niche": candidate["niche"], "art_brief": b} for b in (sibling_briefs or [])]
+        batch_so_far.append({"niche": candidate["niche"], "art_brief": candidate["art_brief"]})
+        lint_errors = brief_lint.lint_batch(batch_so_far)
+        if lint_errors:
+            logger.warning(
+                "brief_lint flagged candidate %s: %s", candidate_id, "; ".join(lint_errors)
+            )
 
     prompt = build_prompt(candidate, correction_note=correction_note)
     try:
