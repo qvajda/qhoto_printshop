@@ -85,7 +85,7 @@ def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = No
     prompt = build_draft_prompt(candidate, image_types)
     if retry_feedback:
         prompt += f"\n\n{retry_feedback}"
-    result = anthropic_client.complete(prompt, api_key=api_key)
+    result = anthropic_client.complete(prompt, api_key=api_key, max_tokens=2048)
     draft = anthropic_client.parse_json_response(result["text"])
     for key in ("title", "tags", "description", "alt_texts"):
         if key not in draft:
