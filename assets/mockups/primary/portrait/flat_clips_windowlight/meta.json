@@ -1,0 +1,28 @@
+{
+  "scene": "flat_clips_windowlight",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      252,
+      332
+    ],
+    [
+      662,
+      340
+    ],
+    [
+      660,
+      930
+    ],
+    [
+      254,
+      920
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "flat"
+}

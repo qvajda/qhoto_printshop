@@ -1,0 +1,28 @@
+{
+  "scene": "lifestyle_sage_terracotta",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      302,
+      268
+    ],
+    [
+      700,
+      245
+    ],
+    [
+      715,
+      930
+    ],
+    [
+      338,
+      968
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle"
+}

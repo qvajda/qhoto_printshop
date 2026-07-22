@@ -1,0 +1,11 @@
+{
+  "_note": "GL-6 prototype output (proto/mockup-scene-prototype branch). Bundle format matches SPEC_v4.10 Addendum A section 4 (mockup_templates keyed by group_type/orientation). Only 'primary'/'portrait' populated; 5x7 and 10x24 sets are explicitly out of scope for this prototype (GL-6-proper, after a GL-2 go).",
+  "primary": {
+    "portrait": [
+      { "scene": "flat_clips_windowlight", "tag": "flat" },
+      { "scene": "flat_leaning_bookstack", "tag": "flat" },
+      { "scene": "lifestyle_sage_terracotta", "tag": "lifestyle" },
+      { "scene": "lifestyle_bedroom_console", "tag": "lifestyle" }
+    ]
+  }
+}

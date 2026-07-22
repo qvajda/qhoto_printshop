@@ -1,0 +1,47 @@
+{
+  "flat_clips_windowlight": {
+    "tag": "flat",
+    "prompt": "A minimalist interior photograph of a warm off-white plaster wall in natural daylight. A single blank poster print hangs from two black metal binder clips attached to a thin black string, the paper unframed with a visible raw deckle edge, hanging flat and straight-on against the wall. The poster area is a plain, evenly lit blank white rectangle with no artwork, no texture, no gradient. Soft directional window light falls from the left, casting a faint soft shadow of the poster onto the wall behind it. Portrait orientation, medium shot, eye-level camera, shot on a 50mm lens, quiet Scandinavian minimalist mood, no other objects in frame.",
+    "seed": 1154310989,
+    "prediction_id": "nmc4a8tqb1rp00czhamtqfev6w",
+    "output_url": "https://replicate.delivery/xezq/VT9eeTRdaHopI0ecct1Lj0hMCF5lW3Tfy6jAn0TeEfpmLi6uF/out-0.png",
+    "local_path": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\scratch_mockup_proto\\phase2_raw\\flat_clips_windowlight.png",
+    "status": "succeeded"
+  },
+  "flat_leaning_bookstack": {
+    "tag": "flat",
+    "prompt": "A photorealistic interior photograph of an unframed blank poster print leaning straight-on against a warm white plaster wall, resting on a pale oak wood floor. The poster's raw paper edge is visible, no frame, no mat. The poster surface is a plain, evenly lit blank white rectangle with no artwork. Beside it on the floor sits a small neat stack of three hardcover books in muted earth-tone covers. Soft warm daylight from a window out of frame lights the scene evenly from the front-left, gentle soft shadow beneath the poster where it meets the floor. Portrait orientation, eye-level medium shot, 35mm lens, calm editorial interior design photography mood.",
+    "seed": 680234380,
+    "prediction_id": "j5v53sw435rp20czhamstn2xnr",
+    "output_url": "https://replicate.delivery/xezq/WT8uHfsMMswXX6NvtK3GsmIjBXZJ8hUXLhukq7ZXTfs5Iq7WA/out-0.png",
+    "local_path": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\scratch_mockup_proto\\phase2_raw\\flat_leaning_bookstack.png",
+    "status": "succeeded"
+  },
+  "lifestyle_sage_terracotta": {
+    "tag": "lifestyle",
+    "prompt": "A photorealistic lifestyle interior photograph of a large framed poster print leaning against a dusty sage-green plaster wall, resting on a terracotta tile floor. The frame is a thin light natural wood frame with a wide white matboard border. The print area inside the mat is a plain, evenly lit blank white rectangle with no artwork. The poster is staged large, statement-piece scale, roughly two-thirds the height of the wall visible in frame. Warm late-afternoon sunlight rakes in from the left at a low angle, casting a long soft diagonal shadow across the poster and floor. Beside the poster sits one small ceramic vase holding dried pampas grass. Camera positioned at a gentle 15-degree angle to the wall, medium-close shot, shot on a 35mm lens, shallow depth of field, warm editorial interior photography mood.",
+    "seed": 1241266498,
+    "prediction_id": "0qb73tdfxsrp60czhamsxtsa2r",
+    "output_url": "https://replicate.delivery/xezq/011fO0YTciWzTqk59oA8hKvXKmvEL2cYBzQpD5BG9b0gE1dLA/out-0.png",
+    "local_path": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\scratch_mockup_proto\\phase2_raw\\lifestyle_sage_terracotta.png",
+    "status": "succeeded"
+  },
+  "lifestyle_bedroom_console": {
+    "tag": "lifestyle",
+    "prompt": "A photorealistic lifestyle interior photograph of a framed poster print hanging on a warm cream bedroom wall above a low mid-century wood console table. The frame is a black wood frame with a narrow white mat border. The print area is a plain, evenly lit blank white rectangle with no artwork. The poster is large, statement scale, centered above the console. A small warm-toned ceramic table lamp glows softly on the console below, its light casting a warm gradient up the lower portion of the wall and a soft highlight across the bottom of the poster. Linen bedding is visible at the edge of frame. Evening ambient light, cozy warm color temperature. Camera at a gentle 10-degree angle, medium shot, 50mm lens, shallow depth of field, quiet intimate mood.",
+    "seed": 1040598338,
+    "prediction_id": "mzzc73exjsrp20czhamtsxn3b8",
+    "output_url": "https://replicate.delivery/xezq/TRdM1ffPT2p1QU9prJabxLg1aamp4VC3HqucHhg7DknJJq7WA/out-0.png",
+    "local_path": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\scratch_mockup_proto\\phase2_raw\\lifestyle_bedroom_console.png",
+    "status": "succeeded"
+  },
+  "lifestyle_nook_monstera": {
+    "tag": "lifestyle",
+    "prompt": "A photorealistic lifestyle interior photograph of a framed poster print leaning against a bright white wall in a sunlit reading nook, resting on a light wood floor next to a low stack of hardcover books. The frame is a slim black wood frame with a white mat border. The print area is a plain, evenly lit blank white rectangle with no artwork. The poster is staged large, statement scale. A large monstera leaf enters the frame from the bottom left corner, slightly overlapping the lower edge of the poster. Bright, soft midday daylight from a large window out of frame, crisp gentle shadows. Camera at a gentle 20-degree angle, medium shot, 35mm lens, fresh airy editorial mood.",
+    "seed": 568335492,
+    "prediction_id": "exjbz78995rp20czhanb4d9n5w",
+    "output_url": "https://replicate.delivery/xezq/jpyUbEIfZ2zYCigzIeSQwCZRsgkPP90c0bLq8PJnOrOPJq7WA/out-0.png",
+    "local_path": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\scratch_mockup_proto\\phase2_raw\\lifestyle_nook_monstera.png",
+    "status": "succeeded"
+  }
+}
