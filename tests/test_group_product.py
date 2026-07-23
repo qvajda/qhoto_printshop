@@ -516,6 +516,101 @@ def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
     assert gp_row["etsy_listing_id"] == "DRY_RUN_ETSY_LISTING_ID"
 
 
+def test_patch_etsy_listing_uploads_gallery_images_in_gallery_order(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id)
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
+    )
+    # Deliberately inserted out of gallery_order to prove the SELECT's ORDER BY drives
+    # upload order, not insertion order.
+    conn.execute(
+        "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+        "VALUES (?, 'https://cdn.example.com/second.jpg', 'alt', 1, 'lifestyle')", (group_product_id,),
+    )
+    conn.execute(
+        "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
+        "VALUES (?, '/local/first.jpg', 'alt', 0, 'flat_mockup')", (group_product_id,),
+    )
+    conn.commit()
+
+    listing_text = {
+        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
+        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
+    }
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch("pipeline.gelato_client.get_etsy_listing_id", return_value="etsy-listing-42"), \
+         patch("pipeline.etsy_client.update_listing"), \
+         patch("pipeline.etsy_client.update_listing_inventory"), \
+         patch("pipeline.etsy_client.upload_listing_image") as mock_upload:
+        group_product.patch_etsy_listing(
+            conn, group_product_id, "primary", listing_text, static_config,
+            shop_id="shop1", dry_run=True, now=timestamp,
+        )
+
+    assert mock_upload.call_count == 2
+    first_call, second_call = mock_upload.call_args_list
+    assert first_call.args[:2] == ("shop1", "etsy-listing-42")
+    assert second_call.args[:2] == ("shop1", "etsy-listing-42")
+    assert first_call.kwargs["dry_run"] is True
+    assert second_call.kwargs["dry_run"] is True
+
+
+def test_patch_etsy_listing_uploads_nothing_when_no_gallery_images(tmp_path):
+    # Known Task 3 gap: 5x7/10x24 groups can land with zero product_images rows.
+    # patch_etsy_listing must not error on that - it just uploads nothing and the
+    # rest of the listing/inventory patch still completes.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id)
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+    conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '5x7', 'portrait', 'var1', 19.0, ?)", (group_product_id, timestamp),
+    )
+    conn.commit()
+
+    listing_text = {
+        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
+        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
+    }
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch("pipeline.gelato_client.get_etsy_listing_id", return_value="etsy-listing-42"), \
+         patch("pipeline.etsy_client.update_listing") as mock_update, \
+         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory, \
+         patch("pipeline.etsy_client.upload_listing_image") as mock_upload:
+        listing_id = group_product.patch_etsy_listing(
+            conn, group_product_id, "5x7", listing_text, static_config,
+            shop_id="shop1", dry_run=True, now=timestamp,
+        )
+
+    mock_upload.assert_not_called()
+    mock_update.assert_called_once()
+    mock_inventory.assert_called_once()
+    assert listing_id == "etsy-listing-42"
+    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+    assert gp_row["status"] == "published"
+
+
 # --- B5 pre-create print-DPI guard ---
 
 def _make_image(tmp_path, name, size):

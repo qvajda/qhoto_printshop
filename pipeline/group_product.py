@@ -408,6 +408,20 @@ def patch_etsy_listing(conn, group_product_id: int, group_type: str, listing_tex
         )
         conn.commit()
 
+    image_rows = conn.execute(
+        "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
+        (group_product_id,),
+    ).fetchall()
+    for row in image_rows:
+        url = row["image_url"]
+        image_bytes = b"" if dry_run else (
+            http.fetch_bytes(url) if url.startswith(("http://", "https://")) else Path(url).read_bytes()
+        )
+        etsy_client.upload_listing_image(
+            shop_id, listing_id, image_bytes, api_key=etsy_api_key, api_secret=etsy_api_secret,
+            access_token=etsy_access_token, dry_run=dry_run,
+        )
+
     shipping_profile_id = config.get_shipping_profile_id(static_config, group_type)
     listing_data = {
         "title": listing_text["title"],
