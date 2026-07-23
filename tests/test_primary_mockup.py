@@ -13,17 +13,26 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="generating",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png",
+                       base_image_local_path=None):
     timestamp = "2026-07-09T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at)
-        VALUES (?, ?, 'go', ?, ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url,
+        base_image_local_path, updated_at)
+        VALUES (?, ?, 'go', ?, ?, ?, ?)
         """,
-        (timestamp, niche, status, base_image_url, timestamp),
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
 
 
 def test_build_mockup_title_includes_niche():
@@ -76,7 +85,7 @@ def test_get_or_create_primary_group_returns_existing_row(tmp_path):
 
 def test_create_primary_mockup_creates_group_product_with_8x12_variant(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     static_config = config.load_static_config()
 
     result = primary_mockup.create_primary_mockup(
@@ -176,7 +185,9 @@ def test_run_primary_mockup_cycle_processes_ready_candidates_and_skips_others(tm
 
 def test_run_primary_mockup_cycle_skips_candidates_already_mocked_up(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn, niche="monstera line art", status="generating")
+    candidate_id = _insert_candidate(
+        conn, niche="monstera line art", status="generating", base_image_local_path=_make_master(tmp_path),
+    )
     static_config = config.load_static_config()
 
     # Exercise the real create_or_reuse_group_product (dry-run, since GELATO_LIVE_MODE is unset)

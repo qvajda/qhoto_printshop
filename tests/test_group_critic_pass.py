@@ -35,17 +35,26 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="primary_review",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png",
+                       base_image_local_path=None):
     timestamp = "2026-07-13T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at)
-        VALUES (?, ?, 'go', ?, ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url,
+        base_image_local_path, updated_at)
+        VALUES (?, ?, 'go', ?, ?, ?, ?)
         """,
-        (timestamp, niche, status, base_image_url, timestamp),
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
 
 
 def _insert_group_gallery(conn, candidate_id, group_type, size, *,
@@ -183,6 +192,10 @@ STATIC_CONFIG = {
     },
     "prices_eur": {"5x7": 19},
     "aspect_ratio_groups": {"5x7": ["5x7"], "10x24": ["10x24"]},
+    # No 5x7/10x24 mockup bundles exist yet (Task 2's own contract, GL-6-proper's job) -
+    # empty scene lists here are the normal case, so these tests never need real render
+    # output, only the (unconditional) crop-build step, which does need a real local file.
+    "mockup_templates": {"5x7": {"portrait": [], "landscape": []}, "10x24": {"portrait": [], "landscape": []}},
 }
 
 
@@ -217,7 +230,7 @@ def test_run_group_critic_pass_passes_on_first_attempt(tmp_path):
 
 def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
     _insert_listing_text(conn, candidate_id)
 
@@ -275,7 +288,7 @@ def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
 
 def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
     _insert_group_gallery(conn, candidate_id, "10x24", "10x24", gelato_product_id="gelato_prod_other")
     _insert_listing_text(conn, candidate_id)
@@ -371,7 +384,7 @@ def test_run_group_critic_pass_cycle_skips_groups_already_passed(tmp_path):
 
 def test_run_group_critic_pass_cycle_excludes_abandoned_group_from_rerun(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
     _insert_listing_text(conn, candidate_id)
 

@@ -1,3 +1,4 @@
+import io
 import json
 import random
 import time
@@ -12,6 +13,7 @@ import pipeline.etsy_client as etsy_client
 import pipeline.gelato_client as gelato_client
 import pipeline.http as http
 import pipeline.image_crop as image_crop
+import pipeline.mockup_render as mockup_render
 
 
 class GelatoMockupTimeoutError(Exception):
@@ -80,20 +82,25 @@ def _assert_print_dpi(sizes: list, local_path) -> None:
 _PRINT_CROP_GROUP_TYPES = {"5x7", "10x24"}
 
 
-def _print_crop_image_url(candidate: dict, group_type: str) -> str:
-    """Builds a full-resolution cover-crop of the master for group_type and hosts
-    it at a durable URL Gelato can fetch, so the print itself fills the frame
-    instead of Gelato's own fit/letterbox behavior (the 10x24 white-bar bug)."""
+def _group_print_crop(candidate: dict, group_type: str) -> dict:
+    """Builds a full-resolution cover-crop of the master for group_type and hosts it
+    (persist_group_crop's local archive + optional R2 upload) - so the Gelato print
+    submission fills the frame instead of Gelato's own fit/letterbox behavior (the
+    10x24 white-bar bug), AND (Task 3) so the self-hosted mockup gallery has a local
+    file to render from for this group's own aspect ratio. Returns the full
+    persist_group_crop dict (not just durable_url) so both callers can each take the
+    field they need - built once per create_or_reuse_group_product call, not twice:
+    persist_group_crop's R2 PUT is an unconditional overwrite every call, so a second
+    call with identical bytes would be a wasted duplicate network write."""
     local_path = candidate.get("base_image_local_path")
     if not local_path or not Path(local_path).exists():
         raise PrintResolutionError(
             f"Cannot build a {group_type} print crop: base_image_local_path missing "
             f"or unreadable ({local_path!r}). The master must be archived locally "
-            f"before a real Gelato create for a non-primary group."
+            f"before a real Gelato create or mockup render for a non-primary group."
         )
     cropped_bytes = image_crop.print_crop_bytes(Path(local_path).read_bytes(), group_type)
-    result = artwork_store.persist_group_crop(candidate["id"], group_type, cropped_bytes)
-    return result["durable_url"]
+    return artwork_store.persist_group_crop(candidate["id"], group_type, cropped_bytes)
 
 
 def _jittered(interval: float) -> float:
@@ -160,27 +167,6 @@ def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: s
                 f"pipeline bug."
             )
         sleep_fn(_jittered(poll_interval))
-
-
-def _primary_flat_image_url(conn, group_id: int, *, store_id: str = None, api_key: str = None) -> str | None:
-    row = conn.execute(
-        """
-        SELECT gp.gelato_product_id FROM group_products gp
-        JOIN groups g ON g.id = gp.group_id
-        WHERE g.candidate_id = (SELECT candidate_id FROM groups WHERE id = ?)
-          AND g.group_type = 'primary' AND gp.status IN ('created', 'published')
-        ORDER BY gp.id DESC LIMIT 1
-        """,
-        (group_id,),
-    ).fetchone()
-    if row is None or not row["gelato_product_id"]:
-        return None
-    product = gelato_client.get_product(row["gelato_product_id"], store_id=store_id, api_key=api_key)
-    images = product.get("productImages") or []
-    if not images:
-        return None
-    primary_image = next((img for img in images if img.get("isPrimary")), images[0])
-    return primary_image.get("fileUrl")
 
 
 def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
@@ -284,17 +270,21 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         conn.commit()
 
     try:
+        group_type = config.get_group_type_for_size(static_config, sizes[0])
+        # Built once per call (not per branch below) - see _group_print_crop's
+        # docstring for why a second call would be a wasted duplicate R2 PUT.
+        crop_result = _group_print_crop(candidate, group_type) if group_type in _PRINT_CROP_GROUP_TYPES else None
+
         if reuse_group_product_id is None:
             # Non-primary groups (5x7/10x24) are a genuinely different aspect ratio
             # from the master - Gelato's own template fits/letterboxes rather than
-            # fills, so a real cover-crop must be built and hosted before it's
-            # submitted. Only for a real (non-dry-run) create: dry-run never reads
-            # image_url (create_product_from_template's dry_run branch returns
-            # before the variant loop), so building/hosting a crop for it would be
-            # pure waste on every dev/test run.
+            # fills, so a real cover-crop must be hosted before it's submitted. Only
+            # matters for a real (non-dry-run) create: dry-run never reads image_url
+            # (create_product_from_template's dry_run branch returns before the
+            # variant loop).
             image_url = candidate["base_image_url"]
-            if sizes[0] in _PRINT_CROP_GROUP_TYPES and config.is_live_mode("GELATO"):
-                image_url = _print_crop_image_url(candidate, sizes[0])
+            if crop_result is not None and config.is_live_mode("GELATO"):
+                image_url = crop_result["durable_url"]
 
             response = gelato_client.create_product_from_template(
                 template_id,
@@ -315,39 +305,48 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         else:
             is_dry_run = False
 
-        if is_dry_run:
-            images = [{"fileUrl": response.get("previewUrl") or candidate["base_image_url"], "isPrimary": True}]
-        else:
-            product = poll_until_ready(
+        if not is_dry_run:
+            # Gelato's own gallery is never consumed for the storefront (below) - this
+            # poll still matters because it's the only signal that Gelato's own print
+            # asset actually rehosted and the product is ready to publish/fulfil.
+            poll_until_ready(
                 gelato_product_id, store_id=store_id, api_key=api_key,
                 poll_interval=poll_interval, timeout=poll_timeout,
             )
-            images = product["productImages"]
-            if not images:
-                # ponytail: Gelato never renders a mockup preview for single-variant
-                # products (its primaryPreviewProductVariantKey defaults to a larger
-                # size not present in a 1-variant product, confirmed live 2026-07-17) -
-                # fall back to a flat image so critic review + digest gallery aren't
-                # stuck with 0 images. Prefer the primary group's already-rehosted
-                # Gelato image (re-fetched live, so it's never stale) over the raw
-                # candidate.base_image_url - Replicate's delivery links expire within
-                # a couple hours (confirmed live 2026-07-17), well within the time a
-                # design can sit waiting for admin approval.
-                fallback_url = (
-                    _primary_flat_image_url(conn, group_id, store_id=store_id, api_key=api_key)
-                    or candidate["base_image_url"]
-                )
-                if len(sizes) == 1:
-                    # ponytail: the primary group's preview is composed for its own
-                    # (portrait) aspect ratio - showing it uncropped to a 5x7/10x24
-                    # group's critic review makes any composition look wrong (subject
-                    # crammed in a corner). Gelato itself cover-crops correctly at
-                    # print time for the physical poster; this crop is only to make
-                    # the *review/digest preview* honestly represent that group's
-                    # aspect ratio (spec: "their own cover-crop... a real crop that
-                    # fills the frame").
-                    fallback_url = image_crop.crop_for_group(fallback_url, sizes[0], group_product_id)
-                images = [{"fileUrl": fallback_url, "isPrimary": True}]
+
+        # --- self-hosted mockup gallery (GL-5 task 3) ---
+        # The storefront gallery is rendered locally, never sourced from Gelato's
+        # product images - no fallback to a Gelato/base image if this fails; any
+        # failure here is a real mockup_failed, same as a DPI or Gelato-create error.
+        scene_ids = config.get_mockup_templates(static_config, group_type, orientation)
+        images = []
+        if scene_ids:
+            if group_type == "primary":
+                # Primary is close enough to the master's own ratio that CLAUDE.md
+                # already treats it as "a small crop, not a re-composition" - render
+                # straight from the archived master, no crop step.
+                render_source_path = candidate.get("base_image_local_path")
+                if not render_source_path or not Path(render_source_path).exists():
+                    raise PrintResolutionError(
+                        f"Cannot render mockups: base_image_local_path missing or "
+                        f"unreadable ({render_source_path!r}). The master must be "
+                        f"archived locally before mockups can be composited."
+                    )
+            else:
+                render_source_path = crop_result["local_path"]
+
+            art = Image.open(render_source_path).convert("RGB")
+            for index, scene_id in enumerate(scene_ids):
+                bundle = mockup_render.load_bundle(config.mockup_bundle_dir(group_type, orientation, scene_id))
+                rendered = mockup_render.render_scene(art, bundle)
+                buf = io.BytesIO()
+                rendered.save(buf, format="PNG")
+                persisted = artwork_store.persist_mockup_render(group_product_id, index, buf.getvalue())
+                image_type = "flat_mockup" if bundle.tag == "flat" else "lifestyle"
+                images.append({"fileUrl": persisted["durable_url"], "image_type": image_type})
+        # else: no bundles authored yet for this group_type/orientation (5x7, 10x24,
+        # primary/landscape today) - a valid, expected zero-image gallery, not an
+        # error (Task 2's contract; see docs/superpowers/sdd/gl5-task-3-brief.md).
     except Exception:
         conn.execute(
             "UPDATE group_products SET status = 'mockup_failed', updated_at = ? WHERE id = ?",
@@ -356,16 +355,16 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         conn.commit()
         raise
 
-    # Idempotent on reuse: a re-polled (previously timed-out) product may already have
-    # a partial gallery from an earlier attempt - clear it before reinserting.
+    # Idempotent on reuse: a re-polled (previously timed-out) product, or a retried
+    # render, may already have a partial gallery from an earlier attempt - clear it
+    # before reinserting. scene_ids order is already render/rank order (flat scenes
+    # first per Task 2's config), so gallery_order is just the loop index.
     conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
-    ordered_images = sorted(images, key=lambda img: not img.get("isPrimary"))
-    for order, image in enumerate(ordered_images):
-        image_type = "flat_mockup" if image.get("isPrimary") else "lifestyle"
+    for order, image in enumerate(images):
         conn.execute(
             "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
             "VALUES (?, ?, '', ?, ?)",
-            (group_product_id, image.get("fileUrl"), order, image_type),
+            (group_product_id, image["fileUrl"], order, image["image_type"]),
         )
 
     conn.execute(

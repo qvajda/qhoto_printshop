@@ -75,6 +75,16 @@ def persist_group_crop(candidate_id: int, group_type: str, raw_bytes: bytes) -> 
     return _persist_artifact(filename, f"base/{filename}", raw_bytes)
 
 
+def persist_mockup_render(group_product_id: int, index: int, raw_bytes: bytes) -> dict:
+    """Archives one self-hosted mockup-render composite (GL-5 task 3), same
+    idempotency semantics as persist_group_crop. Keyed by group_product_id + its
+    scene index (not candidate_id) so a re-render on retry overwrites the same
+    slot instead of accumulating orphan files - mirrors the existing idempotency
+    comment in group_product.py about clearing product_images before reinserting."""
+    filename = f"{group_product_id}_mockup_{index}.png"
+    return _persist_artifact(filename, f"base/{filename}", raw_bytes)
+
+
 def _r2_config() -> dict | None:
     """All-or-nothing R2 env var gate (see config.is_r2_configured). Absence
     means "R2 not configured", not an error, so this returns None rather

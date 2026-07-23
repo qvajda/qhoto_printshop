@@ -13,17 +13,26 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="completed",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png",
+                       base_image_local_path=None):
     timestamp = "2026-07-09T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at)
-        VALUES (?, ?, 'go', ?, ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url,
+        base_image_local_path, updated_at)
+        VALUES (?, ?, 'go', ?, ?, ?, ?)
         """,
-        (timestamp, niche, status, base_image_url, timestamp),
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
 
 
 def _insert_primary_group(conn, candidate_id, *, status="approved_published"):
@@ -85,7 +94,7 @@ def test_get_or_create_group_keeps_5x7_and_10x24_separate(tmp_path):
 
 def test_create_group_mockup_creates_group_product_with_group_variant(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     static_config = config.load_static_config()
 
@@ -166,7 +175,7 @@ def test_create_group_mockup_caps_title_at_140_chars(tmp_path):
 
 def test_create_group_mockup_skips_when_already_created(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     static_config = config.load_static_config()
 
@@ -276,7 +285,7 @@ def test_create_group_mockup_propagates_after_second_failure(tmp_path):
 
 def test_run_group_mockup_cycle_processes_both_group_types_for_ready_candidate(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn, niche="monstera line art")
+    candidate_id = _insert_candidate(conn, niche="monstera line art", base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     static_config = config.load_static_config()
 
@@ -304,7 +313,7 @@ def test_run_group_mockup_cycle_skips_candidates_without_published_primary(tmp_p
 
 def test_run_group_mockup_cycle_skips_group_types_already_created(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     static_config = config.load_static_config()
 
@@ -348,7 +357,7 @@ def test_run_group_mockup_cycle_isolates_per_group_type_failures(tmp_path):
 
 def test_run_group_mockup_cycle_does_not_resurrect_abandoned_group(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     group_mockup.get_or_create_group(conn, candidate_id, "5x7", now=datetime(2026, 7, 12, 18, 0, 0))
     conn.execute(

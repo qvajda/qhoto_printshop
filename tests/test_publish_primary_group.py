@@ -75,17 +75,26 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="primary_review",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png",
+                       base_image_local_path=None):
     timestamp = "2026-07-12T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at)
-        VALUES (?, ?, 'go', ?, ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url,
+        base_image_local_path, updated_at)
+        VALUES (?, ?, 'go', ?, ?, ?, ?)
         """,
-        (timestamp, niche, status, base_image_url, timestamp),
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
 
 
 def _insert_primary_group(conn, candidate_id, *, status="pending_review"):
@@ -263,7 +272,7 @@ def test_publish_primary_group_creates_one_listing_for_all_four_sizes(tmp_path, 
     # would just be the "DRY_RUN_ETSY_LISTING_ID" placeholder and the mock below would go unused.
     monkeypatch.setenv("GELATO_LIVE_MODE", "true")
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="pending_review")
     _insert_listing_text(conn, candidate_id)
     static_config = config.load_static_config()
@@ -328,7 +337,7 @@ def test_publish_primary_group_reuses_existing_live_group_product_on_reentry(tmp
 
 def test_publish_primary_group_retries_once_then_succeeds(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="pending_review")
     _insert_listing_text(conn, candidate_id)
     static_config = config.load_static_config()
