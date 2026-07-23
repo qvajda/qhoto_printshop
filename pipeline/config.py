@@ -72,6 +72,22 @@ def get_shipping_profile_id(static_config: dict, group_type: str) -> str:
     return profile_id
 
 
+def get_mockup_templates(static_config: dict, group_type: str, orientation: str) -> list[str]:
+    """Ordered scene IDs for (group_type, orientation). Resolved once from
+    static config; never discovered at runtime (same rule as the Gelato
+    template IDs)."""
+    return static_config["mockup_templates"][group_type][orientation]
+
+
+def mockup_bundle_dir(group_type: str, orientation: str, scene_id: str) -> Path:
+    """assets/mockups/<group_type>/<orientation>/<scene_id>/ — may not exist on
+    disk (the placeholder case); callers pass this straight to
+    mockup_render.load_bundle, which raises MockupRenderError if it's
+    incomplete/missing. Do not check existence here — that check belongs to
+    load_bundle (fail loud), not this resolver."""
+    return REPO_ROOT / "assets" / "mockups" / group_type / orientation / scene_id
+
+
 def is_live_mode(service: str) -> bool:
     return os.environ.get(f"{service}_LIVE_MODE", "").strip().lower() == "true"
 
