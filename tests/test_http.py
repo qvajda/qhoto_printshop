@@ -209,6 +209,50 @@ def test_404_retried_exactly_once_then_raises():
     assert len(slept) == 1  # bounded to a single retry, not the full transient table
 
 
+def test_post_5xx_is_not_blind_retried():
+    slept = []
+    request = urllib.request.Request("https://api.gelato.com/x", data=b"payload", method="POST")
+    with patch.object(http._client, "request", return_value=_resp(502, b"bad gateway")):
+        with pytest.raises(http.HTTPError) as exc_info:
+            http.send(request, sleep_fn=slept.append)
+
+    assert exc_info.value.status_code == 502
+    assert slept == []
+
+
+def test_post_connect_error_is_not_blind_retried():
+    slept = []
+    request = urllib.request.Request("https://api.gelato.com/x", data=b"payload", method="POST")
+    with patch.object(http._client, "request", side_effect=httpx.ConnectError("boom")):
+        with pytest.raises(httpx.ConnectError):
+            http.send(request, sleep_fn=slept.append)
+
+    assert slept == []
+
+
+def test_patch_429_is_not_blind_retried():
+    slept = []
+    request = urllib.request.Request("https://api.etsy.com/x", data=b"payload", method="PATCH")
+    with patch.object(http._client, "request", return_value=_resp(429, b"slow down")):
+        with pytest.raises(http.HTTPError) as exc_info:
+            http.send(request, sleep_fn=slept.append)
+
+    assert exc_info.value.status_code == 429
+    assert slept == []
+
+
+def test_put_5xx_is_blind_retried():
+    slept = []
+    request = urllib.request.Request("https://r2.example.com/x", data=b"payload", method="PUT")
+    with patch.object(
+        http._client, "request",
+        side_effect=[_resp(502, b"bad gateway"), _resp(200, b"")],
+    ):
+        http.send(request, sleep_fn=slept.append)
+
+    assert len(slept) == 1
+
+
 def test_404_recovers_on_the_single_retry():
     slept = []
     request = urllib.request.Request("https://api.replicate.com/x")

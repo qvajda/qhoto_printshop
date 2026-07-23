@@ -35,6 +35,17 @@ _BOUNDED_RETRY_STATUS_CODES = (400, 404, 422)
 
 _TRANSIENT_CONNECTION_ERRORS = (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError)
 
+# The transient-fault retries above are only safe to apply blind, inside http.py,
+# for methods where re-sending an identical request can't create a second
+# server-side effect: GET/HEAD (no side effect) and PUT (full-replace, same body
+# same result). POST (Replicate predict, Gelato create-from-template, Anthropic
+# completion) and PATCH (Etsy updateListing) mutate/create state on each call -
+# retrying those here risks a duplicate paid prediction or a duplicate Gelato
+# product before the caller's own idempotent wrapper (create_or_reuse_group_product
+# etc) ever sees a response. Those methods still get the pre-existing CF-1010
+# handling below (unchanged), just not the new general-transient retry.
+_BLIND_RETRY_SAFE_METHODS = {"GET", "HEAD", "PUT"}
+
 
 def _jittered(interval: float) -> float:
     # +-20% jitter, same convention as group_product._jittered - desynchronizes
@@ -81,13 +92,14 @@ def _request(method: str, url: str, *, headers=None, content=None, timeout: int 
              sleep_fn=time.sleep) -> httpx.Response:
     cf_1010_waits = iter(_CF_1010_BACKOFFS)
     transient_waits = iter(_TRANSIENT_BACKOFFS)
+    blind_retry_safe = method in _BLIND_RETRY_SAFE_METHODS
     bounded_retry_available = True
 
     while True:
         try:
             response = _client.request(method, url, headers=headers, content=content, timeout=timeout)
         except _TRANSIENT_CONNECTION_ERRORS as exc:
-            wait = next(transient_waits, None)
+            wait = next(transient_waits, None) if blind_retry_safe else None
             if wait is None:
                 raise
             logger.warning(
@@ -112,6 +124,9 @@ def _request(method: str, url: str, *, headers=None, content=None, timeout: int 
                     logger.warning("Cloudflare 1010 block; backing off %ss before retry", wait)
                     sleep_fn(wait)
                     continue
+            raise HTTPError(status, body, response.headers)
+
+        if not blind_retry_safe:
             raise HTTPError(status, body, response.headers)
 
         if status == 429:
