@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 import statistics
 
@@ -9,9 +10,27 @@ import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
 import pipeline.gelato_client as gelato_client
 import pipeline.generate as generate
+import pipeline.http as http
 import pipeline.primary_mockup as primary_mockup
+import pipeline.replicate_client as replicate_client
 import pipeline.research as research
 
+# GL-16: a vendor blip during the post-reject regen burst (generate ->
+# primary_mockup -> compliance_draft) is not a verdict on the art and must not
+# burn the 3-attempt abandon budget - see docs/2026-07-22-resilience-design.md
+# section 3. http.HTTPError covers a fault http.py's own backoff already
+# exhausted (or a method it doesn't blind-retry, e.g. the Replicate POST);
+# the raw httpx exceptions cover a connection fault on those non-retried
+# methods; ReplicateThrottledError is the typed 429 raised above the http.py
+# layer. Deliberately NOT catching generic Exception here - a real code/data
+# defect (malformed JSON, DB constraint) still abandons, only vendor/network
+# faults get the resumable treatment.
+TRANSIENT_REGEN_EXC_TYPES = (
+    http.HTTPError, replicate_client.ReplicateThrottledError,
+) + http._TRANSIENT_CONNECTION_ERRORS
+
+
+logger = logging.getLogger(__name__)
 
 CRITERION_KEYS = tuple(f"criterion_{i}" for i in range(1, 8))
 VALID_OVERALLS = ("good", "refine", "reject")
@@ -512,6 +531,20 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                 conn, candidate_id, static_config=static_config,
                 anthropic_api_key=anthropic_api_key, now=now,
             )
+        except TRANSIENT_REGEN_EXC_TYPES as exc:
+            # A vendor/network blip mid-regen, not a verdict on the art (GL-16). No new
+            # critic_pass_attempts row was written for this failed regen and attempt_number
+            # doesn't advance, so candidates.status stays 'generating' exactly as it was -
+            # the next run_critic_pass_cycle sweep re-enters this candidate and retries the
+            # SAME attempt instead of the abandon budget being spent on a network fault.
+            logger.warning(
+                "transient fault during critic-pass regen for candidate %s (attempt %s): %s",
+                candidate_id, attempt_number, exc,
+            )
+            return {
+                "candidate_id": candidate_id, "passed": False,
+                "attempts": attempt_number, "transient": True,
+            }
         except Exception as exc:
             # A crash here (e.g. Claude returning malformed JSON) would otherwise leave the
             # candidate in whatever terminal status that stage set (e.g. compliance_failed)
