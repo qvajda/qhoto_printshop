@@ -122,15 +122,19 @@ calls only the owner can make, per CLAUDE.md §2/§4)*.
 | ID | Type | Item | Input → Output |
 |---|---|---|---|
 | GL-1 | C | ~~Merge `fix/generation-quality-round3` → `master`~~ **✅ DONE 2026-07-22** — PR completed on remote, local caught up with master | — |
-| GL-2 | D | Custom mockups before launch vs. v1.1 — **DECISION DEFERRED (2026-07-22):** build a fast mockup-creation prototype first; decide after seeing it. If the prototype clearly overhauls product quality, mockups move ahead of launch; else fast-follow. → drives GL-4/6 to run *before* the go/no-go | prototype (GL-6) → the decision |
+| GL-2 | D | Custom mockups before launch — **✅ RESOLVED 2026-07-22 (post-prototype): GO pre-launch, scoped to near-frontal scenes.** Even flawed composites clear the Gelato bar easily; the scenes themselves are high quality (owner: 4/5 samples strong). **Angled/leaning scenes → v1.1 fast-follow** (needs better corner-detection or the Dynamic Mockups escape hatch, Addendum §7). The compositor — not the scenes — is the risk (see GL-4). | — |
 | GL-3 | D | Cron deployment target — **PRELIMINARY DECISION (2026-07-22): host locally on desktop for now.** Still run GL-8 to confirm/refine (reliability of a desktop always-on host, wake/sleep, vs. a cheap always-on option) | GL-8 findings → confirm or revise |
-| GL-4 | IR | Compositor design spike — nail Pillow+homography warp, overlay baking, aperture format, fixture tests (Addendum §5/§6 already decides the *what*; this de-risks the *how*) | briefing prompt → `mockup_render` impl plan + code-session prompt |
-| GL-5 | C | Build `pipeline/mockup_render.py` + `mockup_templates` config + rewire `primary_mockup`/`group_mockup` + Etsy upload order (Addendum A) | GL-4 plan → PR |
-| GL-6 | IR+M | Scene-authoring: **prototype first** (the GL-2 decision gate) — kickoff written: `docs/2026-07-22-gl6-mockup-prototype-kickoff.md` (one ISO-portrait set + throwaway composite vs. Gelato baseline → GL-2 call). Then, only if GL-2=go, author the real library (~10/set × 3 sets × 2 orientations) | kickoff prompt → composited comparison + GL-2 recommendation; then the finished `assets/mockups/…` bundles |
+| GL-4 | R→IR | **Compositor approach research — REPRIORITIZED to the critical mockup risk (2026-07-22).** The prototype's throwaway compositor performed poorly on *every* axis (corner/edge detection, blank-canvas fill, self-artefact cleanup, partial foreground occlusion). Owner's steer: **find an existing library / OSS project** for poster-into-scene compositing (perspective warp + shadow/occlusion + robust aperture detection) rather than hand-roll Pillow+homography from scratch. Evaluate build-on-a-lib vs. **Dynamic Mockups** hosted API (Addendum §7 escape hatch) vs. thin homography. | briefing → library/approach recommendation + `mockup_render` impl plan |
+| GL-5 | C | Build `pipeline/mockup_render.py` + `mockup_templates` config + rewire `primary_mockup`/`group_mockup` + Etsy upload order (Addendum A), on GL-4's chosen library. **v1.0 scope = near-frontal scenes only** (what the compositor handles reliably); angled-scene corner-detection is v1.1. | GL-4 recommendation → PR |
+| GL-6 | IR+M | Scene-authoring — **prototype ✅ DONE 2026-07-22** (kickoff `docs/2026-07-22-gl6-mockup-prototype-kickoff.md`; scenes high quality, GL-2 = go). **Remaining: author the real library**, scoped near-frontal for v1.0 (defer heavily-angled lifestyle scenes to v1.1). Watch the 3-flat/7-lifestyle split — many lifestyle scenes are angled, so the v1.0 set may skew more frontal until GL-5's corner-detection improves (open question, flag in authoring). | → the finished near-frontal `assets/mockups/…` bundles |
 | GL-7 | C | Cron orchestrator: two scheduled cadences (hourly Telegram poll, twice-daily batch) wiring the existing stages; one function per stage, not one loop | GL-3 decision + kickoff → PR |
 | GL-8 | R | Where to host the scheduled functions (tool-fit: Cowork scheduled task vs. Claude Code cron vs. a real host — Fly/Render/Cloudflare/GitHub Actions), given cost, reliability, and the persistent-process ban | briefing → hosting recommendation w/ named option |
-| GL-9 | T | **Round 1 live re-test (pre-mockup)** — v4.11 publish path + the mockup-*independent* un-exercised M1 scenarios (Kill; 3-attempt critic fail + `DELETE` cleanup; full group flow approve *and* reject; allowlist rejection). **Launch guide written: `docs/2026-07-22-v411-live-test-launch-guide.md`.** Run **now**, ahead of the mockup change, for a clean isolated signal on the riskiest unproven code. | launch guide → pass/fail + feedback |
-| GL-13 | T | **Round 2 live re-test (post-mockup)** — the mockup-*dependent* slice that Addendum A rewrites: custom gallery uploaded via `uploadListingImage` in rank order (3 flat + 7 lifestyle), critic pass over the *custom* scenes, `mockup_failed` → retry path (no Gelato fallback), and the scene-ID placeholder fail-loud guard. Narrower than Round 1 — the publish/decision/cleanup mechanics are already proven, so this only re-checks what the compositor touches. | delta launch guide (extends GL-9's) → pass/fail |
+| GL-9 | T | **Round 1 live re-test — ✅ PASS/GO 2026-07-22, with residuals.** Proven live: S0 clean; S1 allowlist (synthetic non-admin callback discarded+logged); S2 Kill/hold (0 Replicate calls); S3 happy path end-to-end (after 2 retries) — primary published (4 variants, exact spec prices, all Etsy fields), 5x7 published (Small shipping, €19), 10x24 critic-rejected 3× + cleanly `DELETE`d (**proved S4 group-level for free**; dedicated S4 skipped by owner). 4 real Etsy drafts live, match DB, no orphans. **Residuals spun out → GL-15/16/17.** Guide: `docs/2026-07-22-v411-live-test-launch-guide.md`. | — |
+| GL-13 | T | **Round 2 live re-test (post-mockup)** — the mockup-*dependent* slice that Addendum A rewrites: custom gallery uploaded via `uploadListingImage` in rank order, critic pass over the *custom* scenes, `mockup_failed` → retry path (no Gelato fallback), and the scene-ID placeholder fail-loud guard. Narrower than Round 1. **Fold in GL-14's real-crop check** (confirm the cover-cropped image actually reaches Gelato, no white bars). | delta launch guide → pass/fail |
+| GL-14 | C | **Fix: group crop never sent to Gelato (found live, GL-9).** `group_product.py` sends only the Telegram-preview thumbnail cropped — Gelato gets an un-cropped image, reproducing the historical 10x24 white-bar defect. Blocker before 5x7/10x24 sell at real print. Writeup + fix shape: `docs/2026-07-22-group-crop-not-sent-to-gelato-bug.md`. | writeup → fix + commit |
+| GL-15 | C | **Etsy OAuth auto-refresh in the pipeline (found live, GL-9).** Token expired mid-round; no in-pipeline refresh (`refresh_etsy_token.py` is a manual standalone). **Hard blocker before cron/unattended** — an expired token can't be hand-fixed at 2am. Wire refresh into the Etsy call path. | → refresh integrated + tested |
+| GL-16 | IR→C | **Unattended-resilience hardening (found live, GL-9).** Live run showed material API flakiness — notably **retries failing fast right after a reject gate is hit** — and needed coding-session babysitting (e.g. hand-fixing a candidate's DB status after a failure). Unattended cron has no such support. Investigate the post-reject flakiness; add **retry-with-backoff + delay**, and **idempotent/self-healing state transitions** so a mid-run failure never strands a candidate. **Hard blocker before cron.** | briefing → resilience design → PR |
+| GL-17 | T | **Residual live-scenario coverage (from GL-9).** The actual Telegram **Reject button** (human reject, vs. the auto critic-reject already proven) was never tapped; sweep any other un-hit interactions. Small targeted run — fold into GL-13 or the next live touch. | mini launch-guide → pass/fail |
 | GL-10 | M | Etsy storefront overhaul — banner, sections, About, shop policies, SEO copy (Fable-assisted, owner-driven; one-way-valve safe: built from owner's framing + public sources) | how-to/checklist → live storefront updated |
 | GL-11 | M | Revert Etsy Developer Mode (email developer@etsy.com; budget lead time) — sequence before public launch | how-to → Dev Mode off, confirmed |
 | GL-12 | M | Apply for Google Trends API alpha access (zero cost, parallel) | how-to → application submitted |
@@ -154,42 +158,47 @@ calls only the owner can make, per CLAUDE.md §2/§4)*.
 Critical path to a public launch. Sessions are sized to roughly one sitting
 each; parallelizable tracks noted.
 
-**Session 1 — mainline hygiene (C). ✅ DONE 2026-07-22.** GL-1 merged
-round-3 → master; local caught up.
+**✅ Done 2026-07-22:** Session 1 (GL-1 merge), Round 1 live test (GL-9
+PASS/GO), mockup prototype + GL-2 decision (go, near-frontal). The `max_tokens`
+1024→2048 truncation bug found in GL-9 is **already fixed & committed to
+master** (compliance_draft.py + critic_pass.py).
 
-**Session 2 — Round 1 live test (T), NOW.** GL-9 per
-`docs/2026-07-22-v411-live-test-launch-guide.md`: proves the v4.11 publish
-rework + Kill / 3-attempt-fail+DELETE / group approve+reject / allowlist live,
-*before* mockups. Deliberately sequenced ahead of Track A so the mockup change
-lands as a small delta on a known-good base rather than two unproven things
-stacked. A clean pass here retires the largest risk on the critical path.
+**Session 3 — live-findings fix cluster (C), do soon.** The three items GL-9
+surfaced. GL-14 (group crop actually sent to Gelato) can pair with GL-15 (Etsy
+auto-refresh) in one small branch. **GL-16 (resilience) is bigger — likely its
+own IR→C branch**, and is the real long pole for going *unattended*.
 
-**Track A — mockups (prototype-gated, GL-2 decision deferred):**
-- **Session 3a (IR→M):** GL-6 fast scene-authoring prototype (the thing the
-  GL-2 decision waits on) — if it clearly overhauls product quality, mockups
-  go pre-launch; else fast-follow to v1.1.
-- **Session 3b (IR):** GL-4 compositor spike → `mockup_render` impl plan.
-- **Session 3c (C, PR):** GL-5 build compositor + rewire the two mockup stages.
+**Track A — mockups (GL-2 = go, near-frontal for v1.0):**
+- **Session 4a (R→IR):** GL-4 compositor-approach research — **now the critical
+  mockup unknown** (the throwaway compositor failed on every axis). Find an
+  existing library / OSS, or commit to Dynamic Mockups (Addendum §7). Output a
+  recommendation + impl plan before any build.
+- **Session 4b (C, PR):** GL-5 build `mockup_render` on the chosen library,
+  near-frontal scope; rewire the two mockup stages + Etsy upload order.
+- **Session 4c (M):** GL-6 author the real near-frontal scene library (scenes
+  themselves are already proven high-quality).
 
-**Track B — automation (parallel):**
-- **Session 4 (R):** GL-8 confirm/refine the *local-desktop* host choice
-  (GL-3 preliminary) — reliability, always-on/sleep behaviour, cheap
-  always-on alternatives.
-- **Session 5 (C, PR):** GL-7 build the two-cadence orchestrator for the
-  chosen host.
+**Track B — automation (parallel, but gated):**
+- **Session 5 (R):** GL-8 confirm/refine the *local-desktop* host choice (GL-3).
+- **Session 6 (C, PR):** GL-7 two-cadence orchestrator — **blocked by GL-15 +
+  GL-16.** Do not switch to unattended cron until token auto-refresh and
+  resilience hardening land, or the first overnight run strands on a flaky call
+  or an expired token with no one to fix it.
 
 **Track C — manual, parallel, owner-driven:** GL-10 storefront overhaul,
 GL-12 Google Trends application now; **GL-11 Dev-Mode revert request** as soon
 as a launch date is roughly known (external lead time).
 
-**Session 6 — Round 2 live test (T), only if mockups ship pre-launch.** GL-13:
-the narrow mockup-dependent re-test (custom gallery upload/order, critic over
-custom scenes, `mockup_failed` retry, placeholder fail-loud). Skipped/deferred
-if GL-2 lands on fast-follow.
+**Session 7 — Round 2 + residuals live test (T).** GL-13 (mockup-dependent
+slice) **+ GL-14's real-crop confirmation + GL-17 (human Reject button** and any
+un-hit interactions). One live pass covering everything the fix cluster and
+mockups touched.
 
-**Go-live gate:** Round 1 (GL-9) clean **+** cron runnable (GL-7) **+**
-storefront done (GL-10) **+** (if mockups pre-launch) Round 2 (GL-13) clean
-**+** Etsy Developer Mode reverted (GL-11).
+**Go-live gate:** GL-9 ✅ **+** live-fix cluster landed (GL-14 crop, GL-15
+token, GL-16 resilience) **+** mockups shipped near-frontal (GL-4→GL-5→GL-6)
+**+** cron runnable & unattended-safe (GL-7, gated on GL-15/16) **+** storefront
+(GL-10) **+** Round 2 + residuals clean (GL-13/14/17) **+** Etsy Developer Mode
+reverted (GL-11).
 
 ### Tool-fit flags (CLAUDE.md §7)
 
@@ -202,3 +211,35 @@ storefront done (GL-10) **+** (if mockups pre-launch) Round 2 (GL-13) clean
   scene-authoring, storefront, and Notion work.
 - **Post-launch cost/sales view → a Cowork live artifact** is a natural fit
   (re-openable, pulls fresh connector data) — flagged for that backlog item.
+
+---
+
+## Part 4 — Coding-session feedback log (2026-07-22)
+
+Raw outcomes of the first two sessions, for traceability; actions are folded
+into Part 2/3 above.
+
+**Session A — mockup prototype (GL-6 prototype).**
+- Session verdict: go pre-launch, scoped near-frontal; angled → v1.1 (better
+  GL-5 corner-detection, or Dynamic Mockups escape hatch).
+- Owner read: **scenes are high-quality (4/5 samples)** — full library likely
+  smooth. **The throwaway compositor is the weak link** — poor on corner/edge
+  detection, blank-canvas fill, self-artefact cleanup, and partial foreground
+  occlusion. → **GL-4 reprioritized to library-first research**; GL-5 v1.0 =
+  near-frontal only.
+
+**Session B — v4.11 Round 1 live test (GL-9).**
+- Verdict **GO**. S1 allowlist ✅, S2 Kill/hold ✅ (0 Replicate), S3 happy path
+  ✅ (after 2 retries) — primary (4 variants, exact prices, all fields), 5x7
+  (Small, €19), 10x24 critic-rejected 3× + clean `DELETE` (**S4 group-level
+  proven for free**). 4 Etsy drafts live, match DB, no orphans.
+- Bug **fixed on master:** `max_tokens` 1024→2048 (compliance_draft.py,
+  critic_pass.py) — richer prompts were truncated.
+- Bug **found, deferred → GL-14:** group cover-crop never sent to Gelato (only
+  the Telegram preview is cropped) → 10x24 white-bar risk.
+- Worked around → new items: **Etsy token expired mid-round (→ GL-15)**;
+  branch mix-up fixed via cherry-pick, no data lost.
+- Owner read: **not all scenarios hit** — human Telegram **Reject button**
+  untapped (→ GL-17); and **material API flakiness** (esp. fast retry-failures
+  right after a reject gate) means unattended running needs **retry/backoff +
+  self-healing state** before cron (→ GL-16).
