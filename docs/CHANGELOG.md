@@ -452,3 +452,67 @@ changed. Full artifact: `docs/2026-07-20-s4a-failure-taxonomy.md`.
   supporting evidence in this set — hold until live telemetry; three-tier
   verdicts (good/refine/reject) recommended for S4-d-1's per-criterion
   schema; §1 scorecard frozen as the regression baseline for S4-b/c.
+
+---
+
+# Changelog — GL-5 self-hosted mockup compositor shipped, 2026-07-23
+
+**Cause:** implementation of `docs/2026-07-22-gl5-compositor-implementation-plan.md`
+against the design in `docs/SPEC_v4.10_addendum_custom_mockups.md` (now
+**implemented**, branch `feat/gl5-mockup-compositor`, not yet merged to
+master) — replaces Gelato's own gallery images with a self-hosted,
+deterministic compositor so the storefront gallery is a fixed, on-brand
+scene set instead of whatever Gelato happens to render.
+
+- **New `pipeline/mockup_render.py`:** pure, offline, deterministic
+  compositor (`SceneBundle`, `load_bundle`, `render_scene`, `render_scenes`,
+  `MockupRenderError`) using OpenCV (`opencv-python-headless` + `numpy`,
+  newly added to `requirements.txt`). Supersampled homography warp with
+  anti-aliased alpha, ~1.8% over-fill into the aperture quad so art bleeds
+  under the frame edge with no visible seam. Aperture corners are read from
+  each scene's `meta.json` — no runtime aperture detection.
+- **Real scene assets** brought onto the branch from
+  `proto/mockup-scene-prototype`: 4 primary/portrait bundles
+  (`flat_clips_windowlight`, `flat_leaning_bookstack`,
+  `lifestyle_sage_terracotta`, `lifestyle_bedroom_console`) under
+  `assets/mockups/primary/portrait/`. `5x7`, `10x24`, and `primary/landscape`
+  have no bundles yet — their `mockup_templates` entries are empty lists.
+- **New config:** `config/static_config.json` gained `mockup_templates`
+  (keyed `group_type` → `orientation` → ordered scene-ID list);
+  `pipeline/config.py` gained `get_mockup_templates()` and
+  `mockup_bundle_dir()`.
+- **`pipeline/group_product.py::create_or_reuse_group_product`** (shared by
+  stage 3 `primary_mockup.py` and stage 8 `group_mockup.py`) no longer
+  consumes Gelato's own gallery for the storefront — it renders the
+  approved artwork through the compositor and writes those images to
+  `product_images` instead. Gelato's create-from-template + readiness poll
+  still run unchanged (needed for fulfilment), but the returned gallery is
+  discarded. Render failure raises and the group lands on
+  `status='mockup_failed'` — the old Gelato-image fallback was deleted, not
+  bypassed; there is no fallback path anymore.
+- **`pipeline/group_product.py::patch_etsy_listing`** (shared by stage 7
+  `publish_primary_group.py` and stage 11 `publish_group.py`) now uploads
+  the stored mockup images to the Etsy listing via the previously-unused
+  `etsy_client.upload_listing_image`, in `gallery_order` (flat scenes
+  first).
+- **`pipeline/artwork_store.py`** gained `persist_mockup_render()`,
+  mirroring the existing `persist_group_crop()` shape (local archive +
+  optional R2 upload, idempotent).
+- **Known gaps, documented not fixed:**
+  - 5x7/10x24 groups currently render **zero** storefront images (no scene
+    bundles authored yet for those group/orientation pairs) — explicitly
+    scoped to GL-6-proper, not a regression here.
+  - **Content-type mismatch risk on live Etsy upload:** rendered mockups
+    are PNG (`persist_mockup_render` writes `.png`), but
+    `etsy_client.upload_listing_image` hardcodes `Content-Type: image/jpeg`
+    + `filename="image.jpg"` in its multipart body. That function was
+    previously dead code; this build is what first makes it receive real
+    PNG bytes. Whether Etsy's real API accepts this is unverified — needs
+    checking before any live upload.
+  - **Landscape orientation** is plumbed in config but has no real scene
+    bundles and no caller currently passes `orientation="landscape"` — a
+    pre-existing gap, not newly introduced or closed by this build.
+  - **Gelato's "mockups ready" poll** (`poll_until_ready` in
+    `group_product.py`) is deliberately left unchanged — the Addendum flags
+    relaxing it (since Gelato's own images are no longer needed) as a
+    separate, verify-first follow-up, not part of this build.
