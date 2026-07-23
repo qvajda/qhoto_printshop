@@ -89,8 +89,8 @@ def upload_listing_image(
     boundary = uuid.uuid4().hex
     body = (
         f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="image"; filename="image.jpg"\r\n'
-        f"Content-Type: image/jpeg\r\n\r\n"
+        f'Content-Disposition: form-data; name="image"; filename="image.png"\r\n'
+        f"Content-Type: image/png\r\n\r\n"
     ).encode("utf-8") + image_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
 
     def _build(token):
