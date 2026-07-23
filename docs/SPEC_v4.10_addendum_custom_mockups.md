@@ -1,8 +1,10 @@
 # SPEC v4.10 — Addendum A: Custom mockup pipeline
 
-Status: **proposed, needs sign-off** (touches Etsy via API + >30 min work →
+Status: **implemented** (branch `feat/gl5-mockup-compositor`, not yet merged
+— see `docs/CHANGELOG.md` for the shipped-scope summary and known gaps).
+Originally: proposed, needs sign-off (touches Etsy via API + >30 min work →
 PRD threshold per CLAUDE.md §2). Fold into the next SPEC minor bump once
-approved; log the decision in `docs/CHANGELOG.md`.
+merged; log the decision in `docs/CHANGELOG.md`.
 
 Supersedes the mockup-source behaviour in SPEC v4.10 §3 step 3 (primary
 mockup) and the equivalent in `group_mockup` (stage 8). Everything else in

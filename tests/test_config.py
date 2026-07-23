@@ -192,3 +192,40 @@ def test_is_r2_configured_false_when_none_present(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
     assert config.is_r2_configured() is False
+
+
+def test_get_mockup_templates_returns_primary_portrait_scenes_in_order():
+    static_config = config.load_static_config()
+
+    result = config.get_mockup_templates(static_config, "primary", "portrait")
+
+    assert result == [
+        "flat_clips_windowlight",
+        "flat_leaning_bookstack",
+        "lifestyle_sage_terracotta",
+        "lifestyle_bedroom_console",
+    ]
+
+
+def test_get_mockup_templates_returns_empty_list_for_landscape_placeholder():
+    static_config = config.load_static_config()
+
+    result = config.get_mockup_templates(static_config, "primary", "landscape")
+
+    assert result == []
+
+
+def test_mockup_bundle_dir_resolves_to_existing_real_bundle():
+    result = config.mockup_bundle_dir("primary", "portrait", "flat_clips_windowlight")
+
+    assert result.exists() is True
+
+
+def test_mockup_bundle_dir_resolves_placeholder_path_that_does_not_exist():
+    from pipeline.mockup_render import load_bundle, MockupRenderError
+
+    result = config.mockup_bundle_dir("primary", "landscape", "some_scene")
+
+    assert result.exists() is False
+    with pytest.raises(MockupRenderError):
+        load_bundle(result)

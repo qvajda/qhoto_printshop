@@ -83,5 +83,13 @@
   },
   "etsy_production_partner_ids": [5717252],
   "etsy_who_made": "i_did",
-  "etsy_shop_section_id": 59380312
+  "etsy_shop_section_id": 59380312,
+  "mockup_templates": {
+    "primary": {
+      "portrait": ["flat_clips_windowlight", "flat_leaning_bookstack", "lifestyle_sage_terracotta", "lifestyle_bedroom_console"],
+      "landscape": []
+    },
+    "5x7":   { "portrait": [], "landscape": [] },
+    "10x24": { "portrait": [], "landscape": [] }
+  }
 }

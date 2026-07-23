@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 from unittest.mock import patch
 
@@ -13,17 +14,40 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="completed",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png",
+                       base_image_local_path=None):
     timestamp = "2026-07-09T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at)
-        VALUES (?, ?, 'go', ?, ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url,
+        base_image_local_path, updated_at)
+        VALUES (?, ?, 'go', ?, ?, ?, ?)
         """,
-        (timestamp, niche, status, base_image_url, timestamp),
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def _static_config_with_scenes():
+    # Real static_config.json has empty mockup_templates for 5x7/10x24 (no scene
+    # bundles authored yet - GL-6-proper's job; see Important #1 of the GL-5 final
+    # review). run_group_mockup_cycle now skips a group_type with no scenes before
+    # ever calling create_group_mockup, so tests proving the *non-skip* fan-out path
+    # need a static_config with a scene present. Callers of this fixture mock
+    # group_product.create_or_reuse_group_product, so the dummy scene id is never
+    # actually resolved to a bundle on disk.
+    static_config = copy.deepcopy(config.load_static_config())
+    static_config["mockup_templates"]["5x7"]["portrait"] = ["dummy_scene"]
+    static_config["mockup_templates"]["10x24"]["portrait"] = ["dummy_scene"]
+    return static_config
+
+
+def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
 
 
 def _insert_primary_group(conn, candidate_id, *, status="approved_published"):
@@ -85,7 +109,7 @@ def test_get_or_create_group_keeps_5x7_and_10x24_separate(tmp_path):
 
 def test_create_group_mockup_creates_group_product_with_group_variant(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     static_config = config.load_static_config()
 
@@ -166,7 +190,7 @@ def test_create_group_mockup_caps_title_at_140_chars(tmp_path):
 
 def test_create_group_mockup_skips_when_already_created(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     static_config = config.load_static_config()
 
@@ -276,14 +300,18 @@ def test_create_group_mockup_propagates_after_second_failure(tmp_path):
 
 def test_run_group_mockup_cycle_processes_both_group_types_for_ready_candidate(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn, niche="monstera line art")
+    candidate_id = _insert_candidate(conn, niche="monstera line art", base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
-    static_config = config.load_static_config()
+    static_config = _static_config_with_scenes()
 
-    processed = group_mockup.run_group_mockup_cycle(
-        conn, static_config=static_config, poll_interval=0, poll_timeout=10,
-        now=datetime(2026, 7, 12, 20, 0, 0),
-    )
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        mock_create.side_effect = lambda conn, group_id, sizes, candidate, static_config, title, **kwargs: {
+            "group_product_id": group_id, "gelato_product_id": f"gelato_prod_{sizes[0]}",
+        }
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
 
     assert {(p["candidate_id"], p["group_type"]) for p in processed} == {
         (candidate_id, "5x7"), (candidate_id, "10x24"),
@@ -302,20 +330,39 @@ def test_run_group_mockup_cycle_skips_candidates_without_published_primary(tmp_p
     conn.close()
 
 
+def _fake_create_or_reuse_inserts_created_row(conn, group_id, sizes, candidate, static_config, title, **kwargs):
+    # create_group_mockup's own "already created" skip (checked in group_mockup.py,
+    # not mocked here) reads group_products.status straight from the DB, so a fake
+    # that doesn't insert a real row can never prove the skip - it must actually
+    # write a 'created' row like the real group_product.create_or_reuse_group_product
+    # does, just without Gelato/render side effects.
+    cursor = conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', ?, 'created', '2026-07-12T20:00:00', '2026-07-12T20:00:00')",
+        (group_id, f"gelato_prod_{sizes[0]}"),
+    )
+    conn.commit()
+    return {"group_product_id": cursor.lastrowid, "gelato_product_id": f"gelato_prod_{sizes[0]}"}
+
+
 def test_run_group_mockup_cycle_skips_group_types_already_created(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
-    static_config = config.load_static_config()
+    static_config = _static_config_with_scenes()
 
-    first_run = group_mockup.run_group_mockup_cycle(
-        conn, static_config=static_config, poll_interval=0, poll_timeout=10,
-        now=datetime(2026, 7, 12, 20, 0, 0),
-    )
-    second_run = group_mockup.run_group_mockup_cycle(
-        conn, static_config=static_config, poll_interval=0, poll_timeout=10,
-        now=datetime(2026, 7, 12, 21, 0, 0),
-    )
+    with patch(
+        "pipeline.group_mockup.group_product.create_or_reuse_group_product",
+        side_effect=_fake_create_or_reuse_inserts_created_row,
+    ):
+        first_run = group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+        second_run = group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 21, 0, 0),
+        )
 
     assert len(first_run) == 2
     assert second_run == []
@@ -326,7 +373,7 @@ def test_run_group_mockup_cycle_isolates_per_group_type_failures(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     _insert_primary_group(conn, candidate_id, status="approved_published")
-    static_config = config.load_static_config()
+    static_config = _static_config_with_scenes()
 
     def fake_create_or_reuse(conn, group_id, sizes, candidate, static_config, title, **kwargs):
         if "5x7" in sizes:
@@ -348,7 +395,7 @@ def test_run_group_mockup_cycle_isolates_per_group_type_failures(tmp_path):
 
 def test_run_group_mockup_cycle_does_not_resurrect_abandoned_group(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     group_mockup.get_or_create_group(conn, candidate_id, "5x7", now=datetime(2026, 7, 12, 18, 0, 0))
     conn.execute(
@@ -356,12 +403,16 @@ def test_run_group_mockup_cycle_does_not_resurrect_abandoned_group(tmp_path):
         (candidate_id,),
     )
     conn.commit()
-    static_config = config.load_static_config()
+    static_config = _static_config_with_scenes()
 
-    processed = group_mockup.run_group_mockup_cycle(
-        conn, static_config=static_config, poll_interval=0, poll_timeout=10,
-        now=datetime(2026, 7, 12, 20, 0, 0),
-    )
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        mock_create.side_effect = lambda conn, group_id, sizes, candidate, static_config, title, **kwargs: {
+            "group_product_id": group_id, "gelato_product_id": f"gelato_prod_{sizes[0]}",
+        }
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
 
     assert [(p["candidate_id"], p["group_type"]) for p in processed] == [(candidate_id, "10x24")]
     group_row = conn.execute(
@@ -405,7 +456,7 @@ def test_run_group_mockup_cycle_defaults_poll_interval_to_at_least_10s(tmp_path)
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     _insert_primary_group(conn, candidate_id, status="approved_published")
-    static_config = config.load_static_config()
+    static_config = _static_config_with_scenes()
 
     with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
         mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "g1"}
@@ -416,4 +467,49 @@ def test_run_group_mockup_cycle_defaults_poll_interval_to_at_least_10s(tmp_path)
     assert mock_create.call_count >= 1
     for call in mock_create.call_args_list:
         assert call.kwargs["poll_interval"] >= 10.0
+    conn.close()
+
+
+# GL-5 final review, Important #1: a group_type with no scene bundles authored yet
+# (today: 5x7 and 10x24, per config/static_config.json) must be skipped entirely -
+# no groups row, no group_products row, no Gelato/critic/digest call - rather than
+# created empty and left to loop forever in group_critic_pass/group_digest.
+def test_run_group_mockup_cycle_skips_group_type_with_empty_mockup_templates(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="approved_published")
+    # Real static_config.json today: both 5x7 and 10x24 have empty scene lists.
+    static_config = config.load_static_config()
+
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+
+    assert processed == []
+    mock_create.assert_not_called()
+    assert conn.execute("SELECT COUNT(*) AS n FROM groups WHERE candidate_id = ?", (candidate_id,)).fetchone()["n"] == 1
+    assert conn.execute("SELECT COUNT(*) AS n FROM group_products").fetchone()["n"] == 0
+    conn.close()
+
+
+def test_run_group_mockup_cycle_still_processes_group_type_with_scenes_configured(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, status="approved_published")
+    # Only 5x7 gets a scene here - 10x24 stays empty in real config, so this also
+    # proves the skip is per-group_type, not all-or-nothing.
+    static_config = copy.deepcopy(config.load_static_config())
+    static_config["mockup_templates"]["5x7"]["portrait"] = ["dummy_scene"]
+
+    with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
+        mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "g1"}
+        processed = group_mockup.run_group_mockup_cycle(
+            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+            now=datetime(2026, 7, 12, 20, 0, 0),
+        )
+
+    assert [(p["candidate_id"], p["group_type"]) for p in processed] == [(candidate_id, "5x7")]
+    mock_create.assert_called_once()
     conn.close()
