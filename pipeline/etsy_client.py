@@ -4,6 +4,7 @@ import urllib.request
 import uuid
 
 import pipeline.config as config
+import pipeline.etsy_auth as etsy_auth
 import pipeline.http as http
 
 ETSY_API_BASE = "https://openapi.etsy.com/v3/application"
@@ -16,13 +17,30 @@ def _headers(api_key: str, api_secret: str, access_token: str = None) -> dict:
     return headers
 
 
+def _call_with_refresh(build_request, access_token: str):
+    """Sends build_request(access_token); on a 401, refreshes the Etsy access
+    token once and retries with the new token. Never retries more than once -
+    a refresh that still 401s means something other than an expired token, so
+    it raises rather than looping."""
+    try:
+        return http.send(build_request(access_token))
+    except http.HTTPError as exc:
+        if exc.status_code != 401:
+            raise
+        new_access_token = etsy_auth.refresh()["access_token"]
+        return http.send(build_request(new_access_token))
+
+
 def get_seller_taxonomy_nodes(*, api_key: str = None, api_secret: str = None, access_token: str = None) -> list:
     api_key = api_key or config.require_env("ETSY_API_KEY")
     api_secret = api_secret or config.require_env("ETSY_API_SECRET")
     access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
     url = f"{ETSY_API_BASE}/seller-taxonomy/nodes"
-    request = urllib.request.Request(url, headers=_headers(api_key, api_secret, access_token), method="GET")
-    result = http.send(request)
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="GET")
+
+    result = _call_with_refresh(_build, access_token)
     return result["results"]
 
 
@@ -75,10 +93,12 @@ def upload_listing_image(
         f"Content-Type: image/jpeg\r\n\r\n"
     ).encode("utf-8") + image_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
 
-    headers = _headers(api_key, api_secret, access_token)
-    headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    return http.send(request)
+    def _build(token):
+        headers = _headers(api_key, api_secret, token)
+        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+        return urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+    return _call_with_refresh(_build, access_token)
 
 
 def update_listing_state(
@@ -103,10 +123,13 @@ def update_listing_state(
     access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
     url = f"{ETSY_API_BASE}/shops/{shop_id}/listings/{listing_id}"
     body = json.dumps({"state": state}).encode("utf-8")
-    headers = _headers(api_key, api_secret, access_token)
-    headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method="PATCH")
-    return http.send(request)
+
+    def _build(token):
+        headers = _headers(api_key, api_secret, token)
+        headers["Content-Type"] = "application/json"
+        return urllib.request.Request(url, data=body, headers=headers, method="PATCH")
+
+    return _call_with_refresh(_build, access_token)
 
 
 def update_listing(
@@ -124,10 +147,13 @@ def update_listing(
     access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
     url = f"{ETSY_API_BASE}/shops/{shop_id}/listings/{listing_id}"
     body = json.dumps(listing_data).encode("utf-8")
-    headers = _headers(api_key, api_secret, access_token)
-    headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method="PATCH")
-    return http.send(request)
+
+    def _build(token):
+        headers = _headers(api_key, api_secret, token)
+        headers["Content-Type"] = "application/json"
+        return urllib.request.Request(url, data=body, headers=headers, method="PATCH")
+
+    return _call_with_refresh(_build, access_token)
 
 
 def get_listing_inventory(
@@ -144,8 +170,11 @@ def get_listing_inventory(
     api_secret = api_secret or config.require_env("ETSY_API_SECRET")
     access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
     url = f"{ETSY_API_BASE}/listings/{listing_id}/inventory"
-    request = urllib.request.Request(url, headers=_headers(api_key, api_secret, access_token), method="GET")
-    return http.send(request)
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="GET")
+
+    return _call_with_refresh(_build, access_token)
 
 
 _INVENTORY_READONLY_PRODUCT_FIELDS = ("product_id", "is_deleted")
@@ -218,10 +247,13 @@ def update_listing_inventory(
         "quantity_on_property": inventory.get("quantity_on_property", []),
         "sku_on_property": inventory.get("sku_on_property", []),
     }).encode("utf-8")
-    headers = _headers(api_key, api_secret, access_token)
-    headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method="PUT")
-    return http.send(request)
+
+    def _build(token):
+        headers = _headers(api_key, api_secret, token)
+        headers["Content-Type"] = "application/json"
+        return urllib.request.Request(url, data=body, headers=headers, method="PUT")
+
+    return _call_with_refresh(_build, access_token)
 
 
 def find_all_listings_active(

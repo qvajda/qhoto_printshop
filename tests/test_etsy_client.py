@@ -1,9 +1,11 @@
 import json
+import pathlib
 from unittest.mock import patch
 
 import pytest
 
 import pipeline.etsy_client as etsy_client
+import pipeline.http as http
 
 
 def test_get_seller_taxonomy_nodes_builds_correct_request():
@@ -272,6 +274,62 @@ def test_update_listing_inventory_matches_single_size_product_with_no_variation_
     sent_request = mock_send.call_args[0][0]
     body = json.loads(sent_request.data)
     assert body["products"][0]["offerings"][0]["price"] == 19.0
+
+
+# --- GL-15: 401 auto-refresh + retry ---
+
+def test_update_listing_retries_once_with_new_token_after_a_401():
+    calls = []
+
+    def fake_send(request, timeout=30):
+        calls.append(request.get_header("Authorization"))
+        if len(calls) == 1:
+            raise http.HTTPError(401, "expired token")
+        return {"listing_id": 555}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send), \
+         patch("pipeline.etsy_client.etsy_auth.refresh", return_value={"access_token": "fresh-token"}) as mock_refresh:
+        result = etsy_client.update_listing(
+            "shop1", "555", {"title": "x"}, api_key="k", api_secret="s",
+            access_token="stale-token", dry_run=False,
+        )
+
+    mock_refresh.assert_called_once()
+    assert calls == ["Bearer stale-token", "Bearer fresh-token"]
+    assert result == {"listing_id": 555}
+
+
+def test_update_listing_does_not_loop_on_a_second_401_after_refresh():
+    with patch("pipeline.etsy_client.http.send", side_effect=http.HTTPError(401, "still expired")), \
+         patch("pipeline.etsy_client.etsy_auth.refresh", return_value={"access_token": "fresh-token"}) as mock_refresh:
+        with pytest.raises(http.HTTPError):
+            etsy_client.update_listing(
+                "shop1", "555", {"title": "x"}, api_key="k", api_secret="s",
+                access_token="stale-token", dry_run=False,
+            )
+
+    mock_refresh.assert_called_once()  # exactly one refresh attempt, no retry loop
+
+
+def test_non_401_error_is_not_treated_as_an_expired_token():
+    with patch("pipeline.etsy_client.http.send", side_effect=http.HTTPError(500, "server error")), \
+         patch("pipeline.etsy_client.etsy_auth.refresh") as mock_refresh:
+        with pytest.raises(http.HTTPError):
+            etsy_client.update_listing(
+                "shop1", "555", {"title": "x"}, api_key="k", api_secret="s",
+                access_token="token", dry_run=False,
+            )
+
+    mock_refresh.assert_not_called()
+
+
+def test_no_urllib_urlopen_remains_in_pipeline():
+    pipeline_dir = pathlib.Path(etsy_client.__file__).resolve().parent
+    offenders = [
+        str(py) for py in pipeline_dir.glob("*.py")
+        if "urllib.request.urlopen" in py.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"raw urlopen resurfaced in pipeline/: {offenders}"
 
 
 def test_update_listing_inventory_raises_if_a_size_has_no_matching_product():
