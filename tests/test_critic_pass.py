@@ -7,6 +7,8 @@ import pytest
 
 import pipeline.critic_pass as critic_pass
 import pipeline.db as db
+import pipeline.http as http
+import pipeline.replicate_client as replicate_client
 
 
 def test_build_critic_prompt_includes_rubric_and_listing_text():
@@ -937,6 +939,100 @@ def test_run_critic_pass_abandons_candidate_when_retry_regeneration_crashes(tmp_
     assert candidate_row["status"] == "failed"
     assert "Unterminated string" in candidate_row["failed_reason"]
 
+    group_status_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_status_row["status"] == "failed_abandoned"
+    conn.close()
+
+
+def test_run_critic_pass_does_not_abandon_on_transient_fault_during_regen(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,),
+    ).fetchone()
+    group_id = group_row["id"]
+
+    fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
+         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.generate.generate_for_candidate",
+               side_effect=http.HTTPError(503, "upstream unavailable")):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    # A vendor 503 mid-regen is not a verdict on the art - candidate stays exactly
+    # where it was (still generating, same attempt), NOT abandoned. GL-16.
+    assert result == {"candidate_id": candidate_id, "passed": False, "attempts": 1, "transient": True}
+
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "generating"
+    assert candidate_row["failed_reason"] is None
+
+    group_status_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert group_status_row["status"] == "pending_review"
+
+    # attempt 1's reject was still recorded (it's a real verdict); no attempt 2 row
+    # exists since the regen never got far enough to produce a new verdict.
+    attempts = conn.execute(
+        "SELECT attempt_number FROM critic_pass_attempts WHERE group_id = ? ORDER BY attempt_number",
+        (group_id,),
+    ).fetchall()
+    assert [row["attempt_number"] for row in attempts] == [1]
+    conn.close()
+
+
+def test_run_critic_pass_does_not_abandon_on_replicate_throttled_during_regen(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
+         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.generate.generate_for_candidate",
+               side_effect=replicate_client.ReplicateThrottledError(retry_after=10.0)):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert result["transient"] is True
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
+    conn.close()
+
+
+def test_run_critic_pass_still_abandons_on_non_transient_regen_crash(tmp_path):
+    # RuntimeError (malformed data / code defect) must still abandon exactly as
+    # before - only vendor/network faults get the transient treatment.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+    group_row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,),
+    ).fetchone()
+    group_id = group_row["id"]
+
+    fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
+         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.generate.generate_for_candidate", side_effect=RuntimeError("Unterminated string")):
+        with pytest.raises(RuntimeError, match="Unterminated string"):
+            critic_pass.run_critic_pass(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+                now=datetime(2026, 7, 10, 12, 0, 0),
+            )
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "failed"
     group_status_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
     assert group_status_row["status"] == "failed_abandoned"
     conn.close()

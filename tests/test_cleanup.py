@@ -112,6 +112,82 @@ def test_cleanup_orphaned_continues_past_delete_failure(tmp_path):
     conn.close()
 
 
+def _insert_pending_group_product(conn, group_id, *, created_at="2026-07-14T08:00:00"):
+    cursor = conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (?, 'tpl_x', 'pending', ?, ?)",
+        (group_id, created_at, created_at),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def test_reclaim_stranded_pending_deletes_row_older_than_threshold(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="generating")
+    group_id = _insert_group(conn, candidate_id, status="pending_review")
+    gp_id = _insert_pending_group_product(conn, group_id, created_at="2026-07-14T08:00:00")
+
+    result = cleanup.reclaim_stranded_pending_group_products(
+        conn, max_age_minutes=10, now=datetime(2026, 7, 14, 8, 15, 0)
+    )
+
+    assert result == [gp_id]
+    row = conn.execute("SELECT id FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert row is None
+    conn.close()
+
+
+def test_reclaim_stranded_pending_leaves_recent_row_alone(tmp_path):
+    # Still legitimately in-flight (within poll_until_ready's 300s window) -
+    # must not be reclaimed out from under a real running create.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="generating")
+    group_id = _insert_group(conn, candidate_id, status="pending_review")
+    gp_id = _insert_pending_group_product(conn, group_id, created_at="2026-07-14T08:12:00")
+
+    result = cleanup.reclaim_stranded_pending_group_products(
+        conn, max_age_minutes=10, now=datetime(2026, 7, 14, 8, 15, 0)
+    )
+
+    assert result == []
+    row = conn.execute("SELECT id FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert row is not None
+    conn.close()
+
+
+def test_reclaim_stranded_pending_ignores_rows_with_a_gelato_product_id(tmp_path):
+    # A pending row that already has a gelato_product_id means the create call
+    # did land - that's create_or_reuse_group_product's own reuse territory
+    # (mockup_failed handling), not a stranded phantom row.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="generating")
+    group_id = _insert_group(conn, candidate_id, status="pending_review")
+    gp_id = _insert_group_product(conn, group_id, gelato_product_id="gelato_x", status="pending")
+
+    result = cleanup.reclaim_stranded_pending_group_products(
+        conn, max_age_minutes=10, now=datetime(2026, 7, 14, 12, 0, 0)
+    )
+
+    assert result == []
+    row = conn.execute("SELECT id FROM group_products WHERE id = ?", (gp_id,)).fetchone()
+    assert row is not None
+    conn.close()
+
+
+def test_run_cleanup_includes_stranded_pending_reclaim(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, status="generating")
+    group_id = _insert_group(conn, candidate_id, status="pending_review")
+    gp_id = _insert_pending_group_product(conn, group_id, created_at="2026-06-01T09:00:00")
+
+    with patch("pipeline.cleanup.gelato_client.delete_product"):
+        result = cleanup.run_cleanup(conn, now=datetime(2026, 7, 14, 9, 0, 0))
+
+    assert result["stranded_pending_group_products_reclaimed"] == [gp_id]
+    conn.close()
+
+
 def _insert_telegram_event(conn, *, received_at):
     cursor = conn.execute(
         "INSERT INTO telegram_events_log (received_at, telegram_user_id, raw_payload, accepted) "
@@ -282,6 +358,7 @@ def test_run_cleanup_calls_all_three_and_returns_summary(tmp_path):
     mock_delete.assert_called_once_with("gelato_orphan", store_id=None, api_key=None)
     assert result == {
         "gelato_products_deleted": [orphan_gp_id],
+        "stranded_pending_group_products_reclaimed": [],
         "candidates_pruned": [stale_candidate_id],
         "telegram_events_pruned": 1,
     }
