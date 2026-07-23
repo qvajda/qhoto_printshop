@@ -110,3 +110,113 @@ def test_plain_403_is_not_1010_retried():
             http.send(request, sleep_fn=slept.append)
 
     assert slept == []
+
+
+def test_retries_on_connect_error_then_succeeds():
+    slept = []
+    request = urllib.request.Request("https://api.gelato.com/x")
+    with patch.object(
+        http._client, "request",
+        side_effect=[httpx.ConnectError("boom"), _resp(200, b'{"ok": true}')],
+    ):
+        result = http.send(request, sleep_fn=slept.append)
+
+    assert result == {"ok": True}
+    assert len(slept) == 1
+    assert 1.6 <= slept[0] <= 2.4  # _TRANSIENT_BACKOFFS[0]=2 +-20% jitter
+
+
+def test_gives_up_after_transient_backoffs_exhausted_on_read_timeout():
+    slept = []
+    request = urllib.request.Request("https://api.gelato.com/x")
+    with patch.object(http._client, "request", side_effect=httpx.ReadTimeout("timed out")):
+        with pytest.raises(httpx.ReadTimeout):
+            http.send(request, sleep_fn=slept.append)
+
+    assert len(slept) == len(http._TRANSIENT_BACKOFFS)
+
+
+def test_retries_on_5xx_then_succeeds():
+    slept = []
+    request = urllib.request.Request("https://api.gelato.com/x")
+    with patch.object(
+        http._client, "request",
+        side_effect=[_resp(502, b"bad gateway"), _resp(200, b'{"ok": true}')],
+    ):
+        result = http.send(request, sleep_fn=slept.append)
+
+    assert result == {"ok": True}
+    assert len(slept) == 1
+
+
+def test_gives_up_after_5xx_backoffs_exhausted():
+    slept = []
+    request = urllib.request.Request("https://api.gelato.com/x")
+    with patch.object(http._client, "request", return_value=_resp(503, b"unavailable")):
+        with pytest.raises(http.HTTPError) as exc_info:
+            http.send(request, sleep_fn=slept.append)
+
+    assert exc_info.value.status_code == 503
+    assert len(slept) == len(http._TRANSIENT_BACKOFFS)
+
+
+def test_429_honors_retry_after_header():
+    slept = []
+    request = urllib.request.Request("https://api.replicate.com/x")
+    with patch.object(
+        http._client, "request",
+        side_effect=[_resp(429, b"slow down", headers={"retry-after": "7"}), _resp(200, b'{"ok": true}')],
+    ):
+        result = http.send(request, sleep_fn=slept.append)
+
+    assert result == {"ok": True}
+    assert slept == [7.0]
+
+
+def test_429_retry_after_is_capped():
+    slept = []
+    request = urllib.request.Request("https://api.replicate.com/x")
+    with patch.object(
+        http._client, "request",
+        side_effect=[_resp(429, b"slow down", headers={"retry-after": "9999"}), _resp(200, b'{"ok": true}')],
+    ):
+        http.send(request, sleep_fn=slept.append)
+
+    assert slept == [http._RETRY_AFTER_CAP]
+
+
+def test_429_without_retry_after_falls_back_to_transient_backoff():
+    slept = []
+    request = urllib.request.Request("https://api.replicate.com/x")
+    with patch.object(
+        http._client, "request",
+        side_effect=[_resp(429, b"slow down"), _resp(200, b'{"ok": true}')],
+    ):
+        http.send(request, sleep_fn=slept.append)
+
+    assert len(slept) == 1
+    assert 1.6 <= slept[0] <= 2.4
+
+
+def test_404_retried_exactly_once_then_raises():
+    slept = []
+    request = urllib.request.Request("https://api.replicate.com/x")
+    with patch.object(http._client, "request", return_value=_resp(404, b"not found")):
+        with pytest.raises(http.HTTPError) as exc_info:
+            http.send(request, sleep_fn=slept.append)
+
+    assert exc_info.value.status_code == 404
+    assert len(slept) == 1  # bounded to a single retry, not the full transient table
+
+
+def test_404_recovers_on_the_single_retry():
+    slept = []
+    request = urllib.request.Request("https://api.replicate.com/x")
+    with patch.object(
+        http._client, "request",
+        side_effect=[_resp(404, b"not found"), _resp(200, b'{"ok": true}')],
+    ):
+        result = http.send(request, sleep_fn=slept.append)
+
+    assert result == {"ok": True}
+    assert len(slept) == 1
