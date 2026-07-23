@@ -44,12 +44,12 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="primary_review",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png", base_image_local_path=None):
     timestamp = "2026-07-16T09:00:00"
     cursor = conn.execute(
-        "INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at) "
-        "VALUES (?, ?, 'go', ?, ?, ?)",
-        (timestamp, niche, status, base_image_url, timestamp),
+        "INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, "
+        "base_image_local_path, updated_at) VALUES (?, ?, 'go', ?, ?, ?, ?)",
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
@@ -246,15 +246,21 @@ def test_create_or_reuse_group_product_falls_back_to_base_image_when_gelato_retu
 
     with patch("pipeline.config.is_live_mode", return_value=True), \
          patch("pipeline.group_product._assert_print_dpi"), \
+         patch("pipeline.group_product._print_crop_image_url") as mock_print_crop, \
          patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
          patch("pipeline.group_product.poll_until_ready") as mock_poll, \
          patch("pipeline.image_crop.crop_for_group") as mock_crop:
+        mock_print_crop.return_value = "https://cdn.example.com/base/1_5x7_crop.png"
         mock_create.return_value = {"id": "gelato-prod-1"}
         mock_poll.return_value = {"isReadyToPublish": True, "productImages": []}
         mock_crop.return_value = "/tmp/cropped-5x7.jpg"
         result = group_product.create_or_reuse_group_product(
             conn, group_id, ["5x7"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
         )
+
+    # The print crop (not the raw master) is what reaches the Gelato create call.
+    variants_arg = mock_create.call_args[0][1]
+    assert variants_arg[0]["image_url"] == "https://cdn.example.com/base/1_5x7_crop.png"
 
     mock_crop.assert_called_once_with(
         "https://replicate.delivery/flat-art.png", "5x7", result["group_product_id"],
@@ -289,10 +295,12 @@ def test_create_or_reuse_group_product_prefers_primary_group_image_over_dead_bas
 
     with patch("pipeline.config.is_live_mode", return_value=True), \
          patch("pipeline.group_product._assert_print_dpi"), \
+         patch("pipeline.group_product._print_crop_image_url") as mock_print_crop, \
          patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
          patch("pipeline.group_product.poll_until_ready") as mock_poll, \
          patch("pipeline.gelato_client.get_product") as mock_get_product, \
          patch("pipeline.image_crop.crop_for_group") as mock_crop:
+        mock_print_crop.return_value = "https://cdn.example.com/base/1_5x7_crop.png"
         mock_create.return_value = {"id": "gelato-prod-1"}
         mock_poll.return_value = {"isReadyToPublish": True, "productImages": []}
         mock_get_product.return_value = {
@@ -490,6 +498,80 @@ def test_assert_print_dpi_raises_when_local_path_missing():
     with pytest.raises(group_product.PrintResolutionError) as exc:
         group_product._assert_print_dpi(["8x12"], None)
     assert "missing or unreadable" in str(exc.value)
+
+
+# --- GL-14: real print crop reaches Gelato for 5x7/10x24 ---
+
+def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
+    # End-to-end (real image_crop + artwork_store, only http.put_bytes and the
+    # Gelato call are mocked): the create call must receive the cropped, hosted
+    # URL - not candidate.base_image_url - for a non-primary group type.
+    from PIL import Image
+    master_path = tmp_path / "master.png"
+    # Clears 150 DPI at 10x24 (1600/10=160, 3700/24~=154).
+    Image.new("RGB", (1600, 3700), (200, 180, 150)).save(master_path, format="PNG")
+
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(
+        conn, base_image_url="https://replicate.delivery/master.png",
+        base_image_local_path=str(master_path),
+    )
+    group_id = _insert_group(conn, candidate_id, group_type="10x24")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    r2_env = {
+        "R2_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "key", "R2_SECRET_ACCESS_KEY": "secret",
+        "R2_BUCKET": "bucket", "R2_ENDPOINT": "https://acct.r2.cloudflarestorage.com",
+        "R2_PUBLIC_BASE_URL": "https://cdn.example.com",
+    }
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch.dict("os.environ", r2_env), \
+         patch("pipeline.group_product.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll, \
+         patch("pipeline.artwork_store.http.put_bytes") as mock_put:
+        mock_create.return_value = {"id": "gelato-prod-1"}
+        mock_poll.return_value = {"isReadyToPublish": True, "productImages": [{"fileUrl": "x", "isPrimary": True}]}
+        group_product.create_or_reuse_group_product(
+            conn, group_id, ["10x24"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
+        )
+
+    mock_put.assert_called_once()  # the crop was actually built and uploaded
+    variants_arg = mock_create.call_args[0][1]
+    assert variants_arg[0]["image_url"] == f"https://cdn.example.com/base/{candidate_id}_10x24_crop.png"
+    assert variants_arg[0]["image_url"] != candidate["base_image_url"]
+
+
+def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(tmp_path, monkeypatch):
+    # If R2 isn't configured, persist_group_crop's durable_url is a local filesystem
+    # path - the create-path's existing non-http(s) guard must reject it, not
+    # silently fall back to the uncropped master (that's the bug this fixes).
+    from PIL import Image
+    for key in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
+                "R2_BUCKET", "R2_ENDPOINT", "R2_PUBLIC_BASE_URL"):
+        monkeypatch.delenv(key, raising=False)
+
+    master_path = tmp_path / "master.png"
+    Image.new("RGB", (900, 1350), (200, 180, 150)).save(master_path, format="PNG")
+
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(
+        conn, base_image_url="https://replicate.delivery/master.png",
+        base_image_local_path=str(master_path),
+    )
+    group_id = _insert_group(conn, candidate_id, group_type="5x7")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    with patch("pipeline.config.is_live_mode", return_value=True):
+        with pytest.raises(gelato_client.GelatoInvalidImageURLError):
+            group_product.create_or_reuse_group_product(
+                conn, group_id, ["5x7"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
+            )
+
+    gp_row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
+    assert gp_row["status"] == "mockup_failed"
 
 
 def test_scale8_master_clears_150_dpi_at_every_offered_size():

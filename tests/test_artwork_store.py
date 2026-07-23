@@ -226,6 +226,35 @@ def test_persist_base_artwork_raises_on_failed_put(tmp_path, monkeypatch):
     assert (tmp_path / "8.png").read_bytes() == raw
 
 
+# --- persist_group_crop (GL-14: full-res print crop hosting) ---
+
+def test_persist_group_crop_uploads_to_r2_and_returns_durable_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(artwork_store, "ARTWORK_CACHE_DIR", tmp_path)
+    _set_r2_env(monkeypatch)
+    raw = b"cropped 10x24 print bytes"
+
+    with patch("pipeline.artwork_store.http.put_bytes") as mock_put:
+        result = artwork_store.persist_group_crop(39, "10x24", raw)
+
+    mock_put.assert_called_once()
+    put_url = mock_put.call_args[0][0]
+    assert put_url == "https://test-account.r2.cloudflarestorage.com/test-bucket/base/39_10x24_crop.png"
+    assert result["durable_url"] == "https://cdn.example.com/base/39_10x24_crop.png"
+    assert (tmp_path / "39_10x24_crop.png").read_bytes() == raw
+
+
+def test_persist_group_crop_stays_local_only_when_r2_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(artwork_store, "ARTWORK_CACHE_DIR", tmp_path)
+    for key in artwork_store.R2_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+
+    with patch("pipeline.artwork_store.http.put_bytes") as mock_put:
+        result = artwork_store.persist_group_crop(39, "5x7", b"crop bytes")
+
+    mock_put.assert_not_called()
+    assert result["durable_url"] == str(tmp_path / "39_5x7_crop.png")
+
+
 # --- persist_base_artwork with R2 NOT configured (Task 1 behavior unchanged) ---
 
 def test_persist_base_artwork_stays_local_only_when_r2_env_absent(tmp_path, monkeypatch):

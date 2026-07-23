@@ -18,6 +18,33 @@ R2_REGION = "auto"
 R2_SERVICE = "s3"
 
 
+def _persist_artifact(local_filename: str, r2_key: str, raw_bytes: bytes) -> dict:
+    """Shared local-archive + R2-upload logic for a durable artifact. Idempotent
+    locally (same sha256 bytes leave the file untouched); the R2 PUT is an
+    unconditional overwrite every call (see persist_base_artwork's docstring for
+    why - a skip-if-exists check would serve stale bytes after a regeneration)."""
+    sha256 = hashlib.sha256(raw_bytes).hexdigest()
+
+    ARTWORK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    archive_path = ARTWORK_CACHE_DIR / local_filename
+
+    if not archive_path.exists() or hashlib.sha256(archive_path.read_bytes()).hexdigest() != sha256:
+        archive_path.write_bytes(raw_bytes)
+
+    durable_url = str(archive_path)
+
+    r2 = _r2_config()
+    if r2 is not None:
+        _r2_put_object(r2_key, raw_bytes, r2)
+        durable_url = f"{r2['R2_PUBLIC_BASE_URL']}/{r2_key}"
+
+    return {
+        "durable_url": durable_url,
+        "local_path": str(archive_path),
+        "sha256": sha256,
+    }
+
+
 def persist_base_artwork(candidate_id: int, raw_bytes: bytes) -> dict:
     """Archives a candidate's base artwork bytes locally, keyed by candidate_id.
 
@@ -36,27 +63,16 @@ def persist_base_artwork(candidate_id: int, raw_bytes: bytes) -> dict:
     local path and no network calls are made at all (this is the
     offline/dry-run mode).
     """
-    sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    return _persist_artifact(f"{candidate_id}.png", f"base/{candidate_id}.png", raw_bytes)
 
-    ARTWORK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    archive_path = ARTWORK_CACHE_DIR / f"{candidate_id}.png"
 
-    if not archive_path.exists() or hashlib.sha256(archive_path.read_bytes()).hexdigest() != sha256:
-        archive_path.write_bytes(raw_bytes)
-
-    durable_url = str(archive_path)
-
-    r2 = _r2_config()
-    if r2 is not None:
-        key = f"base/{candidate_id}.png"
-        _r2_put_object(key, raw_bytes, r2)
-        durable_url = f"{r2['R2_PUBLIC_BASE_URL']}/{key}"
-
-    return {
-        "durable_url": durable_url,
-        "local_path": str(archive_path),
-        "sha256": sha256,
-    }
+def persist_group_crop(candidate_id: int, group_type: str, raw_bytes: bytes) -> dict:
+    """Archives a group's full-resolution print cover-crop (5x7/10x24 - see
+    image_crop.print_crop_bytes), same idempotency semantics as
+    persist_base_artwork. Reuses ARTWORK_CACHE_DIR - it's the same durable-artifact
+    concern as the base master, just a different derived file."""
+    filename = f"{candidate_id}_{group_type}_crop.png"
+    return _persist_artifact(filename, f"base/{filename}", raw_bytes)
 
 
 def _r2_config() -> dict | None:

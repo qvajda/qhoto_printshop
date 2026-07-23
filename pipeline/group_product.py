@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
+import pipeline.artwork_store as artwork_store
 import pipeline.config as config
 import pipeline.etsy_client as etsy_client
 import pipeline.gelato_client as gelato_client
@@ -68,6 +69,31 @@ def _assert_print_dpi(sizes: list, local_path) -> None:
             f"{worst[1]:.0f} DPI at size {worst[0]} (min {MIN_PRINT_DPI} for posters). "
             f"Upscale the master further before printing this group."
         )
+
+
+# Group types whose target aspect ratio genuinely differs from the master's own
+# 2:3 ratio (see image_crop.target_ratio_for_group_type - these are the only
+# group_type names shaped like WIDTHxHEIGHT). The primary group (8x12/A3/A2/A1)
+# is close enough to 2:3 that CLAUDE.md frames it as "a small crop, not a
+# re-composition", and live evidence (candidate 39, GL-9) published it with no
+# white-bar defect - so it keeps submitting the raw master, uncropped here.
+_PRINT_CROP_GROUP_TYPES = {"5x7", "10x24"}
+
+
+def _print_crop_image_url(candidate: dict, group_type: str) -> str:
+    """Builds a full-resolution cover-crop of the master for group_type and hosts
+    it at a durable URL Gelato can fetch, so the print itself fills the frame
+    instead of Gelato's own fit/letterbox behavior (the 10x24 white-bar bug)."""
+    local_path = candidate.get("base_image_local_path")
+    if not local_path or not Path(local_path).exists():
+        raise PrintResolutionError(
+            f"Cannot build a {group_type} print crop: base_image_local_path missing "
+            f"or unreadable ({local_path!r}). The master must be archived locally "
+            f"before a real Gelato create for a non-primary group."
+        )
+    cropped_bytes = image_crop.print_crop_bytes(Path(local_path).read_bytes(), group_type)
+    result = artwork_store.persist_group_crop(candidate["id"], group_type, cropped_bytes)
+    return result["durable_url"]
 
 
 def _jittered(interval: float) -> float:
@@ -259,11 +285,22 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
 
     try:
         if reuse_group_product_id is None:
+            # Non-primary groups (5x7/10x24) are a genuinely different aspect ratio
+            # from the master - Gelato's own template fits/letterboxes rather than
+            # fills, so a real cover-crop must be built and hosted before it's
+            # submitted. Only for a real (non-dry-run) create: dry-run never reads
+            # image_url (create_product_from_template's dry_run branch returns
+            # before the variant loop), so building/hosting a crop for it would be
+            # pure waste on every dev/test run.
+            image_url = candidate["base_image_url"]
+            if sizes[0] in _PRINT_CROP_GROUP_TYPES and config.is_live_mode("GELATO"):
+                image_url = _print_crop_image_url(candidate, sizes[0])
+
             response = gelato_client.create_product_from_template(
                 template_id,
                 [
                     {"template_variant_id": t["template_variant_id"], "image_placeholder_name": t["image_placeholder_name"],
-                     "image_url": candidate["base_image_url"]}
+                     "image_url": image_url}
                     for t in templates
                 ],
                 title, store_id=store_id, api_key=api_key,
