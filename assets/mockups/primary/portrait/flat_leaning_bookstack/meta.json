@@ -1,0 +1,28 @@
+{
+  "scene": "flat_leaning_bookstack",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      214,
+      214
+    ],
+    [
+      700,
+      216
+    ],
+    [
+      708,
+      948
+    ],
+    [
+      206,
+      950
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "flat"
+}

@@ -1,0 +1,28 @@
+{
+  "scene": "lifestyle_bedroom_console",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      295,
+      150
+    ],
+    [
+      655,
+      150
+    ],
+    [
+      655,
+      720
+    ],
+    [
+      295,
+      720
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle"
+}
