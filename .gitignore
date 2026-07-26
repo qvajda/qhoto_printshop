@@ -49,3 +49,8 @@ db/group_preview_images/
 
 # OAuth PKCE state (short-lived, holds code_verifier)
 .etsy_oauth_state.json
+
+# GL-21 QA artefacts (contact sheets + kept-for-comparison attempt-2 renders)
+outputs/mockup_qa/
+outputs/attempt2_reference/
+outputs/gl19_m1/_dbg_*.png

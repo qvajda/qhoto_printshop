@@ -90,7 +90,7 @@ def _insert_candidate(conn, niche="monstera line art", *, status="primary_review
     return cursor.lastrowid
 
 
-def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+def _make_master(tmp_path, name="master.png", size=(900, 1316)):
     from PIL import Image
     p = tmp_path / name
     Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
@@ -265,7 +265,7 @@ def _insert_ready_primary_group(conn, candidate_id, niche="monstera line art"):
     return group_id
 
 
-def test_publish_primary_group_creates_one_listing_for_all_four_sizes(tmp_path, monkeypatch):
+def test_publish_primary_group_creates_one_listing_for_all_four_sizes(stub_mockup_bundles, tmp_path, monkeypatch):
     # ponytail: GELATO_LIVE_MODE=true is required for this to exercise the resolve_etsy_listing_id
     # path in group_product.patch_etsy_listing (it's gated on Gelato's own liveness, not this
     # call's dry_run - see the ponytail comment on patch_etsy_listing) - without it the listing id
@@ -335,7 +335,7 @@ def test_publish_primary_group_reuses_existing_live_group_product_on_reentry(tmp
     conn.close()
 
 
-def test_publish_primary_group_retries_once_then_succeeds(tmp_path):
+def test_publish_primary_group_retries_once_then_succeeds(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="pending_review")

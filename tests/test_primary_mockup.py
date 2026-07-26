@@ -28,7 +28,7 @@ def _insert_candidate(conn, niche="monstera line art", *, status="generating",
     return cursor.lastrowid
 
 
-def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+def _make_master(tmp_path, name="master.png", size=(900, 1316)):
     from PIL import Image
     p = tmp_path / name
     Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
@@ -83,7 +83,7 @@ def test_get_or_create_primary_group_returns_existing_row(tmp_path):
 # tests/test_group_product.py, not re-tested here.
 
 
-def test_create_primary_mockup_creates_group_product_with_8x12_variant(tmp_path):
+def test_create_primary_mockup_creates_group_product_with_8x12_variant(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     static_config = config.load_static_config()
@@ -183,7 +183,7 @@ def test_run_primary_mockup_cycle_processes_ready_candidates_and_skips_others(tm
     conn.close()
 
 
-def test_run_primary_mockup_cycle_skips_candidates_already_mocked_up(tmp_path):
+def test_run_primary_mockup_cycle_skips_candidates_already_mocked_up(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(
         conn, niche="monstera line art", status="generating", base_image_local_path=_make_master(tmp_path),

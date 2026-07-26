@@ -8,6 +8,7 @@ import pipeline.config as config
 import pipeline.db as db
 import pipeline.gelato_client as gelato_client
 import pipeline.group_product as group_product
+import pipeline.mockup_render as mockup_render
 
 
 def test_poll_until_ready_jitters_the_sleep_interval():
@@ -72,14 +73,14 @@ def _static_config():
     return config.load_static_config()
 
 
-def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+def _make_master(tmp_path, name="master.png", size=(900, 1316)):
     from PIL import Image
     p = tmp_path / name
     Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
     return str(p)
 
 
-def test_create_or_reuse_group_product_creates_one_product_with_all_variants(tmp_path):
+def test_create_or_reuse_group_product_creates_one_product_with_all_variants(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     group_id = _insert_group(conn, candidate_id)
@@ -113,7 +114,7 @@ def test_create_or_reuse_group_product_creates_one_product_with_all_variants(tmp
     }
 
 
-def test_create_or_reuse_group_product_reuses_existing_created_row(tmp_path):
+def test_create_or_reuse_group_product_reuses_existing_created_row(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     group_id = _insert_group(conn, candidate_id)
@@ -133,7 +134,7 @@ def test_create_or_reuse_group_product_reuses_existing_created_row(tmp_path):
     assert first["group_product_id"] == second["group_product_id"]
 
 
-def test_create_or_reuse_group_product_recreates_when_sizes_expand(tmp_path):
+def test_create_or_reuse_group_product_recreates_when_sizes_expand(stub_mockup_bundles, tmp_path):
     # Regression: primary_mockup.py creates the group_products row with sizes=["8x12"] only.
     # On approval, publish_primary_group.py calls this again with the full 4-size list for the
     # same group_id. The old code only checked status (not variant sizes) and returned the
@@ -171,7 +172,7 @@ def test_create_or_reuse_group_product_recreates_when_sizes_expand(tmp_path):
     assert old_row["status"] == "deleted"
 
 
-def test_create_or_reuse_group_product_deletes_orphan_before_retry(tmp_path):
+def test_create_or_reuse_group_product_deletes_orphan_before_retry(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     group_id = _insert_group(conn, candidate_id)
@@ -201,7 +202,7 @@ def test_create_or_reuse_group_product_deletes_orphan_before_retry(tmp_path):
     assert stale_row["status"] == "deleted"
 
 
-def test_create_or_reuse_group_product_reuses_mockup_failed_product_instead_of_recreating(tmp_path):
+def test_create_or_reuse_group_product_reuses_mockup_failed_product_instead_of_recreating(stub_mockup_bundles, tmp_path):
     # Regression: a mockup_failed row means Gelato created the product (gelato_product_id set)
     # but the readiness poll timed out on rehost lag. Retrying must REUSE + re-poll that same
     # product, never delete + recreate it (idempotency; avoids churning real Gelato products).
@@ -249,11 +250,15 @@ def test_create_or_reuse_group_product_reuses_mockup_failed_product_instead_of_r
 # task deletes outright per the hard "no Gelato fallback, ever" constraint - their
 # scenario no longer exists, so they're removed rather than patched.
 
-def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_crop(tmp_path):
-    # Real (non-mocked) mockup_render output, using the real Task 1 bundles under
-    # assets/mockups/primary/portrait - proves the actual end-to-end integration, not
-    # a fixture. Primary renders straight from base_image_local_path (no crop step);
-    # flat scenes come first (image_type='flat_mockup'), lifestyle scenes after.
+def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_crop(
+    stub_mockup_bundles, tmp_path
+):
+    # Real (non-mocked) mockup_render output - proves the actual end-to-end
+    # integration. Primary renders straight from base_image_local_path (no crop
+    # step); flat scenes come first (image_type='flat_mockup'), lifestyle after.
+    # Bundles are the aspect-correct stubs, not assets/mockups/primary/portrait:
+    # those four are mid-rework and GL-21's C3 guard rejects them (asserted by
+    # test_create_or_reuse_group_product_fails_loud_on_aspect_broken_real_bundles).
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -284,6 +289,29 @@ def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_cr
 
     gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
     assert gp_row["status"] == "created"
+
+
+def test_create_or_reuse_group_product_fails_loud_on_aspect_broken_real_bundles(tmp_path):
+    # The real assets/mockups/primary/portrait bundles as they stand today carry
+    # hand-read apertures from 0.56 to 0.69 against a 0.684 master - GL-21's C3
+    # guard must refuse them (an 18% stretch of a print a buyer pays for) rather
+    # than render silently. GL-6 attempt 3 re-authors them; this test then flips
+    # back to asserting a successful render.
+    conn = _fresh_conn(tmp_path)
+    master_path = _make_master(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
+    group_id = _insert_group(conn, candidate_id, group_type="primary")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+        with pytest.raises(mockup_render.MockupRenderError, match="cover-crop"):
+            group_product.create_or_reuse_group_product(
+                conn, group_id, ["8x12"], candidate, _static_config(), "Title", now="2026-07-16T09:10:00",
+            )
+
+    row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
+    assert row["status"] == "mockup_failed"
 
 
 def test_create_or_reuse_group_product_5x7_builds_crop_then_zero_images_known_gap(tmp_path):
@@ -342,7 +370,7 @@ def test_create_or_reuse_group_product_missing_local_master_lands_on_mockup_fail
     assert gp_row["status"] == "mockup_failed"
 
 
-def test_create_or_reuse_group_product_never_uses_gelato_preview_or_base_url_as_image(tmp_path):
+def test_create_or_reuse_group_product_never_uses_gelato_preview_or_base_url_as_image(stub_mockup_bundles, tmp_path):
     # Determinism / no-Gelato-fallback guard: even when the Gelato dry-run response
     # carries a previewUrl, and the candidate has a (dead) base_image_url, neither ends
     # up as a product_images.image_url - only our own rendered/persisted URLs do. This
@@ -701,7 +729,7 @@ def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(tmp_p
         monkeypatch.delenv(key, raising=False)
 
     master_path = tmp_path / "master.png"
-    Image.new("RGB", (900, 1350), (200, 180, 150)).save(master_path, format="PNG")
+    Image.new("RGB", (900, 1316), (200, 180, 150)).save(master_path, format="PNG")
 
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(
