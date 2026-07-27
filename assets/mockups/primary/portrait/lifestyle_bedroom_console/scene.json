@@ -1,0 +1,28 @@
+{
+  "scene": "lifestyle_bedroom_console",
+  "source_image": "outputs\\attempt1_console_photo.png",
+  "mode": "seeded",
+  "seed_polygon": [
+    [
+      300.0,
+      168.0
+    ],
+    [
+      652.0,
+      168.0
+    ],
+    [
+      652.0,
+      722.0
+    ],
+    [
+      300.0,
+      722.0
+    ]
+  ],
+  "key_lab_ab": null,
+  "quad_aspect": 0.6842,
+  "aspect_delta": -0.0,
+  "cover_crop": 0.0,
+  "matte_coverage": 0.2031
+}

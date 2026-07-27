@@ -46,6 +46,9 @@ FRINGE_TOL = 24         # 0-255. A supersampled edge downsampled by INTER_AREA c
                         # legitimately land ~20 outside its interior's local range;
                         # the defect class this guards (BORDER_CONSTANT) is ~120.
 ASPECT_TOL = 0.01       # |quad aspect / art aspect - 1|
+MATTE_CROP_TOL = 0.08   # how much of the print a matte may hide. A frame rebate
+                        # really does cover a few mm; sage's 0.59 mat opening
+                        # against a 0.684 master hid 18%, which is defect (d).
 SPILL_TOL = 32          # Lab a/b distance under which a pixel still reads as the key.
                         # Must match the extractor's own key tolerance: at 20 this
                         # test passed a composite with a visible green rim, because
@@ -190,23 +193,51 @@ def d_key_spill(p: dict, key_rgb) -> dict:
 
 
 def d_distortion(p: dict) -> dict:
-    """The print must not be stretched. Reports the cover-crop C3 would apply."""
+    """The print must not be stretched, and the matte must not hide so much of it
+    that the buyer is shown a different crop than the one they receive.
+
+    A frame's rebate really does cover a few mm of a print, so a small matte crop
+    is physical, not dishonest. Sage's 0.59 mat opening against a 0.684 master
+    was 18% - that is a differently-shaped opening, and it is defect (d)."""
     delta = abs(p["aspect"] / p["art_aspect"] - 1)
-    return _finding("distortion", delta <= ASPECT_TOL, round(delta, 5),
-                    f"quad {p['aspect']:.4f} vs art {p['art_aspect']:.4f} "
-                    f"= {delta:.2%} off, cover-crop {p['crop']:.2%}")
+    region = _print_region(p)
+    detail = (f"quad {p['aspect']:.4f} vs art {p['art_aspect']:.4f} "
+              f"= {delta:.2%} off, cover-crop {p['crop']:.2%}")
+    hidden = 0.0
+    if region.any():
+        box, _ = _region_quad(region)
+        e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]
+        if min(e) > 4:
+            m_aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)
+            hidden = 1 - min(m_aspect, p["aspect"]) / max(m_aspect, p["aspect"])
+            detail += f", matte {m_aspect:.4f} hides {hidden:.1%} of the print"
+    return _finding("distortion", delta <= ASPECT_TOL and hidden <= MATTE_CROP_TOL,
+                    round(delta, 5), detail)
+
+
+def _region_quad(region: np.ndarray):
+    """Corner quad of a mask, TL TR BR BL (its own extremes, so perspective and
+    curl survive - the same derivation scene_author uses)."""
+    cnt = max(cv2.findContours(region.astype(np.uint8), cv2.RETR_EXTERNAL,
+                               cv2.CHAIN_APPROX_SIMPLE)[0], key=cv2.contourArea)
+    q = cnt.reshape(-1, 2).astype(np.float32)
+    s, d = q.sum(1), q[:, 0] - q[:, 1]
+    return np.stack([q[s.argmin()], q[d.argmax()], q[s.argmax()], q[d.argmin()]]), cnt
 
 
 def d_coverage(p: dict) -> dict:
     """The print area must be fully printed, and nothing may print outside it.
     Fires on attempt 2's occluder-box notches (print area showing background)
     and on Mode-O spill past the paper."""
+    # Measured from alpha, not from "does the composite differ from the bare
+    # scene": on a white-walled scene the artwork's own pale background is
+    # pixel-identical to the blank paper it prints onto, and a difference test
+    # calls thousands of correctly-printed px unprinted (3101 on bedroom_console).
     region = _print_region(p)
-    shows_art = np.abs(p["comp"] - p["bare"]).max(axis=2) > 3
     inner = cv2.erode(region.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     outer = cv2.dilate(region.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
-    uncovered = int((inner & ~shows_art).sum())
-    outside = int((shows_art & ~outer).sum())
+    uncovered = int((inner & ((p["raw_a"] < 0.5) | (p["overlay_a"] > 0.5))).sum())
+    outside = int(((p["art_a"] > 0.5) & ~outer).sum())
     n = uncovered + outside
     budget = int(COVERAGE_TOL * max(region.sum(), 1))
     return _finding("coverage", n <= budget, n,
@@ -337,7 +368,10 @@ def _edge_strip(comp: Image.Image, quad, i, width, height):
 # --------------------------------------------------------------------------- demo
 
 A2 = ROOT / "outputs" / "attempt2_reference" / "bundles"     # attempt-2 bundles, kept as reference
-A1 = ROOT / "assets" / "mockups" / "primary" / "portrait"    # attempt-1 bundles, still on the branch
+A1 = ROOT / "outputs" / "attempt1_reference"                 # attempt-1 bundles, preserved
+# Both corpora are copies on purpose: P3 rewrites the live bundles, and a demo
+# that points at them would quietly start measuring the fixed scene instead of
+# the defect it claims to reproduce.
 
 
 def _report(name, fired, where, why, detail):

@@ -62,6 +62,18 @@ def soft_matte(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
     return np.where(near, a, 0.0).astype(np.float32)
 
 
+def _fill(mask: np.ndarray) -> np.ndarray:
+    """`mask` with its enclosed holes filled."""
+    out = mask.copy()
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cv2.drawContours(out, cnts, -1, 1, cv2.FILLED)
+    return out
+
+
+def _holes(mask: np.ndarray) -> np.ndarray:
+    return (_fill(mask) & ~mask.astype(bool)).astype(bool)
+
+
 def _prop_mask(rgb: np.ndarray, core: np.ndarray) -> np.ndarray:
     """Props lying over the print area - book spines, clip jaws, a plant leaf.
 
@@ -106,6 +118,12 @@ def seeded_matte(rgb: np.ndarray, poly: np.ndarray) -> np.ndarray:
     # ~0.35 and read as a see-through patch of print (QA's occluder-opacity test).
     fg = cv2.morphologyEx(cv2.morphologyEx(fg, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)),
                           cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    # GrabCut settles a couple of px *inside* the object, which leaves a bright
+    # sliver of bare board along the print's edge - the "lines on the edges" class
+    # that was rejected twice. Grow the outer boundary to close it, but only the
+    # outer one: dilating the holes too would print over a book's own edge.
+    holes = _holes(fg)
+    fg = (cv2.dilate(_fill(fg), np.ones((5, 5), np.uint8)) & ~holes).astype(np.uint8)
     n, lab, stats, _ = cv2.connectedComponentsWithStats(fg, 8)
     if n > 1:                                        # one print area, not confetti
         fg = (lab == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))).astype(np.uint8)
