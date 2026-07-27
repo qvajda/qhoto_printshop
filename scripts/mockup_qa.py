@@ -46,9 +46,15 @@ FRINGE_TOL = 24         # 0-255. A supersampled edge downsampled by INTER_AREA c
                         # legitimately land ~20 outside its interior's local range;
                         # the defect class this guards (BORDER_CONSTANT) is ~120.
 ASPECT_TOL = 0.01       # |quad aspect / art aspect - 1|
-SPILL_TOL = 20          # Lab a/b distance under which a pixel still reads as the key
+SPILL_TOL = 32          # Lab a/b distance under which a pixel still reads as the key.
+                        # Must match the extractor's own key tolerance: at 20 this
+                        # test passed a composite with a visible green rim, because
+                        # the rim's residue sat between the two thresholds.
 PLATEAU_TOL = 0.05      # alpha within this of 0/1 counts as hard
 SILHOUETTE_TOL = 4.0    # px of *uneven* gap between photographed and printed edge
+COVERAGE_TOL = 0.0005   # fraction of the print area allowed to read as un-printed:
+                        # an anti-aliased rim always leaves a few px indistinguishable
+                        # from the background. Attempt 2's occluder notches were 5.1%.
 
 
 # --------------------------------------------------------------------------- parts
@@ -188,8 +194,10 @@ def d_coverage(p: dict) -> dict:
     uncovered = int((inner & ~shows_art).sum())
     outside = int((shows_art & ~outer).sum())
     n = uncovered + outside
-    return _finding("coverage", n == 0, n,
-                    f"{uncovered} px of print area not printed, {outside} px of art outside it")
+    budget = int(COVERAGE_TOL * max(region.sum(), 1))
+    return _finding("coverage", n <= budget, n,
+                    f"{uncovered} px of print area not printed, {outside} px of art outside it "
+                    f"(budget {budget})")
 
 
 def d_occluder_opacity(p: dict) -> dict:
@@ -214,8 +222,17 @@ def d_occluder_opacity(p: dict) -> dict:
                     else f"{int(mid.sum())} partial px, all on anti-aliased rims")
 
 
+def _region_holes(region: np.ndarray) -> np.ndarray:
+    """Occluders: the enclosed holes in the print region (a clip jaw, a book
+    spine), i.e. its filled outline minus itself."""
+    filled = region.astype(np.uint8).copy()
+    cnts, _ = cv2.findContours(filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cv2.drawContours(filled, cnts, -1, 1, cv2.FILLED)
+    return filled.astype(bool) & ~region
+
+
 def _outward_dark_distance(gray: np.ndarray, region: np.ndarray, side: str,
-                           reach=60, drop=12) -> np.ndarray:
+                           skip: np.ndarray = None, reach=60, drop=12) -> np.ndarray:
     """Per scanline, how far outside the print edge the first clearly darker
     pixel sits - the object's own shadow, or the frame/floor it stands against.
     A print whose silhouette matches the photographed one keeps that distance
@@ -224,14 +241,21 @@ def _outward_dark_distance(gray: np.ndarray, region: np.ndarray, side: str,
     rows = side in ("left", "right")
     arr = gray if rows else gray.T
     reg = region if rows else region.T
+    # An occluder that touches this edge (a clip over the top of a sheet) puts a
+    # dark object at distance 0 on those scanlines only. That is scene content,
+    # not a silhouette mismatch, so those scanlines carry no reading.
+    sk = (skip if rows else (skip.T if skip is not None else None))
     for i in range(arr.shape[0]):
         hits = np.flatnonzero(reg[i])
         if hits.size == 0:
             continue
+        edge = hits[-1] if side in ("right", "bottom") else hits[0]
+        if sk is not None and sk[i, edge]:
+            continue
         if side in ("right", "bottom"):
-            win = arr[i, hits[-1] + 1: hits[-1] + 1 + reach]
+            win = arr[i, edge + 1: edge + 1 + reach]
         else:
-            win = arr[i, max(hits[0] - reach, 0): hits[0]][::-1]
+            win = arr[i, max(edge - reach, 0): edge][::-1]
         if win.size < reach // 2:
             continue
         bright = np.percentile(win, 90)
@@ -264,9 +288,11 @@ def d_silhouette_vs_shadow(p: dict) -> dict:
     if not region.any():
         return _finding("silhouette-vs-shadow", False, None, "no print region")
     gray = cv2.cvtColor(p["bg"].astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
+    skip = cv2.dilate(_region_holes(region).astype(np.uint8),
+                      np.ones((9, 9), np.uint8)).astype(bool)
     worst, where = 0.0, ""
     for side in ("left", "right", "top", "bottom"):
-        d = _outward_dark_distance(gray, region, side)
+        d = _outward_dark_distance(gray, region, side, skip)
         if d.size < 20:
             continue
         spread = float(np.percentile(d, 95) - np.percentile(d, 5))

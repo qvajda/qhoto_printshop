@@ -54,3 +54,5 @@ db/group_preview_images/
 outputs/mockup_qa/
 outputs/attempt2_reference/
 outputs/gl19_m1/_dbg_*.png
+outputs/gl6_keyed/
+outputs/gl6_keyed_stale/
