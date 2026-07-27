@@ -43,6 +43,13 @@ BUNDLES = ROOT / "assets" / "mockups" / "primary" / "portrait"
 MASTER_ASPECT = 6656 / 9728                         # db/base_artwork/39.png
 
 MATTE_LO, MATTE_HI = 0.6, 1.0                       # x KEY_LAB_TOL: the anti-aliased rim
+DESPILL_CAP = 4.0                                   # Lab units of key-direction chroma
+                                                    # allowed to survive anywhere. Tighter
+                                                    # values chase a +-6 G-R difference inside
+                                                    # a shadow, which is inside the scene's own
+                                                    # palette variation (its wall measures +4.3).
+DESPILL_MAX_CHROMA = 20.0                           # above this a pixel is a real colour,
+                                                    # not a tinted neutral - leave it alone
 GAIN_SIGMA, GAIN_STRENGTH, GAIN_FLOOR = 12.0, 0.9, 0.55
 
 
@@ -137,14 +144,43 @@ def neutralise(rgb: np.ndarray, ref: np.ndarray, matte: np.ndarray) -> np.ndarra
     own light, and a partial-alpha edge pixel now blends art into paper."""
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
     dist = np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
-    # Full removal well past the key threshold, feathering only after that. A
-    # narrow despill leaves a rim of half-neutralised green exactly where the
-    # matte is partial, and that rim reads as a green outline around the print -
-    # caught on the P0 probe's full-frame check, invisible in the metrics.
+    # Inside the panel: drop the chroma outright, keep every bit of luminance.
     spill = np.clip((2.5 * ss.KEY_LAB_TOL - dist) / ss.KEY_LAB_TOL, 0.0, 1.0)
-    w = np.maximum(matte, spill)[:, :, None]
+    # Weighting by the matte itself was the bug behind the green hairline: at a
+    # partial-matte pixel the background kept ~half its key chroma, and the art
+    # composited over it at that same partial alpha, so the residue showed
+    # through as a tinted line. The background has no reason to keep key chroma
+    # anywhere the key reaches - it is meant to be blank paper - so neutralise
+    # the matte's whole footprint, not a fraction of it. Luminance is untouched.
+    w = np.maximum((matte > 0.02).astype(np.float32), spill)[:, :, None]
     lab[:, :, 1:] = lab[:, :, 1:] * (1 - w) + 128.0 * w
-    return cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2RGB)
+
+    # Around it: a directional despill. A distance threshold cannot catch a tint
+    # that is only *slightly* toward the key - the panel's edge against a bright
+    # prop lands 40-80 Lab units away and still reads as a green line (seen at 3x
+    # on the shelf scene, and invisible to a fixed-distance spill test). Project
+    # onto the key's own chroma direction and cap the positive part, so wood and
+    # books are untouched. Confined to a ring so a real plant elsewhere in the
+    # scene keeps its greens.
+    k = ref - 128.0
+    u = k / (np.linalg.norm(k) + 1e-6)
+    ab = lab[:, :, 1:] - 128.0
+    proj = ab @ u
+    # Applied to the whole frame, not a ring: the key bounces light onto whatever
+    # the panel is mounted on, and that cast covers far more than a few px (the
+    # shelf scene's backing board read G-R +13 at 15px out and further). Confined
+    # instead to *low-chroma* pixels - a tinted white board is spill, a green
+    # leaf at full saturation is scene content and keeps its colour.
+    chroma = np.linalg.norm(ab, axis=2)
+    # Close to the panel, spill dominates whatever the pixel's own chroma is -
+    # the sheet's cast shadow is both saturated and entirely bounce light. Far
+    # from it, only near-neutral surfaces can be assumed tinted rather than
+    # coloured, or a plant across the room loses its greens.
+    near = cv2.dilate((matte > 0.02).astype(np.uint8), np.ones((31, 31), np.uint8)).astype(bool)
+    spillable = (near | (chroma < DESPILL_MAX_CHROMA)) & (proj > DESPILL_CAP)
+    excess = np.where(spillable, proj - DESPILL_CAP, 0.0)
+    lab[:, :, 1:] = ab - excess[:, :, None] * u + 128.0
+    return cv2.cvtColor(lab.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
 
 
 def gain_map(bg: np.ndarray, matte: np.ndarray) -> np.ndarray:

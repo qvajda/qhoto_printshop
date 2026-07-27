@@ -202,7 +202,7 @@ def test_get_mockup_templates_returns_primary_portrait_scenes_in_order():
     assert result == [
         "flat_clips_windowlight",
         "flat_leaning_bookstack",
-        "lifestyle_sage_terracotta",
+        "lifestyle_shelf_books",
         "lifestyle_bedroom_console",
     ]
 

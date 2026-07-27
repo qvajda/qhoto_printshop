@@ -4,7 +4,7 @@
     "portrait": [
       { "scene": "flat_clips_windowlight", "tag": "flat" },
       { "scene": "flat_leaning_bookstack", "tag": "flat" },
-      { "scene": "lifestyle_sage_terracotta", "tag": "lifestyle" },
+      { "scene": "lifestyle_shelf_books", "tag": "lifestyle" },
       { "scene": "lifestyle_bedroom_console", "tag": "lifestyle" }
     ]
   }

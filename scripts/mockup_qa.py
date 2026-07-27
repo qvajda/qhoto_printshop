@@ -53,6 +53,10 @@ SPILL_TOL = 32          # Lab a/b distance under which a pixel still reads as th
                         # Must match the extractor's own key tolerance: at 20 this
                         # test passed a composite with a visible green rim, because
                         # the rim's residue sat between the two thresholds.
+SPILL_PROJ_MAX = 8.0    # Lab units of key-direction chroma tolerated on the print's
+                        # own edge band - above this it reads as a coloured hairline
+SPILL_BAND_BUDGET = 0.001  # x the band's own size: an occluder's real colour shows at
+                        # the rim of its hole, and that is scene content, not residue
 PLATEAU_TOL = 0.05      # alpha within this of 0/1 counts as hard
 PLATEAU_BUDGET = 0.01   # x the matte's perimeter: a matte derived from a photograph's
                         # own edge gradient leaves a few soft px on it. Attempt 1's
@@ -181,15 +185,30 @@ def d_fringe(p: dict) -> dict:
 
 
 def d_key_spill(p: dict, key_rgb) -> dict:
-    """No residual key chroma anywhere in the composite. Needs the key colour;
-    scenes with no key (every pre-P0 bundle) report n/a rather than a pass."""
+    """No residual key chroma anywhere in the composite, and no key-direction
+    *tint* on the print's own edge - which is the form the defect actually takes.
+    A fixed distance-to-key test passes a visible green line, because the line
+    sits 40-80 Lab units away: it is a partial tint, not the key itself."""
     if key_rgb is None:
         return _finding("key-spill", True, None, "n/a - bundle declares no key colour")
     lab = cv2.cvtColor(p["comp"].astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
-    ref = cv2.cvtColor(np.uint8([[key_rgb]]), cv2.COLOR_RGB2LAB).astype(np.float32)[0, 0]
-    dist = np.linalg.norm(lab[:, :, 1:] - ref[1:], axis=2)
-    n = int((dist < SPILL_TOL).sum())
-    return _finding("key-spill", n == 0, n, f"{n} px within {SPILL_TOL} Lab-ab of key {key_rgb}")
+    ref = cv2.cvtColor(np.uint8([[key_rgb]]), cv2.COLOR_RGB2LAB).astype(np.float32)[0, 0, 1:]
+    n = int((np.linalg.norm(lab[:, :, 1:] - ref, axis=2) < SPILL_TOL).sum())
+    # measured on the *background*, not the composite: the master's own green
+    # stems project onto an emerald key just as hard as residue does, and they
+    # are the artwork, not spill. The background under the print is meant to be
+    # blank paper, so any key-direction chroma there is residue by construction.
+    bg_lab = cv2.cvtColor(p["bg"].astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    u = (ref - 128.0) / (np.linalg.norm(ref - 128.0) + 1e-6)
+    proj = (bg_lab[:, :, 1:] - 128.0) @ u
+    region = _print_region(p).astype(np.uint8)
+    band = (cv2.dilate(region, np.ones((9, 9), np.uint8))
+            - cv2.erode(region, np.ones((9, 9), np.uint8))).astype(bool)
+    tinted = int((band & (proj > SPILL_PROJ_MAX)).sum())
+    budget = int(SPILL_BAND_BUDGET * max(band.sum(), 1))
+    return _finding("key-spill", n == 0 and tinted <= budget, n + tinted,
+                    f"{n} px within {SPILL_TOL} Lab-ab of key {key_rgb}, "
+                    f"{tinted} px of key-direction tint on the print edge (budget {budget})")
 
 
 def d_distortion(p: dict) -> dict:
@@ -444,9 +463,12 @@ def _occluder_demo(art):
 
 def _spill_demo():
     key = (0, 190, 120)
-    p = dict(comp=np.full((40, 40, 3), 210.0, np.float32))
+    matte = np.zeros((60, 60), np.float32)
+    matte[15:45, 15:45] = 1.0
+    p = dict(comp=np.full((60, 60, 3), 210.0, np.float32),
+             bg=np.full((60, 60, 3), 210.0, np.float32), matte=matte)
     clean = d_key_spill(p, key)
-    p["comp"][10:20, 10:20] = key
+    p["bg"][12:15, 15:45] = key          # residue along the print's top edge
     dirty = d_key_spill(p, key)
     return _report("key-spill", clean["passed"] and not dirty["passed"], "(synthetic)",
                    "100px of emerald key left in a composite - no keyed bundle "

@@ -75,27 +75,38 @@ PROMPTS = {
     ],
     "framed": [
         "A slim black portrait frame hanging on a warm sage plaster wall above a "
-        "terracotta pot, lit softly from the left. The frame's opening is filled corner "
-        "to corner by one solid panel of {key} meeting the frame's inner edge "
-        "directly. " + COMMON,
-        "A thin natural oak portrait frame on a pale cream wall in a bright living room, "
-        "a rattan pendant lamp out of focus behind. The frame's opening is filled corner "
-        "to corner by one solid panel of {key} meeting the frame's inner edge "
-        "directly. " + COMMON,
-        "A slender white portrait frame on a soft clay-pink wall, a small brass sconce "
-        "casting warm light across it. The frame's opening is filled corner to corner by "
+        "terracotta pot, lit softly from the left. The frame's opening is a tall 2:3 "
+        "rectangle, three units high for every two wide, filled corner to corner by "
         "one solid panel of {key} meeting the frame's inner edge directly. " + COMMON,
+        "A thin natural oak portrait frame on a pale cream wall in a bright living room, "
+        "a rattan pendant lamp out of focus behind. The frame's opening is a tall 2:3 "
+        "rectangle, three units high for every two wide, filled corner to corner by "
+        "one solid panel of {key} meeting the frame's inner edge directly. " + COMMON,
+        "A slender white portrait frame on a soft clay-pink wall, a small brass sconce "
+        "casting warm light across it. The frame's opening is a tall 2:3 rectangle, three "
+        "units high for every two wide, filled corner to corner by one solid panel of "
+        "{key} meeting the frame's inner edge directly. " + COMMON,
     ],
+    # v4-v6: "portrait panel" made FLUX render a thick board with rounded corners
+    # and the key inset on its face, which composites as a print mounted on an
+    # oversized white slab. Ask for a single thin sheet with square corners.
     "shelf": [
-        "A portrait panel standing upright on a walnut console table against a warm beige "
-        "bedroom wall, a small ceramic lamp glowing to its right and a trailing plant to "
-        "its left. The panel's face is one solid panel of {key}. " + COMMON,
-        "A portrait panel resting on a floating oak shelf against a pale limewash wall, a "
-        "stack of two books and a small brass candlestick beside it. The panel's face is "
-        "one solid panel of {key}. " + COMMON,
-        "A portrait panel standing on a marble sideboard against a soft white wall, a "
-        "glass vase with dried grasses to one side, late daylight from a window off "
-        "frame. The panel's face is one solid panel of {key}. " + COMMON,
+        "A single thin sheet of poster paper with sharp square corners standing upright "
+        "against a warm beige bedroom wall on a walnut console table, its bottom edge "
+        "resting on the wood, a small ceramic lamp glowing to its right and a trailing "
+        "plant to its left. The sheet is one solid panel of {key} from corner to corner, "
+        "its four edges straight and its paper thin enough to see it is a single sheet. "
+        + COMMON,
+        "A single thin sheet of poster paper with sharp square corners leaning against a "
+        "pale limewash wall on a floating oak shelf, a stack of two books and a small "
+        "brass candlestick beside it. The sheet is one solid panel of {key} from corner "
+        "to corner, its four edges straight and its paper thin enough to see it is a "
+        "single sheet. " + COMMON,
+        "A single thin sheet of poster paper with sharp square corners standing on a "
+        "marble sideboard against a soft white wall, a glass vase with dried grasses to "
+        "one side, late daylight from a window off frame. The sheet is one solid panel of "
+        "{key} from corner to corner, its four edges straight and its paper thin enough "
+        "to see it is a single sheet. " + COMMON,
     ],
 }
 
@@ -169,6 +180,9 @@ if __name__ == "__main__":
     only = None
     if "--only" in argv:
         only = set(argv[argv.index("--only") + 1].split(","))
+    if "--key" in argv:
+        for k in [k for k in KEYS if k != argv[argv.index("--key") + 1]]:
+            del KEYS[k]
     seeds = SEEDS
     if "--seeds" in argv:
         seeds = tuple(range(11, 11 + 11 * int(argv[argv.index("--seeds") + 1]), 11))

@@ -20,7 +20,7 @@ SCENE_DIRS = [
     BUNDLE_ROOT / "flat_clips_windowlight",
     BUNDLE_ROOT / "flat_leaning_bookstack",
     BUNDLE_ROOT / "lifestyle_bedroom_console",
-    BUNDLE_ROOT / "lifestyle_sage_terracotta",
+    BUNDLE_ROOT / "lifestyle_shelf_books",
 ]
 OUT_DIR = ROOT / "outputs" / "gl19_m1"
 

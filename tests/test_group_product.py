@@ -291,12 +291,12 @@ def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_cr
     assert gp_row["status"] == "created"
 
 
-def test_create_or_reuse_group_product_fails_loud_on_aspect_broken_real_bundles(tmp_path):
-    # The real assets/mockups/primary/portrait bundles as they stand today carry
-    # hand-read apertures from 0.56 to 0.69 against a 0.684 master - GL-21's C3
-    # guard must refuse them (an 18% stretch of a print a buyer pays for) rather
-    # than render silently. GL-6 attempt 3 re-authors them; this test then flips
-    # back to asserting a successful render.
+def test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles(tmp_path):
+    # The real assets/mockups/primary/portrait bundles, not the stubs - the one
+    # test that proves the shipped scene library actually composites. It replaces
+    # the GL-21 placeholder that asserted these bundles fail loud: they did, while
+    # they carried attempt-1/2 apertures from 0.561 to 0.693 against a 0.684
+    # master, and GL-6 attempt 3 re-authored all four to within 0.01%.
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -305,13 +305,17 @@ def test_create_or_reuse_group_product_fails_loud_on_aspect_broken_real_bundles(
 
     with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
         mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        with pytest.raises(mockup_render.MockupRenderError, match="cover-crop"):
-            group_product.create_or_reuse_group_product(
-                conn, group_id, ["8x12"], candidate, _static_config(), "Title", now="2026-07-16T09:10:00",
-            )
+        result = group_product.create_or_reuse_group_product(
+            conn, group_id, ["8x12"], candidate, _static_config(), "Title", now="2026-07-16T09:10:00",
+        )
 
+    rows = conn.execute(
+        "SELECT image_type, gallery_order FROM product_images WHERE group_product_id = ? "
+        "ORDER BY gallery_order", (result["group_product_id"],),
+    ).fetchall()
+    assert [r["image_type"] for r in rows] == ["flat_mockup", "flat_mockup", "lifestyle", "lifestyle"]
     row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
-    assert row["status"] == "mockup_failed"
+    assert row["status"] == "created"
 
 
 def test_create_or_reuse_group_product_5x7_builds_crop_then_zero_images_known_gap(tmp_path):
