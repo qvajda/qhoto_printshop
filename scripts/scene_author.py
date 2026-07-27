@@ -62,6 +62,56 @@ def soft_matte(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
     return np.where(near, a, 0.0).astype(np.float32)
 
 
+def _prop_mask(rgb: np.ndarray, core: np.ndarray) -> np.ndarray:
+    """Props lying over the print area - book spines, clip jaws, a plant leaf.
+
+    Two separate tests, chroma OR darkness, carried over from attempt 2 because
+    neither alone works: plain RGB distance also fires on the paper's own shadowed
+    corner and punches a hole through the print, and a darkness threshold alone
+    misses a clip's bright metal jaw. (attempt 1's black-blob and see-through-prop
+    defects, respectively.)"""
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    ref = np.median(lab[core], axis=0)
+    chroma = np.linalg.norm(lab[:, :, 1:] - ref[1:], axis=2)
+    raw = ((chroma > 12) | (lab[:, :, 0] < 0.75 * ref[0])).astype(np.uint8)
+    # open first: a few speckled pixels would otherwise become single-pixel holes
+    # in the matte, which read as flat mid-alpha once anti-aliased (QA's
+    # occluder-opacity test, 123 px on the seeded bookstack)
+    return cv2.morphologyEx(raw, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)).astype(bool)
+
+
+def seeded_matte(rgb: np.ndarray, poly: np.ndarray) -> np.ndarray:
+    """Plan B, for a scene with no key: a coarse owner polygon used as a GrabCut
+    seed and refined against the image itself. The polygon only has to be within
+    several px - the photograph decides the actual edge, which is the whole point
+    (attempts 1 and 2 both failed trying to hand-trace it to sub-pixel)."""
+    h, w = rgb.shape[:2]
+    inside = np.zeros((h, w), np.uint8)
+    cv2.fillPoly(inside, [np.round(poly).astype(np.int32)], 1)
+    k = np.ones((25, 25), np.uint8)
+    core = cv2.erode(inside, np.ones((45, 45), np.uint8)).astype(bool)
+    if not core.any():
+        raise SystemExit("seed polygon too small to sample the print area from")
+    props = _prop_mask(rgb, core)
+    m = np.full((h, w), cv2.GC_PR_BGD, np.uint8)
+    m[inside.astype(bool)] = cv2.GC_PR_FGD
+    # a prop inside the seed must never become sure-foreground, or GrabCut learns
+    # the book's colour as paper and the hole closes over the print
+    m[(cv2.erode(inside, k) > 0) & ~props] = cv2.GC_FGD
+    m[cv2.dilate(inside, k) == 0] = cv2.GC_BGD
+    cv2.grabCut(rgb[:, :, ::-1].copy(), m, None, np.zeros((1, 65), np.float64),
+                np.zeros((1, 65), np.float64), 5, cv2.GC_INIT_WITH_MASK)
+    fg = (((m == cv2.GC_FGD) | (m == cv2.GC_PR_FGD)) & ~props).astype(np.uint8)
+    # GrabCut leaves 1px slivers along an uncertain edge; feathered, they peak at
+    # ~0.35 and read as a see-through patch of print (QA's occluder-opacity test).
+    fg = cv2.morphologyEx(cv2.morphologyEx(fg, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)),
+                          cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(fg, 8)
+    if n > 1:                                        # one print area, not confetti
+        fg = (lab == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))).astype(np.uint8)
+    return np.clip(cv2.GaussianBlur(fg.astype(np.float32), (0, 0), 0.8), 0, 1)
+
+
 def neutralise(rgb: np.ndarray, ref: np.ndarray, matte: np.ndarray) -> np.ndarray:
     """Drop the key's chroma wherever it reaches - inside the panel and in the
     spill ring around it - and keep every bit of luminance. The panel becomes the
@@ -99,10 +149,22 @@ def quad_for(matte: np.ndarray) -> np.ndarray:
     matte, so the expansion only guarantees coverage under the anti-aliased rim -
     it can never show as a border, which is what `overfill` used to be for."""
     box, _ = ss._quad((matte > 0.5).astype(np.uint8))
-    e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]
-    aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)
     unit = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], np.float32)
     H = cv2.getPerspectiveTransform(unit, box.astype(np.float32))
+
+    # The corner quad is a chord across every bowed edge, so a board with a
+    # slightly curved top leaves an unprinted lip under it. Push each edge out in
+    # the quad's *own* space until the whole matte is inside - measured, not
+    # padded. (Caught by the QA coverage test on the seeded bookstack: 4439 px.)
+    ys, xs = np.nonzero(matte > 0.5)
+    uv = cv2.perspectiveTransform(
+        np.stack([xs, ys], 1)[None].astype(np.float32), np.linalg.inv(H))[0]
+    lo, hi = uv.min(axis=0), uv.max(axis=0)
+    cover = np.array([[lo[0], lo[1]], [hi[0], lo[1]], [hi[0], hi[1]], [lo[0], hi[1]]], np.float32)
+    box = cv2.perspectiveTransform(cover[None], H)[0]
+    H = cv2.getPerspectiveTransform(unit, box.astype(np.float32))
+    e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]
+    aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)
     if aspect < MASTER_ASPECT:                       # too narrow: widen
         m = (MASTER_ASPECT / aspect - 1) / 2
         sub = np.array([[-m, 0], [1 + m, 0], [1 + m, 1], [-m, 1]], np.float32)
@@ -112,13 +174,17 @@ def quad_for(matte: np.ndarray) -> np.ndarray:
     return cv2.perspectiveTransform(sub[None], H)[0].astype(np.float32)
 
 
-def extract(image_path: Path, scene: str, tag: str, provenance: dict) -> dict:
+def extract(image_path: Path, scene: str, tag: str, provenance: dict,
+            seed_poly: np.ndarray = None) -> dict:
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
     h, w = rgb.shape[:2]
-    ref = ss.key_ref(rgb, provenance.get("key_rgb", (0, 177, 64)))
-    matte = soft_matte(rgb, ref)
-    bg = neutralise(rgb, ref, matte)
-    g = gain_map(bg, matte)
+    if seed_poly is not None:
+        matte, bg, ref = seeded_matte(rgb, seed_poly), rgb, None
+    else:
+        ref = ss.key_ref(rgb, provenance.get("key_rgb", (0, 177, 64)))
+        matte = soft_matte(rgb, ref)
+        bg = neutralise(rgb, ref, matte)          # keyed only: there is no key to remove
+    g = gain_map(bg, matte)                       # from a seeded photo the paper is already blank
     quad = quad_for(matte)
 
     d = BUNDLES / scene
@@ -141,7 +207,10 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict) -> dict:
     }, indent=2) + "\n")
     (d / "scene.json").write_text(json.dumps({
         **provenance, "scene": scene, "source_image": str(image_path),
-        "key_lab_ab": [round(float(x), 2) for x in ref],
+        "mode": "seeded" if seed_poly is not None else "keyed",
+        "seed_polygon": None if seed_poly is None else
+                        [[round(float(x), 1), round(float(y), 1)] for x, y in seed_poly],
+        "key_lab_ab": None if ref is None else [round(float(x), 2) for x in ref],
         "quad_aspect": round(aspect, 4),
         "aspect_delta": round(aspect / MASTER_ASPECT - 1, 4),
         "cover_crop": round(crop, 4),
@@ -169,7 +238,19 @@ def main(argv):
         image_path, scene = Path(argv[2]), argv[3]
         tag = argv[argv.index("--tag") + 1] if "--tag" in argv else (
             "flat" if scene.startswith("flat") else "lifestyle")
-        print(json.dumps(extract(image_path, scene, tag, _provenance_for(image_path)), indent=2))
+        poly = None
+        if "--seeded" in argv:
+            # coarse owner polygon: 4 "x,y" points, or a bundle dir to lift an
+            # existing hand-read aperture from. Several px of error is expected.
+            src = argv[argv.index("--seeded") + 1]
+            if Path(src).is_dir():
+                poly = np.asarray(json.loads((Path(src) / "meta.json").read_text())["aperture"],
+                                  np.float32)
+            else:
+                poly = np.asarray([[float(v) for v in p.split(",")]
+                                   for p in src.split(";")], np.float32)
+        print(json.dumps(extract(image_path, scene, tag,
+                                 _provenance_for(image_path), poly), indent=2))
         return 0
     if cmd == "verify":
         art = Image.open(mockup_qa.MASTER).convert("RGB")

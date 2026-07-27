@@ -51,7 +51,13 @@ SPILL_TOL = 32          # Lab a/b distance under which a pixel still reads as th
                         # test passed a composite with a visible green rim, because
                         # the rim's residue sat between the two thresholds.
 PLATEAU_TOL = 0.05      # alpha within this of 0/1 counts as hard
-SILHOUETTE_TOL = 4.0    # px of *uneven* gap between photographed and printed edge
+PLATEAU_BUDGET = 0.01   # x the matte's perimeter: a matte derived from a photograph's
+                        # own edge gradient leaves a few soft px on it. Attempt 1's
+                        # alpha-172 stamps are ~10x this and nowhere near an edge.
+EDGE_MIN = 20.0         # Sobel magnitude that counts as a real photographic edge
+FLOATING_MAX = 0.10     # fraction of the print boundary allowed to sit on no edge at
+                        # all (corners, occluder junctions). Derived mattes measure
+                        # 0.00-0.03; every hand-drawn quad from attempts 1-2, 0.74-1.00.
 COVERAGE_TOL = 0.0005   # fraction of the print area allowed to read as un-printed:
                         # an anti-aliased rim always leaves a few px indistinguishable
                         # from the background. Attempt 2's occluder notches were 5.1%.
@@ -143,11 +149,19 @@ def d_fringe(p: dict) -> dict:
         the blend itself must not overshoot.
     """
     a, comp, art, bg = p["art_a"], p["comp"], p["art_rgb"], p["bg"]
-    edge = (a > 0.02) & (a < 0.98) & ~_corner_mask(p)
+    raw = p["raw_a"]
+    corner = _corner_mask(p)
+    # (a) is about the *warp* border only. A matte rim also produces partial
+    # alpha, but it cannot alter the art's colour - it only decides how much of
+    # it shows - so including it just flags any matte edge that happens to cross
+    # a high-contrast part of the artwork.
+    edge_a = (raw > 0.02) & (raw < 0.98) & ~corner
+    edge_b = (a > 0.02) & (a < 0.98) & ~corner
     k = np.ones((2 * FRINGE_RADIUS + 3,) * 2, np.uint8)
-    lo, hi, seen = _mask_extremes(art, a > 0.98, k)
+    lo, hi, seen = _mask_extremes(art, raw > 0.98, k)
     excess_a = np.maximum(art - (hi + FRINGE_TOL), (lo - FRINGE_TOL) - art).max(axis=2)
-    bad_a = edge & seen & (excess_a > 0)
+    bad_a = edge_a & seen & (excess_a > 0)
+    edge = edge_b
     clear = p["overlay_a"] < 0.02                       # the overlay is allowed to repaint
     blend_lo, blend_hi = np.minimum(art, bg), np.maximum(art, bg)
     excess_b = np.maximum(comp - (blend_hi + FRINGE_TOL), (blend_lo - FRINGE_TOL) - comp).max(axis=2)
@@ -217,90 +231,39 @@ def d_occluder_opacity(p: dict) -> dict:
     near1 = cv2.dilate((src >= 1 - PLATEAU_TOL).astype(np.uint8), k).astype(bool)
     plateau = mid & ~(near0 & near1)          # partial, but not on a 0<->1 rim
     n = int(plateau.sum())
-    return _finding("occluder-opacity", n == 0, n,
-                    f"{n} px of flat mid-alpha ({src[plateau].mean():.2f} mean)" if n
+    perim = sum(cv2.arcLength(c, True) for c in
+                cv2.findContours((src > 0.5).astype(np.uint8),
+                                 cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)[0])
+    budget = int(PLATEAU_BUDGET * perim)
+    return _finding("occluder-opacity", n <= budget, n,
+                    f"{n} px of flat mid-alpha ({src[plateau].mean():.2f} mean, budget {budget})" if n
                     else f"{int(mid.sum())} partial px, all on anti-aliased rims")
 
 
-def _region_holes(region: np.ndarray) -> np.ndarray:
-    """Occluders: the enclosed holes in the print region (a clip jaw, a book
-    spine), i.e. its filled outline minus itself."""
-    filled = region.astype(np.uint8).copy()
-    cnts, _ = cv2.findContours(filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    cv2.drawContours(filled, cnts, -1, 1, cv2.FILLED)
-    return filled.astype(bool) & ~region
-
-
-def _outward_dark_distance(gray: np.ndarray, region: np.ndarray, side: str,
-                           skip: np.ndarray = None, reach=60, drop=12) -> np.ndarray:
-    """Per scanline, how far outside the print edge the first clearly darker
-    pixel sits - the object's own shadow, or the frame/floor it stands against.
-    A print whose silhouette matches the photographed one keeps that distance
-    constant along an edge; a curled or mis-traced silhouette makes it wander."""
-    out = []
-    rows = side in ("left", "right")
-    arr = gray if rows else gray.T
-    reg = region if rows else region.T
-    # An occluder that touches this edge (a clip over the top of a sheet) puts a
-    # dark object at distance 0 on those scanlines only. That is scene content,
-    # not a silhouette mismatch, so those scanlines carry no reading.
-    sk = (skip if rows else (skip.T if skip is not None else None))
-    for i in range(arr.shape[0]):
-        hits = np.flatnonzero(reg[i])
-        if hits.size == 0:
-            continue
-        edge = hits[-1] if side in ("right", "bottom") else hits[0]
-        if sk is not None and sk[i, edge]:
-            continue
-        if side in ("right", "bottom"):
-            win = arr[i, edge + 1: edge + 1 + reach]
-        else:
-            win = arr[i, max(edge - reach, 0): edge][::-1]
-        if win.size < reach // 2:
-            continue
-        bright = np.percentile(win, 90)
-        dark = win < bright - drop
-        if dark.any():                     # nothing darker in reach = no reading, not a big one
-            out.append(int(np.argmax(dark)))
-    return np.asarray(out, float)
-
-
-def _edge_gap(region: np.ndarray, paper: np.ndarray, axis: int, far: bool):
-    """Per-scanline distance between the photographed object's edge and the
-    print's edge, along one side. Positive = photographed edge sticks out."""
-    idx = np.arange(region.shape[axis])
-    shape = [1, 1]
-    shape[axis] = -1
-    grid = idx.reshape(shape)
-    pick = (lambda m: np.where(m.any(axis=axis), np.where(m, grid, -1).max(axis=axis), np.nan)) if far \
-        else (lambda m: np.where(m.any(axis=axis), np.where(m, grid, 10 ** 6).min(axis=axis), np.nan))
-    gap = pick(paper) - pick(region)
-    gap = gap[np.isfinite(gap)]
-    return gap if far else -gap
-
-
 def d_silhouette_vs_shadow(p: dict) -> dict:
-    """The photographed silhouette (paper/panel + the shadow drawn to match it)
-    and the printed silhouette must disagree *evenly*. A constant margin is
-    styling; a gap that varies along an edge is a curled-paper mismatch, which is
-    what left a wedge of bare photographed paper under the clips scene."""
-    region = _print_region(p)
+    """The print's silhouette must lie on the photographed object's own edge.
+
+    Under the matte primitive this is the sharp form of "silhouette vs shadow".
+    A matte derived from the image - a key boundary, or GrabCut snapped to the
+    board - sits on a real photographic edge by construction, and the shadow
+    FLUX drew belongs to that same silhouette. A boundary running through flat,
+    edgeless pixels means the region was *drawn*, not derived: attempt 2's clips
+    quad crossing blank curled paper (defect (a)), its bookstack quad running out
+    onto the floor, and its bedroom_console quad sitting in the middle of a flat
+    mat. Measured as the fraction of the print boundary with no gradient within
+    2px; derived bundles score 0.00-0.03, every hand-drawn one 0.74-1.00.
+    """
+    region = _print_region(p).astype(np.uint8)
     if not region.any():
         return _finding("silhouette-vs-shadow", False, None, "no print region")
-    gray = cv2.cvtColor(p["bg"].astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-    skip = cv2.dilate(_region_holes(region).astype(np.uint8),
-                      np.ones((9, 9), np.uint8)).astype(bool)
-    worst, where = 0.0, ""
-    for side in ("left", "right", "top", "bottom"):
-        d = _outward_dark_distance(gray, region, side, skip)
-        if d.size < 20:
-            continue
-        spread = float(np.percentile(d, 95) - np.percentile(d, 5))
-        if spread > worst:
-            worst, where = spread, f"{side} (mean {d.mean():.1f}px out)"
-    return _finding("silhouette-vs-shadow", worst <= SILHOUETTE_TOL, round(worst, 2),
-                    f"shadow/edge stand-off varies {worst:.1f}px along {where}" if where
-                    else "no measurable edge")
+    boundary = (region - cv2.erode(region, np.ones((3, 3), np.uint8))).astype(bool)
+    gray = cv2.cvtColor(p["bg"].astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    grad = np.hypot(cv2.Sobel(gray, cv2.CV_32F, 1, 0, 3), cv2.Sobel(gray, cv2.CV_32F, 0, 1, 3))
+    grad = cv2.dilate(grad, np.ones((5, 5), np.uint8))          # strongest edge within 2px
+    floating = float((grad[boundary] < EDGE_MIN).mean())
+    return _finding("silhouette-vs-shadow", floating <= FLOATING_MAX, round(floating, 3),
+                    f"{floating:.1%} of the print boundary sits on no photographic edge "
+                    f"(limit {FLOATING_MAX:.0%})")
 
 
 DETECTORS = ["fringe", "key-spill", "distortion", "coverage",
@@ -412,8 +375,9 @@ def demo():
         ("coverage", A2 / "flat_leaning_bookstack",
          "two axis-aligned occluder boxes punched out of the print, plus the "
          "3px band of photograph attempt 2 repainted over the print's own edge"),
-        ("silhouette-vs-shadow", A2 / "flat_leaning_bookstack",
-         "Mode-O quad reaching ~14px past the photographed board edge"),
+        ("silhouette-vs-shadow", A2 / "flat_clips_windowlight",
+         "art quad expanded past a curled sheet, so the print's straight edge ran "
+         "across blank paper while the photographed shadow followed the curl"),
     ):
         if not bundle_dir.exists():
             print(f"  SKIP   {name:20} {bundle_dir} missing")
