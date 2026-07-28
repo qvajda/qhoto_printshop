@@ -455,3 +455,107 @@ The §7 gate list is otherwise intact and now reads:
 scope-leak files stripped from the branch. The open questions §7 raises — the
 residual backing slab on the keyed scenes, and the set having no framed-on-wall
 lifestyle scene — are unchanged and still P4's.
+
+---
+
+## 9. P3.5 — pre-merge fixes (2026-07-28)
+
+Three items were scoped (F1 parse floor, F2 a matte-hidden detector, F3
+re-author `lifestyle_bedroom_console`). F2 turned out to describe one instance
+of a wider defect, so this section records what was actually found and changed.
+
+### 9.1 F1 — the gate did not parse below 3.12
+
+`scripts/mockup_qa.py:562` nested same-quote f-strings (PEP 701). On 3.10/3.11
+the whole module was a `SyntaxError`, so the authoring gate did not fail a check
+— it failed to load. An undeclared floor is what let that ship, and an untracked
+`scripts/_mockup_qa_py310.py` (a hand-edited copy of the same file) is what the
+previous session used to work around it.
+
+- line fixed, the duplicate copy deleted;
+- `pyproject.toml` declares `requires-python = ">=3.10"`;
+- `tests/test_scripts_smoke.py` imports every script and, separately, checks
+  every `scripts/` and `pipeline/` module for constructs the *declared floor*
+  cannot parse. That second check reads the token stream directly:
+  `ast.parse(..., feature_version=(3, 10))` accepts PEP 701 (verified), and
+  `compile` uses the running grammar, so neither can see this class on 3.12.
+
+### 9.2 F2 — the matte hid print on a path nothing measured
+
+`d_matte_hidden`, eighth detector, enforced at the same 2 % as C3, no
+exceptions. Trim and occlusion are separated by shape rather than by filling
+holes: the loss is measured in the quad's own rectified frame as a low quantile
+of the per-row and per-column inset, so a band running the length of an edge
+counts and a prop clipping a few rows does not. (A median does not work — the
+bookstack's two book piles occlude the print's bottom corners across more than
+half the columns and read as a 2.7 % bottom trim.)
+
+Running it exposed two upstream bugs, both fixed at source rather than in the
+bundles:
+
+1. **`scene_screen._quad` mis-picked corners on any tilted panel.** It used the
+   contour's `x+y` / `x-y` extremes, which find the true corners only while the
+   edges stay roughly axis-aligned. On a panel whose bottom edge tilts — every
+   leaning scene — `x-y` is minimised part-way along the *bottom* edge, not at
+   the bottom-left corner. On `lifestyle_shelf_books` that put the corner 38 px
+   out. Replaced with a polygon approximation to exactly four vertices, keeping
+   the extremes only to order them and as a fallback.
+2. **`scene_author.quad_for` expanded the quad to the master's aspect.** The art
+   then filled a quad the matte was narrower than, and the matte trimmed the
+   difference straight back off the design — the same loss C3 measures, taken on
+   a path C3 does not watch. Combined with (1) it reached **13.3 % of the design
+   on `lifestyle_shelf_books`, 6.2 % on `flat_leaning_bookstack`, 7.0 % on
+   `lifestyle_bedroom_console`** — none of it visible on the current master,
+   where the lost strips land on blank margin. The expansion is gone; what
+   remains is a containment step (quantile, not min/max, so one stray pixel
+   cannot drag an edge and take the aspect with it) plus a 1 px rim margin.
+   `MASTER_ASPECT` is deleted with it, closing §8.5.
+
+### 9.3 The C3 reference — owner decision, 2026-07-28
+
+With the quads derived honestly, the panels' real aspects are 0.6869, 0.6661,
+0.6425 and 0.7087 against a 0.6842 master, and C3 — which measured its 2 %
+against the master — rejected three of the four. That reading was wrong, not the
+panels:
+
+> the primary group is **printed** at 0.6667 (8x12) and 0.7071 (A3/A2/A1), with
+> the master's 0.6842 between them. A panel at 0.6661 is 0.08 % off the actual
+> 8x12 print — it shows the buyer exactly what ships. No single aspect can be
+> within 2 % of both ends, so a master-relative rule rejects the master itself.
+
+C3 now measures the gap to the group's **printed ratio range**: inside it, zero;
+outside, the distance to the nearer end, still capped at 2 %. Both the panel and
+the artwork are checked, so a master at a genuinely wrong shape still fails loud
+(the case §8.5 raised). `pipeline/image_crop` gained `SIZE_INCHES` (moved from
+`group_product`, so the DPI guard and the ratio guard read one table),
+`size_ratio` (A-series is exactly 1:√2 — the rounded inch conversions put
+A1/A2/A3 at three different ratios) and `printed_ratio_range`.
+
+### 9.4 F3 — `lifestyle_bedroom_console` is unfixable and is dropped
+
+It is a **framed** scene: the photographed opening measures 0.639, and no
+re-seed changes the shape of a frame in a photograph. At 3.6 % outside the
+printed range it fails C3 and is removed from `mockup_templates`. It was also
+the set's only framed-on-wall scene, which makes the P4a framed spike
+load-bearing rather than exploratory. Owner approved firing it (2026-07-28).
+
+Also relevant to P4a: all 18 framed candidates already on disk
+(`outputs/gl6_keyed/framed_*`, `outputs/gl6_keyed_framed/`) fail
+`scene_screen.py`, most on `sharp` (a soft key edge, 2.3–4.8 against a 3.0
+limit) or `aspect`. The spike needs new prompt work, not re-screening.
+
+### 9.5 State
+
+```
+gate      3/4 PASS (8 detectors); lifestyle_bedroom_console FAIL distortion
+demo      8/8 FIRED, exit 0
+suite     567 passed
+harness   3/4 rendered, deterministic, size-checked
+          flat_clips_windowlight     sha256=4a0a932b364d
+          flat_leaning_bookstack     sha256=1a9940260ae9
+          lifestyle_shelf_books      sha256=31c141a30e45
+          lifestyle_bedroom_console  BLOCKED (3.6% outside the printed range)
+```
+
+The primary set is **2 flat + 1 lifestyle**. P4b's target of 3 flat + 7
+lifestyle is therefore +9 for this group, not +6.

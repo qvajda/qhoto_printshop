@@ -12,15 +12,15 @@
   "aspect_ratio": "3:4",
   "megapixels": "1",
   "scene": "lifestyle_shelf_books",
-  "source_image": "outputs\\gl6_keyed_shelf2\\shelf_v2_emerald_s22.png",
+  "source_image": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\outputs\\gl6_keyed_shelf2\\shelf_v2_emerald_s22.png",
   "mode": "keyed",
   "seed_polygon": null,
   "key_lab_ab": [
     58.0,
     175.0
   ],
-  "quad_aspect": 0.6842,
-  "aspect_delta": 0.0,
-  "cover_crop": 0.0,
+  "quad_aspect": 0.7087,
+  "aspect_delta": 0.0358,
+  "cover_crop": 0.0346,
   "matte_coverage": 0.2409
 }

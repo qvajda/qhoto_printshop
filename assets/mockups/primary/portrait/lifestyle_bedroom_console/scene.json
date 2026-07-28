@@ -1,6 +1,6 @@
 {
   "scene": "lifestyle_bedroom_console",
-  "source_image": "outputs\\attempt1_console_photo.png",
+  "source_image": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\outputs\\attempt1_console_photo.png",
   "mode": "seeded",
   "seed_polygon": [
     [
@@ -21,8 +21,8 @@
     ]
   ],
   "key_lab_ab": null,
-  "quad_aspect": 0.6842,
-  "aspect_delta": -0.0,
-  "cover_crop": 0.0,
+  "quad_aspect": 0.6425,
+  "aspect_delta": -0.061,
+  "cover_crop": 0.061,
   "matte_coverage": 0.2031
 }
