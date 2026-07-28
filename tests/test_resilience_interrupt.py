@@ -88,10 +88,13 @@ def test_generate_cycle_resumes_after_mid_stage_kill_without_manual_intervention
     conn.close()
 
 
-def test_stranded_pending_group_product_reclaimed_then_create_or_reuse_succeeds_cleanly(tmp_path):
+def test_stranded_pending_group_product_reclaimed_then_create_or_reuse_succeeds_cleanly(stub_mockup_bundles, tmp_path):
+    from PIL import Image
     conn = _fresh_conn(tmp_path)
+    master_path = tmp_path / "master.png"
+    Image.new("RGB", (900, 1316), (200, 180, 150)).save(master_path, format="PNG")
     candidate_id = _insert_candidate(
-        conn, status="primary_review", base_image_local_path="/fake/base.png",
+        conn, status="primary_review", base_image_local_path=str(master_path),
     )
     group_id = _insert_group(conn, candidate_id)
 

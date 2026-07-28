@@ -1,8 +1,10 @@
 # SPEC v4.10 — Addendum A: Custom mockup pipeline
 
-Status: **proposed, needs sign-off** (touches Etsy via API + >30 min work →
+Status: **implemented** (branch `feat/gl5-mockup-compositor`, not yet merged
+— see `docs/CHANGELOG.md` for the shipped-scope summary and known gaps).
+Originally: proposed, needs sign-off (touches Etsy via API + >30 min work →
 PRD threshold per CLAUDE.md §2). Fold into the next SPEC minor bump once
-approved; log the decision in `docs/CHANGELOG.md`.
+merged; log the decision in `docs/CHANGELOG.md`.
 
 Supersedes the mockup-source behaviour in SPEC v4.10 §3 step 3 (primary
 mockup) and the equivalent in `group_mockup` (stage 8). Everything else in
@@ -43,6 +45,36 @@ silent fall-back to a Gelato image.
   alpha, composited on top) + `aperture` (four corner coords of the poster
   region). Rendering = warp artwork to the aperture quad, paste over
   background, composite overlay on top.
+- **GL-21 (2026-07-26) — the compositor is explicitly unfrozen, and the bundle
+  gains an optional 4th file.** `pipeline/mockup_render.py` was treated as
+  frozen during GL-19; GL-6 attempt 2 honoured that freeze over fixing a real
+  border defect and painted the photograph back over every print's outer 3px
+  instead, trading a dark hairline for a bright one across four bundles. The
+  freeze is lifted (owner-approved, plan §7 decision 2) and replaced by a
+  standing rule: **no bundle-side workaround for a compositor defect — fix the
+  compositor and cover it with a test.** Three additive changes:
+  **C1** the colour warp uses `BORDER_REPLICATE` (the OpenCV default,
+  `BORDER_CONSTANT`=black, was bleeding into 710–1479 border px per scene);
+  **C2** an optional per-pixel **`matte.png`** (single-channel or alpha, bundle
+  size) multiplies the warped art's alpha — the quad now says only *where the
+  art is projected*, the matte says *what is visible*, per pixel, anti-aliased.
+  It replaces quad-as-silhouette, occluder boxes and repaint bands. Absent file
+  ⇒ pre-GL-21 behaviour byte-for-byte;
+  **C3** a render-time aspect guard — the artwork is centre cover-cropped to
+  the quad's aspect (never stretched, never letterboxed) and a crop over **2 %**
+  raises `MockupRenderError` rather than silently distorting the print.
+  `overfill` stays in the schema but is **deprecated for matte bundles**
+  (authored `0.0`): the quad is derived as the min-area quad of the matte
+  expanded on the short axis to the master's aspect, so the matte trims the
+  anti-aliased edge instead. `scripts/mockup_qa.py` gates authoring with seven
+  detectors (fringe, key-spill, distortion, coverage, occluder-opacity,
+  silhouette-vs-shadow, scene-fidelity) plus a contact sheet; owner review sees
+  only what passes. **`overlay.png` may only paint where the print is**: it
+  carries the gain map and nothing else, masked by the matte. `scene-fidelity`
+  enforces it — the first six all measure the print, and a full-frame overlay
+  wash shipped through them 6/6 green (see the GL-21 review pass in
+  `docs/2026-07-26-gl21-gl6-attempt3-findings.md` §8).
+  See `docs/2026-07-26-gl6-attempt3-production-readiness-plan.md`.
 - Template library is **static config**, resolved once, never discovered at
   runtime (consistent with the Gelato template-ID / static-config rule).
 - Etsy allows **20 images/listing** (since Aug 2025); we use ~10. Upload is

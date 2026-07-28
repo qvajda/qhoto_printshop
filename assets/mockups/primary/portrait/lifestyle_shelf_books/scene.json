@@ -1,0 +1,26 @@
+{
+  "prompt": "A single thin sheet of poster paper with sharp square corners leaning against a pale limewash wall on a floating oak shelf, a stack of two books and a small brass candlestick beside it. The sheet is one solid panel of vivid emerald green from corner to corner, its four edges straight and its paper thin enough to see it is a single sheet. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "seed": 22,
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "model": "black-forest-labs/flux-schnell",
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "scene": "lifestyle_shelf_books",
+  "source_image": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\outputs\\gl6_keyed_shelf2\\shelf_v2_emerald_s22.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    58.0,
+    175.0
+  ],
+  "quad_aspect": 0.7087,
+  "aspect_delta": 0.0358,
+  "cover_crop": 0.0346,
+  "matte_coverage": 0.2409
+}

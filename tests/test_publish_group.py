@@ -19,17 +19,26 @@ def _fresh_conn(tmp_path):
 
 
 def _insert_candidate(conn, niche="monstera line art", *, status="primary_review",
-                       base_image_url="https://replicate.delivery/out.png"):
+                       base_image_url="https://replicate.delivery/out.png",
+                       base_image_local_path=None):
     timestamp = "2026-07-12T09:00:00"
     cursor = conn.execute(
         """
-        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url, updated_at)
-        VALUES (?, ?, 'go', ?, ?, ?)
+        INSERT INTO candidates (created_at, niche, go_hold_kill, status, base_image_url,
+        base_image_local_path, updated_at)
+        VALUES (?, ?, 'go', ?, ?, ?, ?)
         """,
-        (timestamp, niche, status, base_image_url, timestamp),
+        (timestamp, niche, status, base_image_url, base_image_local_path, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def _make_master(tmp_path, name="master.png", size=(900, 1350)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (200, 180, 150)).save(p, format="PNG")
+    return str(p)
 
 
 def _insert_primary_group(conn, candidate_id, *, status="approved_published"):
@@ -122,7 +131,7 @@ STATIC_CONFIG = {
 
 def test_handle_decision_approve_patches_existing_etsy_listing(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     _insert_primary_group(conn, candidate_id, status="approved_published")
     group_id = _insert_group(conn, candidate_id, "5x7", status="pending_review")
     static_config = config.load_static_config()

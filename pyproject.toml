@@ -1,0 +1,12 @@
+# Not a packaged distribution - this file exists to declare the one thing the
+# repo had left implicit: which Python it is expected to run on.
+#
+# GL-21 P3.5/F1: scripts/mockup_qa.py nested same-quote f-strings (PEP 701),
+# which is 3.12-only syntax, so on 3.10/3.11 the authoring gate was a hard
+# SyntaxError - it did not fail a check, it failed to load at all. Nothing in
+# the repo declared a floor, so nothing could have caught that.
+# tests/test_scripts_smoke.py enforces this value.
+[project]
+name = "qhoto-printshop"
+version = "0.0.0"
+requires-python = ">=3.10"

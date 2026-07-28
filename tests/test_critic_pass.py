@@ -471,7 +471,7 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
          patch("pipeline.group_product.gelato_client.get_product",
                side_effect=lambda pid, *, store_id=None, api_key=None: fake_create()), \
          patch("pipeline.compliance_draft.anthropic_client.complete",
-               return_value={"text": _json.dumps({"title": "T", "tags": ["a"], "description": "d", "alt_texts": ["x"]})}):
+               return_value={"text": _json.dumps({"title": "T", "tags": ["a"], "description": "d", "alt_texts": []})}):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
@@ -616,6 +616,11 @@ STATIC_CONFIG = {
     "etsy_production_partner_ids": [5717252],
     "etsy_taxonomy_id": "1027",
     "etsy_shipping_profile_id": "",
+    "aspect_ratio_groups": {"primary": ["8x12"]},
+    # No mockup bundles wired into this hand-built STATIC_CONFIG - empty scene list is
+    # the normal "nothing to render" case (Task 2's contract), so these tests never
+    # need a real local master image on disk.
+    "mockup_templates": {"primary": {"portrait": [], "landscape": []}},
 }
 
 
@@ -781,7 +786,10 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
         "text": _json.dumps({
             "title": "Monstera Line Art Botanical Print v2",
             "tags": ["botanical"], "description": "Retried description.",
-            "alt_texts": ["retry alt one"],
+            # STATIC_CONFIG has no mockup_templates scenes wired in, so the regenerated
+            # gallery is empty (Task 2/3's valid "nothing to render" case) - alt_texts
+            # must match that count, not a hardcoded gallery size.
+            "alt_texts": [],
         })
     }
 
@@ -860,7 +868,8 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
     fake_draft_response = {
         "text": _json.dumps({
             "title": "Retried Title", "tags": ["botanical"], "description": "Retried description.",
-            "alt_texts": ["retry alt"],
+            # See test_run_critic_pass_retries_once_then_passes - empty gallery, empty alt_texts.
+            "alt_texts": [],
         })
     }
 

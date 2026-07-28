@@ -70,9 +70,18 @@
     "A1": 49
   },
   "aspect_ratio_groups": {
-    "primary": ["8x12", "A3", "A2", "A1"],
-    "5x7": ["5x7"],
-    "10x24": ["10x24"]
+    "primary": [
+      "8x12",
+      "A3",
+      "A2",
+      "A1"
+    ],
+    "5x7": [
+      "5x7"
+    ],
+    "10x24": [
+      "10x24"
+    ]
   },
   "primary_size": "8x12",
   "etsy_taxonomy_id": 1027,
@@ -81,7 +90,27 @@
     "5x7": "287910553824",
     "10x24": "287910565714"
   },
-  "etsy_production_partner_ids": [5717252],
+  "etsy_production_partner_ids": [
+    5717252
+  ],
   "etsy_who_made": "i_did",
-  "etsy_shop_section_id": 59380312
+  "etsy_shop_section_id": 59380312,
+  "mockup_templates": {
+    "primary": {
+      "portrait": [
+        "flat_clips_windowlight",
+        "flat_leaning_bookstack",
+        "lifestyle_shelf_books"
+      ],
+      "landscape": []
+    },
+    "5x7": {
+      "portrait": [],
+      "landscape": []
+    },
+    "10x24": {
+      "portrait": [],
+      "landscape": []
+    }
+  }
 }

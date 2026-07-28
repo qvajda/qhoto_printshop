@@ -1,0 +1,26 @@
+{
+  "prompt": "A portrait poster sheet clipped to a slim brass rail with two wooden pegs, hanging against a warm off-white wall beside a window, soft daylight raking across it. The sheet is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "seed": 22,
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "model": "black-forest-labs/flux-schnell",
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "scene": "flat_clips_windowlight",
+  "source_image": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\outputs\\gl6_keyed\\clips_v2_emerald_s22.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    65.0,
+    167.0
+  ],
+  "quad_aspect": 0.6869,
+  "aspect_delta": 0.004,
+  "cover_crop": 0.004,
+  "matte_coverage": 0.2532
+}

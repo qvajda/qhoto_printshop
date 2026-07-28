@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_shelf_books",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      320.4,
+      350.2
+    ],
+    [
+      742.4,
+      351.1
+    ],
+    [
+      750.1,
+      987.4
+    ],
+    [
+      313.8,
+      930.2
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

@@ -1,5 +1,4 @@
 import io
-from unittest.mock import patch
 
 from PIL import Image
 
@@ -63,19 +62,3 @@ def test_print_crop_bytes_stays_full_resolution_not_preview_capped():
 
     with Image.open(io.BytesIO(cropped_bytes)) as cropped:
         assert max(cropped.size) > image_crop.PREVIEW_MAX_EDGE
-
-
-def test_crop_for_group_caps_preview_long_edge(tmp_path, monkeypatch):
-    # B5 downstream: a print-res master (scale=8 gives 6656x9728) must not be saved
-    # full-res as a preview - it blows past Telegram's photo cap. The preview's long
-    # edge is capped at PREVIEW_MAX_EDGE.
-    monkeypatch.setattr(image_crop, "CROP_CACHE_DIR", tmp_path)
-    big = Image.new("RGB", (3328, 4864), (200, 180, 150))
-    buf = io.BytesIO()
-    big.save(buf, format="PNG")
-
-    with patch("pipeline.image_crop.http.fetch_bytes", return_value=buf.getvalue()):
-        out_path = image_crop.crop_for_group("https://cdn.example.com/base/1.png", "10x24", 42)
-
-    with Image.open(out_path) as saved:
-        assert max(saved.size) <= image_crop.PREVIEW_MAX_EDGE

@@ -103,6 +103,13 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
     processed = []
     for candidate_id in candidate_ids:
         for group_type in GROUP_TYPES:
+            # No scene bundles authored yet for this group_type (5x7/10x24 today) ->
+            # skip entirely, don't create a groups/group_products row for a gallery
+            # that can never be rendered. create_group_mockup always defaults to
+            # portrait orientation (landscape fan-out isn't wired up yet), so that's
+            # the orientation checked here too.
+            if not config.get_mockup_templates(static_config, group_type, "portrait"):
+                continue
             try:
                 result = create_group_mockup(
                     conn, candidate_id, group_type, static_config=static_config,

@@ -54,6 +54,37 @@ pipeline stage — don't guess at behavior that's already specified.
   before creating; delete orphans on a failed-create retry. The live run
   duplicated products (create succeeded, poll timed out, retry re-created).
   Route all create paths through one shared create-or-reuse helper.
+- **Mockup compositor: unfrozen, and never worked around from the assets
+  (GL-21, 2026-07-26).** `pipeline/mockup_render.py` was treated as frozen
+  during GL-19. GL-6 attempt 2 honoured that over fixing a measured border
+  defect and repainted the photograph over every print's outer 3 px instead —
+  a dark hairline traded for a bright one across four bundles. The freeze is
+  lifted (owner-approved). Standing rule: **if the composite is wrong, fix the
+  compositor and add a test; never work around a compositor defect in a
+  bundle.** If a constraint blocks the correct fix, flag it and stop — don't
+  route around it. Current contract: the colour warp uses `BORDER_REPLICATE`
+  (mask warp stays `BORDER_CONSTANT`); an optional per-pixel `matte.png` in the
+  bundle decides what is *visible* (the quad only decides where the art is
+  *projected*) and absent ⇒ pre-GL-21 behaviour; the artwork is cover-cropped
+  to the quad's aspect and a crop over 2 % fails loud — never stretch a print a
+  buyer pays for. `overfill` is deprecated for matte bundles, and **`overlay.png`
+  may only paint where the print is** (it carries the matte-masked gain map and
+  nothing else — an unmasked one is a full-frame wash). Authoring is gated by
+  `scripts/mockup_qa.py` (eight detectors + contact sheet) before any owner
+  review; `load_bundle`/`render_scene`/the bundle-on-disk contract are
+  unchanged. See docs/SPEC_v4.10_addendum_custom_mockups.md §2.
+- **The 2 % crop budget is measured against the ratios a group *prints*, not
+  against the master (GL-21 P3.5, owner 2026-07-28).** The primary group prints
+  at 0.6667 (8x12) and 0.7071 (A3/A2/A1); the master's own 0.6842 sits between
+  them, so no single aspect is within 2 % of both ends and a master-relative
+  rule would reject the master itself. A panel inside that range shows a crop
+  between two the buyer genuinely receives; more than 2 % outside it, the mockup
+  shows a crop no size in the group is ever cropped to and `render_scene` fails
+  loud. The budget applies to **both** paths that lose print — the cover-crop
+  (C3) and the matte (`matte-hidden`, added P3.5) — with no exceptions: a scene
+  whose panel proportions don't match the product is re-authored, never
+  exempted. `pipeline/image_crop.SIZE_INCHES` is the one table those ratios and
+  the Gelato DPI guard both read.
 - **Aspect-ratio-group review flow (the core mechanic — see spec section
   3, steps 6–7):**
   1. Only the primary size (21x29.7cm/8x12″) gets generated, critic-passed,
