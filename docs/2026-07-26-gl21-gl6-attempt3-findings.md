@@ -8,6 +8,11 @@ cherry-picked from it but ideas.
 **Recommendation: PR #2 is mergeable once the four bundles below are
 owner-approved.** Detail in §7.
 
+> **Superseded in part by §8 (independent review, 2026-07-28).** The four
+> bundles §5 declares QA-green shipped a defect that repainted ~700 k px of
+> *photograph* per scene. Fixed; re-authored; the gate now has a seventh
+> detector. §7's recommendation stands only as amended in §8.
+
 ---
 
 ## 1. P1 — the compositor (GL-21)
@@ -302,3 +307,151 @@ Two things the owner should decide before or alongside the merge:
 - The screen is a **ranker**, not the gate. Two of the four shipped scenes failed
   it on a marginal check (`frontal` 0.065 vs. a 0.06 limit; `sharp` on a soft
   edge) and passed the real gate cleanly once extracted.
+
+---
+
+## 8. Independent review pass (2026-07-28)
+
+A review of this session, run against the branch as committed at `8532825`.
+Everything §1–§6 claims about the compositor reproduced exactly: 517/517 green,
+`mockup_qa.py check` 4/4 PASS, `mockup_qa.py demo` 6/6 FIRED exit 0,
+`gl19_m1_render.py` 4/4 with the four sha256 prefixes §5 records. The GL-21
+compositor work needed no change.
+
+The bundles did.
+
+### 8.1 The defect: the overlay was repainting the whole photograph
+
+`scene_author.py` wrote `overlay.png` as `black at alpha (1 - gain_map)`, over
+the **full frame**. `gain_map` is a normalised convolution — `blur(lum·m) /
+blur(m)` — so away from the panel the numerator vanishes, `g` clamps to
+`GAIN_FLOOR = 0.55`, and the overlay carries a flat alpha of
+`(1 - 0.55) · 255 = 115` across every pixel the print does not cover.
+
+Measured outside the print matte, on the four shipped bundles:
+
+| scene | mean overlay alpha | mean colour delta | px changed |
+|---|---|---|---|
+| flat_clips_windowlight | 102.2 | 86.8 | 727 093 |
+| flat_leaning_bookstack | 100.6 | 83.6 | 668 729 |
+| lifestyle_bedroom_console | 109.1 | 67.1 | 724 487 |
+| lifestyle_shelf_books | 107.7 | 94.2 | 775 336 |
+
+Roughly 65–75 % of each frame, at a quarter to a third of full range. Visibly:
+every cream sunlit wall rendered grey, the warm bedroom rendered murky, and a
+rounded-rectangle halo glowed around every print.
+
+Two things this explains, which §5 and §7 attribute elsewhere:
+
+- The "**backing-slab look**" of §7.1 is mostly this halo. It is on all four
+  scenes, including the two *seeded* ones whose `background.png` is an unchanged
+  attempt-1 photograph — so it cannot be a FLUX prompting artefact, and it is not
+  a scene-selection choice. A residual real slab does exist on the keyed scenes;
+  it is much smaller than the composites suggested.
+- It is a **regression introduced by this session**. The same bundle's attempt-1
+  overlay measures alpha mean 3.5 over 32 % of the frame; attempt 3's measures
+  71.3 over 99.7 %.
+
+### 8.2 Why the gate did not see it
+
+All six detectors measure the print: its border, its key residue, its aspect,
+its coverage, its holes, its silhouette. The bundle owns three layers and the
+gate only ever looked at one of them. 6/6 green while two thirds of the frame
+was wrong.
+
+`§5`'s own conclusion — *"the metrics catch geometry, the eye catches colour at
+the seam"* — held, and then the full-frame check that was supposed to catch the
+rest was performed on the composite alone. Against the composite the wash is
+plausible: it looks like the scene's own lighting. It is only obvious against
+`background.png`. **A full-frame review of a composite is not a review of the
+bundle; the bare scene has to be in the frame next to it.**
+
+### 8.3 The fixes
+
+**(1) `scene_author.py` — mask the gain map by the matte.**
+
+```python
+overlay = np.dstack([np.zeros((h, w, 3), np.uint8),
+                     ((1.0 - g) * matte * 255).round().clip(0, 255).astype(np.uint8)])
+```
+
+The gain map only ever relights pixels the art covers, so outside the matte it
+has nothing to do. One term, at the source, not in the assets — the standing
+rule applied to the authoring tool as well as to the compositor.
+
+**(2) `mockup_qa.py` — a seventh detector, `scene-fidelity`.**
+
+Outside the print (dilated 5 px for the anti-aliased rim and a few px of contact
+shadow), the bare composite must equal `background.png` within `SCENE_TOL = 4`,
+budget `SCENE_BUDGET = 0.001` of the outside area. Measured against the
+background, so it also catches any future repaint band, stamped prop or vignette
+— not just this one. Its `demo` case puts the defect back on a live bundle by
+unmasking the overlay: **766 362 px against a 766 px budget**, a 1000× margin.
+
+### 8.4 Re-authoring, and what it proves
+
+All four bundles were re-derived by re-running `scene_author.py extract` from
+the sources `scene.json` records — the two FLUX scenes from
+`outputs/gl6_keyed*/`, the two seeded ones from their attempt-1 photographs plus
+the recorded seed polygon.
+
+**`background.png`, `matte.png`, `meta.json` and `scene.json` came back
+byte-identical on all four; only `overlay.png` changed.** That is the P2 design
+goal — zero per-scene constants — demonstrated rather than asserted: the
+bundles are a pure function of their source image plus the tool, and a defect
+found in the tool costs one command per scene to re-issue, not a re-authoring
+session.
+
+After:
+
+```
+flat_clips_windowlight     size=(896,1152) sha256=aac4dad68e13
+flat_leaning_bookstack     size=(896,1152) sha256=10f224b6430e
+lifestyle_bedroom_console  size=(896,1152) sha256=fd7c742e84f6
+lifestyle_shelf_books      size=(896,1152) sha256=455652e23689
+
+4/4 scenes rendered, deterministic, size-checked OK.
+```
+
+Gate 7/7 PASS on all four (`scene-fidelity` reads **0 px** repainted, max 0/255,
+on every scene — the mask is exact, not merely within budget). `demo` 7/7 FIRED,
+exit 0. Suite unchanged at 517 green: the fix is authoring-time, and
+`pipeline/mockup_render.py` was not touched.
+
+Full-frame and zoom review, both, on all four re-renders: walls are the
+photograph's own colour again, no halo, corners and 1-px edge strips clean, no
+green residue on either keyed scene.
+
+### 8.5 Two other findings from the same pass
+
+- **Scope leak into PR #2.** `a5dfde7` (the shelf-scene commit) also carries
+  `scripts/qops_phase0.py` and `scripts/qops_phase1.py` — 617 lines of
+  ways-of-working tooling with nothing to do with GL-21 or GL-6 — and `b17ad23`
+  rewrites `docs/2026-07-22-go-live-plan-of-attack.md` (+272 lines). Neither
+  belongs in a mockup-compositor PR. Strip both before opening it.
+- **`MASTER_ASPECT = 6656 / 9728` is a sample's pixel ratio standing in for a
+  product constant** (`scene_author.py:43`, taken from `db/base_artwork/39.png`).
+  Every portrait master on disk measures 0.6842, so it holds today, and
+  non-primary groups skip mockups entirely (`group_product.py:347`), so the
+  5x7/10x24 crops cannot reach it. But a master at any other ratio trips C3's
+  2 % guard and fails the whole candidate loud. Worth deriving from the
+  generator's configured aspect rather than from one file, whenever P4 touches
+  this.
+
+### 8.6 Amended recommendation
+
+The §7 gate list is otherwise intact and now reads:
+
+- the compositor defect GL-19 surfaced is fixed at source and covered by a test;
+- the *authoring* defect this review surfaced is fixed at source and covered by
+  a detector with a demonstrated 1000× margin;
+- all four bundles pass a **seven**-detector gate, a full-frame review **against
+  the bare scene**, and a zoom review, and are within 0.01 % of the master's
+  aspect;
+- harness 4/4, deterministic and size-checked; 517/517; the pipeline contract
+  and `pipeline/group_product.py` unchanged; no Etsy or Gelato call made.
+
+**Merge once the four re-rendered scenes are owner-approved**, with the two
+scope-leak files stripped from the branch. The open questions §7 raises — the
+residual backing slab on the keyed scenes, and the set having no framed-on-wall
+lifestyle scene — are unchanged and still P4's.

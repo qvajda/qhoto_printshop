@@ -15,6 +15,10 @@ Six detectors, each aimed at a defect that shipped past a human review:
   silhouette-vs-shadow  the photographed object's silhouette and the print's
                       silhouette must not disagree *unevenly* - a constant
                       margin is styling, a bowing gap is a curled-paper mismatch
+  scene-fidelity      outside the print, the composite must still be the
+                      photograph. The other six all look at the print, and P3
+                      shipped four bundles whose overlay repainted ~700k px of
+                      *scene* per frame at 6/6 green
 
 `demo` re-runs every detector against a bundle that is known to carry its
 defect: a detector that cannot see a known defect is not a detector.
@@ -65,6 +69,12 @@ EDGE_MIN = 20.0         # Sobel magnitude that counts as a real photographic edg
 FLOATING_MAX = 0.10     # fraction of the print boundary allowed to sit on no edge at
                         # all (corners, occluder junctions). Derived mattes measure
                         # 0.00-0.03; every hand-drawn quad from attempts 1-2, 0.74-1.00.
+SCENE_TOL = 4           # 0-255 per-channel drift allowed outside the print. The
+                        # overlay is a rounding-free alpha composite over the
+                        # background, so a legitimate zero-alpha pixel drifts by 0.
+SCENE_BUDGET = 0.001    # x the outside-print area: the gain map is allowed to
+                        # feather a few px past the matte for contact shadow.
+                        # The defect this guards was 65% of the frame.
 COVERAGE_TOL = 0.0005   # fraction of the print area allowed to read as un-printed:
                         # an anti-aliased rim always leaves a few px indistinguishable
                         # from the background. Attempt 2's occluder notches were 5.1%.
@@ -316,8 +326,29 @@ def d_silhouette_vs_shadow(p: dict) -> dict:
                     f"(limit {FLOATING_MAX:.0%})")
 
 
+def d_scene_fidelity(p: dict) -> dict:
+    """Outside the print, the composite must still be the photograph.
+
+    The bundle owns three layers and only one of them is the print; the other
+    six detectors all measure the print, so nothing stopped an overlay from
+    repainting the scene. P3's did: `gain_map` is a normalised convolution whose
+    numerator vanishes away from the panel, so g clamped to its floor and the
+    overlay carried a full-frame black wash at alpha 115/255 - grey walls, a
+    rounded halo round every print, ~700k px per scene - through a 6/6 green
+    gate. Measured against the bare background, so it catches any future repaint
+    band, stamped prop or vignette, not just this one."""
+    outside = ~cv2.dilate(_print_region(p).astype(np.uint8),
+                          np.ones((5, 5), np.uint8)).astype(bool)
+    delta = np.abs(p["bare"] - p["bg"]).max(axis=2)
+    n = int((outside & (delta > SCENE_TOL)).sum())
+    budget = int(SCENE_BUDGET * max(outside.sum(), 1))
+    return _finding("scene-fidelity", n <= budget, n,
+                    f"{n} px of scene repainted outside the print "
+                    f"(max {delta[outside].max():.0f}/255, budget {budget})")
+
+
 DETECTORS = ["fringe", "key-spill", "distortion", "coverage",
-             "occluder-opacity", "silhouette-vs-shadow"]
+             "occluder-opacity", "silhouette-vs-shadow", "scene-fidelity"]
 
 
 def check(bundle_dir: Path, art: Image.Image) -> dict:
@@ -327,7 +358,7 @@ def check(bundle_dir: Path, art: Image.Image) -> dict:
     prov = bundle_dir / "scene.json"
     key = json.loads(prov.read_text()).get("key_rgb") if prov.exists() else None
     findings = [d_fringe(p), d_key_spill(p, key), d_distortion(p), d_coverage(p),
-                d_occluder_opacity(p), d_silhouette_vs_shadow(p)]
+                d_occluder_opacity(p), d_silhouette_vs_shadow(p), d_scene_fidelity(p)]
     return dict(scene=bundle.scene, dir=str(bundle_dir), findings=findings,
                 passed=all(f["passed"] for f in findings), parts=p)
 
@@ -440,7 +471,31 @@ def demo():
 
     ok &= _occluder_demo(art)
     ok &= _spill_demo()
+    ok &= _scene_fidelity_demo(art)
     return ok
+
+
+def _scene_fidelity_demo(art):
+    """P3's own defect, put back on a live bundle: `gain_map`'s normalised
+    convolution clamps to GAIN_FLOOR=0.55 away from the panel, so the overlay
+    shipped as a full-frame black wash at alpha 115/255 outside the matte."""
+    import shutil
+    import tempfile
+    src = ROOT / "assets" / "mockups" / "primary" / "portrait" / "flat_clips_windowlight"
+    tmp = Path(tempfile.mkdtemp()) / "bundle"
+    shutil.copytree(src, tmp)
+    clean = _run("scene-fidelity", tmp, art)
+    ov = np.array(Image.open(src / "overlay.png").convert("RGBA"))
+    matte = np.asarray(Image.open(src / "matte.png").convert("L"))
+    ov[:, :, 3] = np.where(matte > 128, ov[:, :, 3], 115)      # (1-GAIN_FLOOR)*255
+    Image.fromarray(ov, "RGBA").save(tmp / "overlay.png")
+    dirty = _run("scene-fidelity", tmp, art)
+    shutil.rmtree(tmp.parent, ignore_errors=True)
+    return _report("scene-fidelity", clean["passed"] and not dirty["passed"],
+                   "clips overlay unmasked",
+                   "the gain map written full-frame instead of matte-masked - a "
+                   "black wash over the whole photograph that 6/6 detectors missed",
+                   dirty["detail"])
 
 
 def _occluder_demo(art):

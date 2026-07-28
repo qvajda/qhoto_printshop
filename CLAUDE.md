@@ -67,9 +67,11 @@ pipeline stage — don't guess at behavior that's already specified.
   bundle decides what is *visible* (the quad only decides where the art is
   *projected*) and absent ⇒ pre-GL-21 behaviour; the artwork is cover-cropped
   to the quad's aspect and a crop over 2 % fails loud — never stretch a print a
-  buyer pays for. `overfill` is deprecated for matte bundles. Authoring is
-  gated by `scripts/mockup_qa.py` (six detectors + contact sheet) before any
-  owner review; `load_bundle`/`render_scene`/the bundle-on-disk contract are
+  buyer pays for. `overfill` is deprecated for matte bundles, and **`overlay.png`
+  may only paint where the print is** (it carries the matte-masked gain map and
+  nothing else — an unmasked one is a full-frame wash). Authoring is gated by
+  `scripts/mockup_qa.py` (seven detectors + contact sheet) before any owner
+  review; `load_bundle`/`render_scene`/the bundle-on-disk contract are
   unchanged. See docs/SPEC_v4.10_addendum_custom_mockups.md §2.
 - **Aspect-ratio-group review flow (the core mechanic — see spec section
   3, steps 6–7):**

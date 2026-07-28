@@ -247,8 +247,17 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     Image.fromarray((matte * 255).round().astype(np.uint8)).save(d / "matte.png")
     # overlay = the gain map alone: black at (1-g) alpha. No repaint band, no
     # re-stamped props - both of those are the matte's job now.
+    #
+    # Masked by the matte, and that mask is not cosmetic. `gain_map` is a
+    # normalised convolution: far from the panel the numerator vanishes, so g
+    # clamps to GAIN_FLOOR and an unmasked overlay is a *full-frame* black wash
+    # at alpha (1-GAIN_FLOOR) = 115/255. It repainted ~700k px of photograph per
+    # scene, greyed every wall and drew a rounded halo around every print, and
+    # the gate could not see it because all six detectors looked at the print.
+    # The gain map only ever relights pixels the art covers, so outside the
+    # matte it has nothing to do. (Caught by the GL-21 review; d_scene_fidelity.)
     overlay = np.dstack([np.zeros((h, w, 3), np.uint8),
-                         ((1.0 - g) * 255).round().clip(0, 255).astype(np.uint8)])
+                         ((1.0 - g) * matte * 255).round().clip(0, 255).astype(np.uint8)])
     Image.fromarray(overlay, "RGBA").save(d / "overlay.png")
 
     aspect = mr.quad_aspect(quad)

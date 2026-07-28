@@ -66,10 +66,15 @@ silent fall-back to a Gelato image.
   `overfill` stays in the schema but is **deprecated for matte bundles**
   (authored `0.0`): the quad is derived as the min-area quad of the matte
   expanded on the short axis to the master's aspect, so the matte trims the
-  anti-aliased edge instead. `scripts/mockup_qa.py` gates authoring with six
+  anti-aliased edge instead. `scripts/mockup_qa.py` gates authoring with seven
   detectors (fringe, key-spill, distortion, coverage, occluder-opacity,
-  silhouette-vs-shadow) plus a contact sheet; owner review sees only what
-  passes. See `docs/2026-07-26-gl6-attempt3-production-readiness-plan.md`.
+  silhouette-vs-shadow, scene-fidelity) plus a contact sheet; owner review sees
+  only what passes. **`overlay.png` may only paint where the print is**: it
+  carries the gain map and nothing else, masked by the matte. `scene-fidelity`
+  enforces it — the first six all measure the print, and a full-frame overlay
+  wash shipped through them 6/6 green (see the GL-21 review pass in
+  `docs/2026-07-26-gl21-gl6-attempt3-findings.md` §8).
+  See `docs/2026-07-26-gl6-attempt3-production-readiness-plan.md`.
 - Template library is **static config**, resolved once, never discovered at
   runtime (consistent with the Gelato template-ID / static-config rule).
 - Etsy allows **20 images/listing** (since Aug 2025); we use ~10. Upload is
