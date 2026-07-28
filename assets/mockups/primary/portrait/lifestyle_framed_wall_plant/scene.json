@@ -1,0 +1,26 @@
+{
+  "prompt": "A slim matte-black portrait picture frame hanging flat on a warm sage plaster wall above a terracotta pot, lit softly from the left. The frame is a plain flat profile 12mm wide with no mount and no glass. Its opening measures 20cm wide by 30cm tall and is filled corner to corner by one solid panel of vivid emerald green, which meets the frame's inner edge as a hard crisp painted line. No glazing, no glass, no reflection, no white mat, no mount board, no second border inside the frame. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "seed": 66,
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "model": "black-forest-labs/flux-schnell",
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "scene": "lifestyle_framed_wall_plant",
+  "source_image": "outputs\\gl6_p4a2\\framed_v1_emerald_s66.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    56.0,
+    179.0
+  ],
+  "quad_aspect": 0.6641,
+  "aspect_delta": -0.0293,
+  "cover_crop": 0.0293,
+  "matte_coverage": 0.174
+}

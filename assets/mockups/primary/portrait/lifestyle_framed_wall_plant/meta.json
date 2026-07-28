@@ -1,23 +1,23 @@
 {
-  "scene": "lifestyle_bedroom_console",
+  "scene": "lifestyle_framed_wall_plant",
   "group_type": "primary",
   "orientation": "portrait",
   "aperture": [
     [
-      296.2,
-      157.0
+      275.0,
+      337.0
     ],
     [
-      670.0,
-      157.0
+      622.0,
+      337.0
     ],
     [
-      660.8,
-      731.9
+      622.0,
+      860.0
     ],
     [
-      295.2,
-      732.9
+      275.0,
+      859.0
     ]
   ],
   "size": [

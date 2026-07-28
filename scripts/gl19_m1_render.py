@@ -15,13 +15,14 @@ from pipeline.mockup_render import MockupRenderError, render_scene, load_bundle 
 from PIL import Image  # noqa: E402
 
 MASTER = ROOT / "db" / "base_artwork" / "39.png"
-BUNDLE_ROOT = ROOT / "assets" / "mockups" / "primary" / "portrait"
-SCENE_DIRS = [
-    BUNDLE_ROOT / "flat_clips_windowlight",
-    BUNDLE_ROOT / "flat_leaning_bookstack",
-    BUNDLE_ROOT / "lifestyle_bedroom_console",
-    BUNDLE_ROOT / "lifestyle_shelf_books",
-]
+# Read from the config rather than a list kept in step with it by hand: this
+# harness exists to render exactly what the pipeline would, and P4 is adding
+# bundles. Groups with no bundles yet simply contribute nothing.
+_CFG = json.loads((ROOT / "config" / "static_config.json").read_text())["mockup_templates"]
+SCENE_DIRS = [ROOT / "assets" / "mockups" / group / orientation / scene
+              for group, by_orientation in _CFG.items()
+              for orientation, scenes in by_orientation.items()
+              for scene in scenes]
 OUT_DIR = ROOT / "outputs" / "gl19_m1"
 
 

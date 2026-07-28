@@ -26,13 +26,14 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 IN_DIR = ROOT / "outputs" / "gl6_keyed"
-TARGET_ASPECT = 6656 / 9728        # db/base_artwork/39.png
 
 KEY_LAB_TOL = 32                   # Lab a/b distance that still reads as the key
 AREA_RANGE = (0.10, 0.60)
 SOLIDITY_MIN = 0.93
-ASPECT_TOL = 0.03
+ASPECT_TOL = 0.02                  # matches the compositor's MAX_COVER_CROP: no point
+                                   # showing the owner a panel C3 will refuse later
 OCCLUDER_MAX = 0.15
 SHARP_MAX = 3.0                    # px of key/non-key transition per px of perimeter
 OUTSIDE_MAX = 0.002                # key px outside the panel, as a fraction of the panel
@@ -115,7 +116,15 @@ def _quad(filled):
     return quad, cnt
 
 
-def screen(path: Path, key_rgb) -> dict:
+def aspect_gap(aspect: float, group_type: str) -> float:
+    """Distance from a panel's aspect to the range its group is *printed* at -
+    the same measure C3 applies at render time, so the screen never promotes a
+    scene the compositor will refuse. Zero anywhere inside the range."""
+    from pipeline.mockup_render import print_mismatch
+    return print_mismatch(aspect, group_type)[0]
+
+
+def screen(path: Path, key_rgb, group_type="primary") -> dict:
     rgb = np.asarray(Image.open(path).convert("RGB"))
     h, w = rgb.shape[:2]
     ref = key_ref(rgb, key_rgb)
@@ -135,7 +144,17 @@ def screen(path: Path, key_rgb) -> dict:
     if min(e) < 4:                                   # degenerate region, not a panel
         return dict(name=path.stem, passed=False, fail=["area"],
                     metrics={"area": round(area, 3)}, path=str(path))
+    # The aspect that matters is the one scene_author will *derive*, not the
+    # corner quad's own: quad_for also has to contain the matte and clear its
+    # anti-aliased rim, and those moved this frame from 1.80% to 2.27% off the
+    # printed range - across the 2% limit. A screen that measures something
+    # other than what the gate measures promotes scenes the gate then rejects.
+    # Imported here, not at module scope: scene_author imports this module.
+    from scene_author import quad_for
+    derived = quad_for(filled.astype(np.float32))
+    e = [float(np.linalg.norm(derived[i] - derived[(i + 1) % 4])) for i in range(4)]
     aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)          # width / height
+    e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]   # frontal: the panel's own
     occl = float((filled - comp).sum() / max(filled.sum(), 1))
     frontal = max(abs(e[0] - e[2]) / max(e[0], e[2]), abs(e[1] - e[3]) / max(e[1], e[3]))
     outside = float((mask & ~cv2.dilate(filled, np.ones((5, 5), np.uint8))).sum()
@@ -167,7 +186,7 @@ def screen(path: Path, key_rgb) -> dict:
         ("area", AREA_RANGE[0] <= area <= AREA_RANGE[1]),
         ("single", big == 1),
         ("solidity", solidity >= SOLIDITY_MIN),
-        ("aspect", abs(aspect / TARGET_ASPECT - 1) <= ASPECT_TOL),
+        ("aspect", aspect_gap(aspect, group_type) <= ASPECT_TOL),
         ("occluders", occl <= OCCLUDER_MAX),
         ("sharp", sharp <= SHARP_MAX),
         ("no-outside", outside <= OUTSIDE_MAX),
@@ -200,6 +219,7 @@ def sheet(results, out_path, cols=6, tile=220):
 
 def main(argv):
     in_dir = Path(argv[1]) if len(argv) > 1 and not argv[1].startswith("--") else IN_DIR
+    group_type = argv[argv.index("--group") + 1] if "--group" in argv else "primary"
     manifest = json.loads((in_dir / "manifest.json").read_text())
     # only images this manifest actually produced - a stale PNG from an earlier
     # prompt revision must not be screened under the current run's provenance
@@ -208,7 +228,7 @@ def main(argv):
     for p in sorted(in_dir.glob("*.png")):
         if p.stem not in keys:
             continue
-        results.append(screen(p, keys[p.stem]))
+        results.append(screen(p, keys[p.stem], group_type))
     results.sort(key=lambda r: (not r["passed"], len(r["fail"]), r["name"]))
     for r in results:
         print(f"  {'PASS' if r['passed'] else 'fail'} {r['name']:34} "

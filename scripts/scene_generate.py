@@ -12,6 +12,7 @@ this project may use - never flux-dev). aspect_ratio 3:4 @ 1 megapixel gives
 
     scene_generate.py plan            # prompts + cost, no API call (default)
     scene_generate.py fire [--seeds N] [--only clips,leaning,framed,shelf]
+                          [--key emerald] [--out gl6_p4a]
 """
 
 import json
@@ -73,19 +74,65 @@ PROMPTS = {
         "floorboards, a trailing plant in a terracotta pot beside it. The board's face "
         "is one solid panel of {key}. " + COMMON,
     ],
+    # P4a rewrite. v1-v3 (kept below as `framed_v1`) produced 18 candidates and
+    # not one passed the screen: 9 failed `sharp` at 2.3-4.8 against a 3.0 limit,
+    # the rest `aspect`. A soft key edge in a *frame* is glazing - FLUX renders
+    # glass, and glass puts a reflection gradient and a bevel shadow across the
+    # panel's own boundary, which is exactly the edge the matte has to cut. So:
+    # name the glass and forbid it, forbid the mat, and give the opening real
+    # dimensions instead of the ratio words it kept ignoring.
     "framed": [
-        "A slim black portrait frame hanging on a warm sage plaster wall above a "
-        "terracotta pot, lit softly from the left. The frame's opening is a tall 2:3 "
-        "rectangle, three units high for every two wide, filled corner to corner by "
-        "one solid panel of {key} meeting the frame's inner edge directly. " + COMMON,
-        "A thin natural oak portrait frame on a pale cream wall in a bright living room, "
-        "a rattan pendant lamp out of focus behind. The frame's opening is a tall 2:3 "
-        "rectangle, three units high for every two wide, filled corner to corner by "
-        "one solid panel of {key} meeting the frame's inner edge directly. " + COMMON,
-        "A slender white portrait frame on a soft clay-pink wall, a small brass sconce "
-        "casting warm light across it. The frame's opening is a tall 2:3 rectangle, three "
-        "units high for every two wide, filled corner to corner by one solid panel of "
-        "{key} meeting the frame's inner edge directly. " + COMMON,
+        "A slim matte-black portrait picture frame hanging flat on a warm sage plaster "
+        "wall above a terracotta pot, lit softly from the left. The frame is a plain flat "
+        "profile 12mm wide with no mount and no glass. Its opening measures 20cm wide by "
+        "30cm tall and is filled corner to corner by one solid panel of {key}, which meets "
+        "the frame's inner edge as a hard crisp painted line. No glazing, no glass, no "
+        "reflection, no white mat, no mount board, no second border inside the frame. "
+        + COMMON,
+        "A thin natural oak portrait picture frame on a pale cream wall in a bright living "
+        "room, a rattan pendant lamp out of focus behind. The frame is a plain flat profile "
+        "12mm wide with no mount and no glass. Its opening measures 20cm wide by 30cm tall "
+        "and is filled corner to corner by one solid panel of {key}, which meets the "
+        "frame's inner edge as a hard crisp painted line. No glazing, no glass, no "
+        "reflection, no white mat, no mount board, no second border inside the frame. "
+        + COMMON,
+        "A slender white portrait picture frame on a soft clay-pink wall, a small brass "
+        "sconce casting warm light across it. The frame is a plain flat profile 12mm wide "
+        "with no mount and no glass. Its opening measures 20cm wide by 30cm tall and is "
+        "filled corner to corner by one solid panel of {key}, which meets the frame's "
+        "inner edge as a hard crisp painted line. No glazing, no glass, no reflection, no "
+        "white mat, no mount board, no second border inside the frame. " + COMMON,
+    ],
+    # P4a, the backing-slab fix. §8.1 showed most of the "mounted board" look was
+    # the overlay wash, now gone - but a residual slab is real on both keyed
+    # scenes: FLUX reads "panel"/"board" as a thick mounted substrate. These name
+    # the paper's own thinness and forbid every substrate word.
+    "clipsheet": [
+        "A single unframed sheet of thin matte poster paper hanging from two small black "
+        "bulldog clips on a thin wire against a pale plaster wall, casting a soft shadow "
+        "behind it. The paper is 0.2mm thin, its cut edge visible as the edge of a sheet "
+        "of paper and slightly wavy under its own weight. Not a mounted board, not a "
+        "canvas, not foam board, no backing panel, no frame, no thick slab. The sheet is "
+        "one solid panel of {key}. " + COMMON,
+        "A single unframed sheet of thin matte poster paper clipped to a slim brass rail "
+        "with two wooden pegs against a warm off-white wall beside a window, daylight "
+        "raking across it. The paper is 0.2mm thin, its cut edge visible as the edge of a "
+        "sheet of paper. Not a mounted board, not a canvas, not foam board, no backing "
+        "panel, no frame, no thick slab. The sheet is one solid panel of {key}. " + COMMON,
+    ],
+    "shelfsheet": [
+        "A single unframed sheet of thin matte poster paper with sharp square corners "
+        "leaning against a pale limewash wall on a floating oak shelf, a stack of two "
+        "books and a small brass candlestick beside it. The paper is 0.2mm thin and its "
+        "cut edge reads as the edge of a sheet of paper, curving very slightly where it "
+        "leans. Not a mounted board, not a canvas, not foam board, no backing panel, no "
+        "frame, no thick slab. The sheet is one solid panel of {key}. " + COMMON,
+        "A single unframed sheet of thin matte poster paper with sharp square corners "
+        "standing upright on a walnut console table against a warm beige wall, a small "
+        "ceramic lamp glowing to its right and a trailing plant to its left. The paper is "
+        "0.2mm thin and its cut edge reads as the edge of a sheet of paper. Not a mounted "
+        "board, not a canvas, not foam board, no backing panel, no frame, no thick slab. "
+        "The sheet is one solid panel of {key}. " + COMMON,
     ],
     # v4-v6: "portrait panel" made FLUX render a thick board with rounded corners
     # and the key inset on its face, which composites as a print mounted on an
@@ -111,11 +158,13 @@ PROMPTS = {
 }
 
 
-def jobs(only=None, seeds=SEEDS):
+def jobs(only=None, seeds=SEEDS, variant=None):
     for scene_type, variants in PROMPTS.items():
         if only and scene_type not in only:
             continue
         for vi, template in enumerate(variants):
+            if variant and vi + 1 != variant:
+                continue
             for key_name, key in KEYS.items():
                 for seed in seeds:
                     yield dict(
@@ -126,8 +175,8 @@ def jobs(only=None, seeds=SEEDS):
                     )
 
 
-def plan(only=None, seeds=SEEDS):
-    js = list(jobs(only, seeds))
+def plan(only=None, seeds=SEEDS, variant=None):
+    js = list(jobs(only, seeds, variant))
     for scene_type, variants in PROMPTS.items():
         if only and scene_type not in only:
             continue
@@ -143,12 +192,16 @@ def plan(only=None, seeds=SEEDS):
     print(f"cost       {len(js)} x ${COST_PER_IMAGE:.3f} = ${len(js) * COST_PER_IMAGE:.2f}")
 
 
-def fire(only=None, seeds=SEEDS):
+def fire(only=None, seeds=SEEDS, out=None, variant=None):
+    # A batch gets its own directory: scene_screen reads the manifest beside the
+    # PNGs, and a re-run into a shared directory leaves stale images from an
+    # earlier prompt revision to be screened under the new run's provenance.
+    OUT = out or globals()["OUT"]
     config.load_env()
     token = config.require_env("REPLICATE_API_TOKEN")
     OUT.mkdir(parents=True, exist_ok=True)
     manifest, spent = [], 0.0
-    for i, job in enumerate(list(jobs(only, seeds)), 1):
+    for i, job in enumerate(list(jobs(only, seeds, variant)), 1):
         if i > 1:
             time.sleep(PACING_SECONDS)
         t0 = time.time()
@@ -185,5 +238,13 @@ if __name__ == "__main__":
             del KEYS[k]
     seeds = SEEDS
     if "--seeds" in argv:
-        seeds = tuple(range(11, 11 + 11 * int(argv[argv.index("--seeds") + 1]), 11))
-    (fire if cmd == "fire" else plan)(only, seeds)
+        # --seed-start so a follow-up batch draws *new* seeds: re-running the same
+        # ones just re-renders images you have already screened.
+        start = int(argv[argv.index("--seed-start") + 1]) if "--seed-start" in argv else 11
+        seeds = tuple(range(start, start + 11 * int(argv[argv.index("--seeds") + 1]), 11))
+    variant = int(argv[argv.index("--variant") + 1]) if "--variant" in argv else None
+    if cmd == "fire":
+        out = ROOT / "outputs" / argv[argv.index("--out") + 1] if "--out" in argv else None
+        fire(only, seeds, out, variant)
+    else:
+        plan(only, seeds, variant)
