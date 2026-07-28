@@ -85,13 +85,31 @@ def panel(mask: np.ndarray):
 
 
 def _quad(filled):
-    """Corner quad of the key region, TL TR BR BL. The contour's own extremes,
-    not minAreaRect - a rotated rect has equal opposite edges by construction, so
+    """Corner quad of the key region, TL TR BR BL.
+
+    Not minAreaRect: a rotated rect has equal opposite edges by construction, so
     it can never show perspective, and it would square off a curled sheet whose
-    curl we specifically want to keep."""
+    curl we specifically want to keep.
+
+    Not the contour's x+y / x-y extremes either, which is what this used to be.
+    Those pick the true corners only while the panel's edges stay roughly axis
+    aligned. On a panel whose bottom edge tilts - every leaning scene - x-y is
+    minimised by a point part-way along the *bottom* edge rather than by the
+    bottom-left corner, and the resulting quad is skewed and oversized. On
+    lifestyle_shelf_books it put the corner 38px off, which `quad_for`'s
+    containment step then had to swallow by widening the whole quad 5%, which
+    the aspect step amplified to 13% of the design hidden behind the matte
+    (GL-21 P3.5/F2). Polygon-approximate the contour to exactly four vertices
+    instead, and keep the extremes only to order them and as a fallback."""
     cnt = max(cv2.findContours(filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0],
               key=cv2.contourArea)
     p = cnt.reshape(-1, 2).astype(np.float32)
+    peri = cv2.arcLength(cnt, True)
+    for eps in np.arange(0.005, 0.15, 0.002):
+        approx = cv2.approxPolyDP(cnt, eps * peri, True)
+        if len(approx) == 4:
+            p = approx.reshape(4, 2).astype(np.float32)
+            break
     s, d = p.sum(1), p[:, 0] - p[:, 1]
     quad = np.stack([p[s.argmin()], p[d.argmax()], p[s.argmax()], p[d.argmin()]])
     return quad, cnt

@@ -70,9 +70,21 @@ pipeline stage — don't guess at behavior that's already specified.
   buyer pays for. `overfill` is deprecated for matte bundles, and **`overlay.png`
   may only paint where the print is** (it carries the matte-masked gain map and
   nothing else — an unmasked one is a full-frame wash). Authoring is gated by
-  `scripts/mockup_qa.py` (seven detectors + contact sheet) before any owner
+  `scripts/mockup_qa.py` (eight detectors + contact sheet) before any owner
   review; `load_bundle`/`render_scene`/the bundle-on-disk contract are
   unchanged. See docs/SPEC_v4.10_addendum_custom_mockups.md §2.
+- **The 2 % crop budget is measured against the ratios a group *prints*, not
+  against the master (GL-21 P3.5, owner 2026-07-28).** The primary group prints
+  at 0.6667 (8x12) and 0.7071 (A3/A2/A1); the master's own 0.6842 sits between
+  them, so no single aspect is within 2 % of both ends and a master-relative
+  rule would reject the master itself. A panel inside that range shows a crop
+  between two the buyer genuinely receives; more than 2 % outside it, the mockup
+  shows a crop no size in the group is ever cropped to and `render_scene` fails
+  loud. The budget applies to **both** paths that lose print — the cover-crop
+  (C3) and the matte (`matte-hidden`, added P3.5) — with no exceptions: a scene
+  whose panel proportions don't match the product is re-authored, never
+  exempted. `pipeline/image_crop.SIZE_INCHES` is the one table those ratios and
+  the Gelato DPI guard both read.
 - **Aspect-ratio-group review flow (the core mechanic — see spec section
   3, steps 6–7):**
   1. Only the primary size (21x29.7cm/8x12″) gets generated, critic-passed,

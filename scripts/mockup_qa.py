@@ -1,13 +1,16 @@
 """GL-21 automated mockup defect gate (docs/2026-07-26-gl6-attempt3-production-
 readiness-plan.md §3.4). Authoring-time only, not pipeline code.
 
-Six detectors, each aimed at a defect that shipped past a human review:
+Eight detectors, each aimed at a defect that shipped past a human review:
 
   fringe              the artwork border must blend between art and background -
                       no dark hairline (pre-C1 BORDER_CONSTANT), no bright band
                       (attempt 2's bundle-side repaint)
   key-spill           no residual key chroma left anywhere in the composite
   distortion          quad aspect vs artwork aspect, and the cover-crop it costs
+  matte-hidden        the other path that loses print: art scaled into the quad
+                      and then trimmed by the matte. Same 2% budget as C3, and
+                      invisible to a human reviewer by construction
   coverage            print area fully covered, no visible art outside it
                       (attempt 2's occluder-box notches, Mode-O floor spill)
   occluder-opacity    holes are 0 or 1 apart from anti-aliasing (attempt 1's
@@ -49,10 +52,10 @@ FRINGE_RADIUS = 10      # px either side of the art boundary that counts as "the
 FRINGE_TOL = 24         # 0-255. A supersampled edge downsampled by INTER_AREA can
                         # legitimately land ~20 outside its interior's local range;
                         # the defect class this guards (BORDER_CONSTANT) is ~120.
-ASPECT_TOL = 0.01       # |quad aspect / art aspect - 1|
-MATTE_CROP_TOL = 0.08   # how much of the print a matte may hide. A frame rebate
-                        # really does cover a few mm; sage's 0.59 mat opening
-                        # against a 0.684 master hid 18%, which is defect (d).
+MATTE_HIDDEN_TOL = 0.02  # F2: the same budget C3 enforces on the cover-crop, on
+                        # the other path that loses print. No exceptions (owner,
+                        # 2026-07-26) - a panel whose proportions do not match
+                        # the product gets re-authored, not exempted.
 SPILL_TOL = 32          # Lab a/b distance under which a pixel still reads as the key.
                         # Must match the extractor's own key tolerance: at 20 this
                         # test passed a composite with a visible green rim, because
@@ -102,6 +105,7 @@ def _parts(bundle: mr.SceneBundle, art: Image.Image) -> dict:
         comp=np.asarray(comp.convert("RGB"), np.float32),
         bare=np.asarray(bare.convert("RGB"), np.float32),
         bg=np.asarray(bundle.background.convert("RGB"), np.float32),
+        group_type=bundle.group_type,
         size=bundle.size, matte=bundle.matte, overlay_a=np.asarray(
             bundle.overlay.convert("RGBA"), np.float32)[:, :, 3] / 255.0,
     )
@@ -225,23 +229,93 @@ def d_distortion(p: dict) -> dict:
     """The print must not be stretched, and the matte must not hide so much of it
     that the buyer is shown a different crop than the one they receive.
 
-    A frame's rebate really does cover a few mm of a print, so a small matte crop
-    is physical, not dishonest. Sage's 0.59 mat opening against a 0.684 master
-    was 18% - that is a differently-shaped opening, and it is defect (d)."""
-    delta = abs(p["aspect"] / p["art_aspect"] - 1)
-    region = _print_region(p)
-    detail = (f"quad {p['aspect']:.4f} vs art {p['art_aspect']:.4f} "
-              f"= {delta:.2%} off, cover-crop {p['crop']:.2%}")
-    hidden = 0.0
-    if region.any():
-        box, _ = _region_quad(region)
-        e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]
-        if min(e) > 4:
-            m_aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)
-            hidden = 1 - min(m_aspect, p["aspect"]) / max(m_aspect, p["aspect"])
-            detail += f", matte {m_aspect:.4f} hides {hidden:.1%} of the print"
-    return _finding("distortion", delta <= ASPECT_TOL and hidden <= MATTE_CROP_TOL,
-                    round(delta, 5), detail)
+    Measured against the ratios the group is printed at, not against the
+    master's: the primary group prints at 0.667 and 0.707 with the master's
+    0.684 between them, so a panel at 0.667 shows exactly the 8x12 the buyer
+    receives and is not a distortion at all. C3 enforces the same comparison.
+
+    How much the *matte* then hides is a separate loss on a separate path, and
+    d_matte_hidden owns it."""
+    gap, nearest = mr.print_mismatch(p["aspect"], p["group_type"])
+    where = ("inside the printed range" if gap == 0 else
+             f"{gap:.2%} outside it, nearest printed ratio {nearest:.4f}")
+    return _finding("distortion", gap <= mr.MAX_COVER_CROP, round(gap, 5),
+                    f"quad {p['aspect']:.4f} {where} (limit {mr.MAX_COVER_CROP:.0%}); "
+                    f"master {p['art_aspect']:.4f}, cover-crop {p['crop']:.2%}")
+
+
+def _rectified(mask: np.ndarray, quad: np.ndarray, n=256) -> np.ndarray:
+    """`mask` resampled into the quad's own frame, n x n. In this frame the
+    design is a unit square, so a loss measured here is a loss of design
+    regardless of the scene's perspective."""
+    dst = np.float32([[0, 0], [n, 0], [n, n], [0, n]])
+    H = cv2.getPerspectiveTransform(dst, quad.astype(np.float32))
+    return cv2.warpPerspective(mask.astype(np.float32), H, (n, n),
+                               flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP) > 0.5
+
+
+def _band(vis: np.ndarray) -> tuple[float, float]:
+    """How far the visible region is inset from the left and right of the frame,
+    as fractions of its width.
+
+    A low quantile of the per-row inset, not the median: a trim is the inset
+    that is there on *every* row, so the least-obstructed rows measure it, while
+    a prop only ever adds to it. The median is not enough - the bookstack's two
+    book piles occlude the print's bottom corners across more than half the
+    columns, and a median reads their 8px as a 2.7% bottom trim. A quantile
+    rather than the outright minimum so one ragged row cannot report 0."""
+    n = vis.shape[1]
+    rows = [np.flatnonzero(r) for r in vis]
+    rows = [r for r in rows if r.size]
+    if not rows:
+        return 0.5, 0.5
+    lo = float(np.quantile([r[0] for r in rows], 0.1)) / n
+    hi = float(np.quantile([n - 1 - r[-1] for r in rows], 0.1)) / n
+    return lo, hi
+
+
+def d_matte_hidden(p: dict) -> dict:
+    """How much of the design never reaches the buyer's eye.
+
+    C3 gates one of the two ways print is lost - the cover-crop that fits the
+    artwork to the quad's aspect - at 2%. The matte hides print on the *other*
+    path, independently of it, and until this detector it was only reported.
+    The art is scaled into the quad, then whatever the matte does not pass is
+    gone. Measured on lifestyle_bedroom_console: quad 393x574 at aspect 0.6842,
+    which passes C3 cleanly, against a 367x574 matte at 0.639 - 6.6% of the
+    design's width gone (14px left, 17px right, full-width on 568 of 574 rows).
+    A flat symmetric side trim, not prop occlusion.
+
+    Invisible twice over, which is the point of measuring it. On the current
+    master those strips land on blank margin; and a reviewer has nothing to
+    compare a missing strip *to*, so no amount of full-frame review finds it.
+    Bundles are permanent and artwork is not: the next design with a border, a
+    signature, or stems running to the edge loses 6.6% of its width in that
+    scene, on every listing that uses it.
+
+    Trim vs occlusion. Only the trim is enforced: a prop genuinely in front of
+    the print is scene content, and is budgeted upstream by scene_screen's 15%
+    occluder check. The two are separated by *shape*, not by filling holes - a
+    corner clipped by a shelf edge is an occlusion but is not an enclosed hole,
+    and a panel whose bottom edge bows is neither. A trim is a band that runs
+    the length of an edge, so it is measured as the median inset per row and
+    per column in the quad's own rectified frame; a prop affects a minority of
+    rows and drops out of the median, a mismatched panel affects all of them.
+
+    Enforced at C3's 2%, with no exceptions (owner decision 2026-07-26): a
+    scene whose panel proportions do not match the product is re-authored, not
+    exempted."""
+    if p["matte"] is None:
+        return _finding("matte-hidden", True, None, "n/a - pre-matte bundle, nothing to hide it")
+    vis = _rectified(p["matte"] > 0.5, p["quad"])
+    left, right = _band(vis)
+    top, bottom = _band(vis.T)
+    trimmed = 1 - (1 - left - right) * (1 - top - bottom)
+    occluded = max(0.0, (1 - float(vis.mean())) - trimmed)
+    return _finding("matte-hidden", trimmed <= MATTE_HIDDEN_TOL, round(trimmed, 4),
+                    f"{trimmed:.2%} of the design trimmed off by the matte "
+                    f"(L{left:.1%} R{right:.1%} T{top:.1%} B{bottom:.1%}, "
+                    f"limit {MATTE_HIDDEN_TOL:.0%}), {occluded:.2%} occluded by props")
 
 
 def _region_quad(region: np.ndarray):
@@ -347,7 +421,7 @@ def d_scene_fidelity(p: dict) -> dict:
                     f"(max {delta[outside].max():.0f}/255, budget {budget})")
 
 
-DETECTORS = ["fringe", "key-spill", "distortion", "coverage",
+DETECTORS = ["fringe", "key-spill", "distortion", "matte-hidden", "coverage",
              "occluder-opacity", "silhouette-vs-shadow", "scene-fidelity"]
 
 
@@ -357,8 +431,9 @@ def check(bundle_dir: Path, art: Image.Image) -> dict:
     p = _parts(bundle, art)
     prov = bundle_dir / "scene.json"
     key = json.loads(prov.read_text()).get("key_rgb") if prov.exists() else None
-    findings = [d_fringe(p), d_key_spill(p, key), d_distortion(p), d_coverage(p),
-                d_occluder_opacity(p), d_silhouette_vs_shadow(p), d_scene_fidelity(p)]
+    findings = [d_fringe(p), d_key_spill(p, key), d_distortion(p), d_matte_hidden(p),
+                d_coverage(p), d_occluder_opacity(p), d_silhouette_vs_shadow(p),
+                d_scene_fidelity(p)]
     return dict(scene=bundle.scene, dir=str(bundle_dir), findings=findings,
                 passed=all(f["passed"] for f in findings), parts=p)
 
@@ -419,6 +494,7 @@ def _edge_strip(comp: Image.Image, quad, i, width, height):
 
 A2 = ROOT / "outputs" / "attempt2_reference" / "bundles"     # attempt-2 bundles, kept as reference
 A1 = ROOT / "outputs" / "attempt1_reference"                 # attempt-1 bundles, preserved
+A3 = ROOT / "outputs" / "attempt3_reference"                 # P3's bundles, before P3.5 re-authored them
 # Both corpora are copies on purpose: P3 rewrites the live bundles, and a demo
 # that points at them would quietly start measuring the fixed scene instead of
 # the defect it claims to reproduce.
@@ -459,6 +535,10 @@ def demo():
         ("coverage", A2 / "flat_leaning_bookstack",
          "two axis-aligned occluder boxes punched out of the print, plus the "
          "3px band of photograph attempt 2 repainted over the print's own edge"),
+        ("matte-hidden", A3 / "lifestyle_bedroom_console",
+         "the scene's framed opening is 0.639 against a 0.684 master, so the "
+         "quad was widened to the master's aspect - passing C3 - and the matte "
+         "then trimmed 6.6% of the design's width straight back off again"),
         ("silhouette-vs-shadow", A2 / "flat_clips_windowlight",
          "art quad expanded past a curled sheet, so the print's straight edge ran "
          "across blank paper while the photographed shadow followed the curl"),
@@ -559,7 +639,11 @@ def main(argv):
         for f in r["findings"]:
             print(f"  {'ok  ' if f['passed'] else 'FAIL'} {f['name']:20} {f['detail']}")
         if cmd == "sheet":
-            print(f"  -> {contact_sheet(r, out / f'{r['scene']}.png')}")
+            # not f"...{f'{r['scene']}.png'}": nesting the same quote inside an
+            # f-string is PEP 701, i.e. 3.12+, and this gate has to parse on the
+            # declared floor (pyproject.toml requires-python). It did not, so on
+            # 3.10/3.11 the whole file was a SyntaxError and the gate never ran.
+            print(f"  -> {contact_sheet(r, out / (r['scene'] + '.png'))}")
     raise SystemExit(0 if all_ok else 1)
 
 

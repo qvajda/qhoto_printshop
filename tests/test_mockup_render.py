@@ -226,3 +226,59 @@ def test_render_scene_fails_loud_on_an_aspect_mismatched_bundle():
     # the guard is wired into render_scene, not just available as a helper
     with pytest.raises(MockupRenderError, match="cover-crop"):
         render_scene(_artwork((900, 1000)), load_bundle(FIXTURE_DIR))
+
+
+# --- C3's reference: the ratios the group prints, not the master's own -------
+# GL-21 P3.5/F2, owner 2026-07-28. The primary group prints at 0.6667 (8x12) and
+# 0.7071 (A3/A2/A1); the master's 0.6842 sits between them, so no single aspect
+# is within 2% of both ends and "nearest printed ratio" would reject the master
+# itself. A quad anywhere inside the range shows a crop between two the buyer
+# genuinely receives.
+
+@pytest.mark.parametrize("aspect, expected_gap", [
+    (0.6667, 0.0),          # exactly the 8x12 print
+    (0.7071, 0.0),          # exactly the A-series print
+    (0.6842, 0.0),          # the master, between the two
+    (0.6425, 0.0363),       # lifestyle_bedroom_console's framed opening
+    (0.5610, 0.1585),       # attempt 1's hand-read sage quad
+])
+def test_print_mismatch_measures_distance_outside_the_groups_printed_range(aspect, expected_gap):
+    gap, _ = mockup_render.print_mismatch(aspect, "primary")
+    assert gap == pytest.approx(expected_gap, abs=5e-4)
+
+
+def test_print_mismatch_is_silent_for_a_group_with_no_printed_sizes():
+    assert mockup_render.print_mismatch(0.42, "not-a-group") == (0.0, 0.42)
+
+
+def test_a_series_sizes_all_share_the_exact_iso_ratio():
+    # SIZE_INCHES holds mm conversions rounded to 2dp, which put A1/A2/A3 at
+    # 0.7064/0.7071/0.7068 - three "different products" that are one product.
+    from pipeline.image_crop import ISO_A_RATIO, size_ratio
+    assert {size_ratio(s) for s in ("A1", "A2", "A3")} == {ISO_A_RATIO}
+    assert size_ratio("8x12") == pytest.approx(2 / 3)
+
+
+def test_render_scene_accepts_a_panel_at_a_ratio_the_group_actually_prints(tmp_path):
+    # 0.6667 is 2.6% off the master and would have failed the old master-relative
+    # guard, while being the exact shape of the 8x12 the buyer receives.
+    bundle_dir = _bundle_at_aspect(tmp_path, 2 / 3)
+    assert render_scene(_artwork(), load_bundle(bundle_dir)).size == (896, 1152)
+
+
+def test_render_scene_still_fails_loud_outside_the_printed_range(tmp_path):
+    bundle_dir = _bundle_at_aspect(tmp_path, 0.6425)
+    with pytest.raises(MockupRenderError, match="outside the ratios primary prints"):
+        render_scene(_artwork(), load_bundle(bundle_dir))
+
+
+def _bundle_at_aspect(tmp_path, aspect, height=600):
+    import shutil
+    d = tmp_path / "bundle"
+    shutil.copytree(FIXTURE_DIR, d)
+    meta = json.loads((d / "meta.json").read_text())
+    w = round(height * aspect)
+    meta["aperture"] = [[100, 100], [100 + w, 100], [100 + w, 100 + height], [100, 100 + height]]
+    meta["overfill"] = 0.0
+    (d / "meta.json").write_text(json.dumps(meta))
+    return d

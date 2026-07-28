@@ -22,6 +22,14 @@ the GL-19 freeze on this module and added three things:
       against a 0.684 master - up to 18% silent non-uniform stretch of a print
       a buyer pays for.
 
+      The budget is measured against the ratios the group is *printed* at, not
+      against the master's own (GL-21 P3.5/F2, owner 2026-07-28). The primary
+      group prints at 0.667 (8x12) and 0.707 (A-series) with the master's 0.684
+      between them, so a scene panel at 0.667 shows the buyer exactly the 8x12
+      they receive - the honest measure is how far the mockup's crop is from any
+      crop the product actually takes, and against the master alone that scene
+      reads as a 2.6% distortion it does not have.
+
 `overfill` predates the matte and is **deprecated for matte bundles**: with a
 matte, the quad is authored as the min-area quad of the matte expanded on the
 short axis to the master's aspect, so coverage is guaranteed and the matte
@@ -119,6 +127,28 @@ def cover_crop_to_aspect(artwork: Image.Image, target_aspect: float,
         box = (0, (h - nh) // 2, w, (h - nh) // 2 + nh)
     return artwork.crop(box), crop
 
+def _ratio_gap(a: float, b: float) -> float:
+    """Linear fraction one aspect must be cropped by to reach the other."""
+    return 1.0 - min(a, b) / max(a, b)
+
+def print_mismatch(quad_aspect: float, group_type: str, static_config=None) -> tuple[float, float]:
+    """(gap, the printed ratio it is measured from) for a bundle's quad.
+
+    C3's real question is not "how far is this panel from the master" but "does
+    this panel show a crop the buyer's print actually takes". A quad inside the
+    group's printed range shows a crop between two the buyer receives: gap 0.
+    Outside it, the gap is the distance to the nearer end. An unknown group_type
+    reports 0 - it has no printed sizes to be wrong about."""
+    from pipeline.config import load_static_config
+    from pipeline.image_crop import printed_ratio_range
+    cfg = static_config if static_config is not None else load_static_config()
+    try:
+        lo, hi = printed_ratio_range(group_type, cfg)
+    except KeyError:
+        return 0.0, quad_aspect
+    nearest = min(max(quad_aspect, lo), hi)
+    return _ratio_gap(quad_aspect, nearest), nearest
+
 def _overfill_quad(quad: np.ndarray, frac: float) -> np.ndarray:
     c = quad.mean(axis=0)
     return (c + (quad - c) * (1.0 + frac)).astype(np.float32)
@@ -148,7 +178,22 @@ def render_scene(artwork: Image.Image, bundle: SceneBundle) -> Image.Image:
     Order: background -> warped art (cover-cropped, matted) -> overlay
     (shadows/highlights/foreground/frame-edge)."""
     quad = _overfill_quad(bundle.aperture, bundle.overfill)
-    art, _crop = cover_crop_to_aspect(artwork, quad_aspect(quad))
+    aspect = quad_aspect(quad)
+    # Both ends of the crop have to sit inside the range the group is printed at:
+    # the panel, or the mockup shows a crop no size receives; and the artwork, or
+    # the master itself is a different shape from the product and every size is a
+    # re-composition rather than a crop.
+    for what, a in (("aperture", aspect), ("artwork", artwork.size[0] / artwork.size[1])):
+        gap, nearest = print_mismatch(a, bundle.group_type)
+        if gap > MAX_COVER_CROP:
+            raise MockupRenderError(
+                f"{what} aspect {a:.4f} is {gap:.1%} outside the ratios "
+                f"{bundle.group_type} prints (nearest {nearest:.4f}), over the "
+                f"{MAX_COVER_CROP:.1%} limit - that is a re-composition, not a cover-crop"
+            )
+    # The crop itself is still master -> quad, and unbounded here: the guard above
+    # is the one that decides whether this panel may be used at all.
+    art, _crop = cover_crop_to_aspect(artwork, aspect, max_crop=1.0)
     warped = _warp_into_quad(art, bundle.size, quad)
     if bundle.matte is not None:
         rgba = np.array(warped)

@@ -19,8 +19,9 @@ Every number a bundle needs is derived from its own image:
 The overlay carries the gain map and nothing else: no repaint band, no stamped-
 back occluders. The matte handles both, per pixel (GL-21 C2).
 
-    scene_author.py extract <image.png> <scene_name> [--tag flat|lifestyle]
-    scene_author.py verify  <scene_name>
+    scene_author.py extract  <image.png> <scene_name> [--tag flat|lifestyle]
+    scene_author.py reauthor [<scene_name>...]     # re-derive from scene.json
+    scene_author.py verify   [<scene_name>...]
 """
 
 import json
@@ -40,7 +41,9 @@ import scene_screen as ss                           # noqa: E402
 import pipeline.mockup_render as mr                 # noqa: E402
 
 BUNDLES = ROOT / "assets" / "mockups" / "primary" / "portrait"
-MASTER_ASPECT = 6656 / 9728                         # db/base_artwork/39.png
+RIM_PX = 1.0                                        # quad margin past the matte, so the
+                                                    # matte's anti-aliased rim sits on
+                                                    # fully-covered art
 
 MATTE_LO, MATTE_HI = 0.6, 1.0                       # x KEY_LAB_TOL: the anti-aliased rim
 DESPILL_CAP = 4.0                                   # Lab units of key-direction chroma
@@ -198,10 +201,20 @@ def gain_map(bg: np.ndarray, matte: np.ndarray) -> np.ndarray:
 
 
 def quad_for(matte: np.ndarray) -> np.ndarray:
-    """The matte's own corner quad, expanded on its short axis until it matches
-    the master's aspect. The art is projected onto this; what is *seen* is the
-    matte, so the expansion only guarantees coverage under the anti-aliased rim -
-    it can never show as a border, which is what `overfill` used to be for."""
+    """The matte's own corner quad, expanded just far enough to cover it.
+
+    It used to also be expanded on its short axis until it matched the master's
+    aspect, which was wrong in the way that is hardest to see: the art then
+    filled a quad the matte was narrower than, and the matte trimmed the
+    difference straight back off the design. That is not free - it is the same
+    loss C3's cover-crop makes, taken silently on a path C3 does not watch, and
+    it cost up to 13% of the design (GL-21 P3.5/F2). The aspect policy has one
+    owner, and it is C3: leave the quad on the panel's real proportions, and let
+    the compositor cover-crop the artwork onto it or fail loud past 2%.
+
+    What remains is the coverage guarantee: push the edges out until every matte
+    pixel is inside, plus one pixel so the matte's anti-aliased rim lands on
+    fully-covered art rather than on the warp's own partial-alpha edge."""
     box, _ = ss._quad((matte > 0.5).astype(np.uint8))
     unit = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], np.float32)
     H = cv2.getPerspectiveTransform(unit, box.astype(np.float32))
@@ -213,19 +226,18 @@ def quad_for(matte: np.ndarray) -> np.ndarray:
     ys, xs = np.nonzero(matte > 0.5)
     uv = cv2.perspectiveTransform(
         np.stack([xs, ys], 1)[None].astype(np.float32), np.linalg.inv(H))[0]
-    lo, hi = uv.min(axis=0), uv.max(axis=0)
-    cover = np.array([[lo[0], lo[1]], [hi[0], lo[1]], [hi[0], hi[1]], [lo[0], hi[1]]], np.float32)
-    box = cv2.perspectiveTransform(cover[None], H)[0]
-    H = cv2.getPerspectiveTransform(unit, box.astype(np.float32))
+    # A quantile, not the outright min/max: a single stray matte pixel - a spur of
+    # contact shadow, a corner the shelf lip cuts off - would otherwise push a
+    # whole edge out and take the quad's aspect with it (bookstack's bottom moved
+    # 3%). Left outside instead, where the QA coverage test counts it against the
+    # same budget this quantile is set from.
+    q = mockup_qa.COVERAGE_TOL / 4                    # one share per edge
+    lo, hi = np.quantile(uv, q, axis=0), np.quantile(uv, 1 - q, axis=0)
     e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]
-    aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)
-    if aspect < MASTER_ASPECT:                       # too narrow: widen
-        m = (MASTER_ASPECT / aspect - 1) / 2
-        sub = np.array([[-m, 0], [1 + m, 0], [1 + m, 1], [-m, 1]], np.float32)
-    else:                                            # too wide: heighten
-        m = (aspect / MASTER_ASPECT - 1) / 2
-        sub = np.array([[0, -m], [1, -m], [1, 1 + m], [0, 1 + m]], np.float32)
-    return cv2.perspectiveTransform(sub[None], H)[0].astype(np.float32)
+    pad = np.array([RIM_PX / ((e[0] + e[2]) / 2), RIM_PX / ((e[1] + e[3]) / 2)], np.float32)
+    lo, hi = np.minimum(lo, 0) - pad, np.maximum(hi, 1) + pad
+    cover = np.array([[lo[0], lo[1]], [hi[0], lo[1]], [hi[0], hi[1]], [lo[0], hi[1]]], np.float32)
+    return cv2.perspectiveTransform(cover[None], H)[0].astype(np.float32)
 
 
 def extract(image_path: Path, scene: str, tag: str, provenance: dict,
@@ -261,8 +273,12 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     Image.fromarray(overlay, "RGBA").save(d / "overlay.png")
 
     aspect = mr.quad_aspect(quad)
-    _, crop = mr.cover_crop_to_aspect(Image.open(mockup_qa.MASTER).convert("RGB"),
-                                      aspect, max_crop=1.0)
+    # Measured off the master itself rather than from a hardcoded ratio - a
+    # per-scene-constant-free tool has no business carrying one sample's pixel
+    # dimensions as a product constant (GL-21 review §8.5).
+    master = Image.open(mockup_qa.MASTER).convert("RGB")
+    master_aspect = master.size[0] / master.size[1]
+    _, crop = mr.cover_crop_to_aspect(master, aspect, max_crop=1.0)
     (d / "meta.json").write_text(json.dumps({
         "scene": scene, "group_type": "primary", "orientation": "portrait",
         "aperture": [[round(float(x), 1), round(float(y), 1)] for x, y in quad],
@@ -275,7 +291,7 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
                         [[round(float(x), 1), round(float(y), 1)] for x, y in seed_poly],
         "key_lab_ab": None if ref is None else [round(float(x), 2) for x in ref],
         "quad_aspect": round(aspect, 4),
-        "aspect_delta": round(aspect / MASTER_ASPECT - 1, 4),
+        "aspect_delta": round(aspect / master_aspect - 1, 4),
         "cover_crop": round(crop, 4),
         "matte_coverage": round(float((matte > 0.5).mean()), 4),
     }, indent=2) + "\n")
@@ -314,6 +330,21 @@ def main(argv):
                                    for p in src.split(";")], np.float32)
         print(json.dumps(extract(image_path, scene, tag,
                                  _provenance_for(image_path), poly), indent=2))
+        return 0
+    if cmd == "reauthor":
+        # Re-derive bundles from what scene.json already records. A bundle is a
+        # pure function of its source image plus this tool, so a fix in the tool
+        # costs one command, not an authoring session - proved in the GL-21
+        # review, where re-running extract reproduced all four byte-identical
+        # except the one layer that had been wrong.
+        for scene in argv[2:] or [d.name for d in sorted(BUNDLES.iterdir()) if d.is_dir()]:
+            d = BUNDLES / scene
+            sj = json.loads((d / "scene.json").read_text())
+            src = ROOT / Path(sj["source_image"].replace("\\", "/"))
+            poly = None if sj.get("seed_polygon") is None else np.asarray(sj["seed_polygon"],
+                                                                         np.float32)
+            print(json.dumps(extract(src, scene, json.loads((d / "meta.json").read_text())["tag"],
+                                     _provenance_for(src), poly)))
         return 0
     if cmd == "verify":
         art = Image.open(mockup_qa.MASTER).convert("RGB")

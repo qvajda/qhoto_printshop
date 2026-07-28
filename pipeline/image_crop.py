@@ -10,6 +10,49 @@ from PIL import Image
 PREVIEW_MAX_EDGE = 2000
 
 
+# Physical print dimensions (short_edge_in, long_edge_in) per offered size.
+# A-series inches are the ISO mm sizes converted (A3 297x420mm, A2 420x594mm,
+# A1 594x841mm). Lives here, next to the ratios derived from it, and is read by
+# group_product's pre-create DPI guard and by the compositor's crop guard - one
+# table, because two copies of a physical constant drift.
+SIZE_INCHES = {
+    "5x7": (5, 7),
+    "8x12": (8, 12),
+    "A3": (11.69, 16.54),
+    "A2": (16.54, 23.39),
+    "A1": (23.39, 33.11),
+    "10x24": (10, 24),
+}
+
+
+ISO_A_RATIO = 2 ** -0.5     # every A-series size is exactly 1:sqrt(2)
+
+
+def size_ratio(size: str) -> float:
+    """Printed aspect of one size. A-series is taken as the exact ISO ratio, not
+    from SIZE_INCHES: those are mm conversions rounded to 2dp, so A1/A2/A3 come
+    out at 0.7064/0.7071/0.7068 and would read as three different products."""
+    if len(size) == 2 and size[0] == "A" and size[1].isdigit():
+        return ISO_A_RATIO
+    short, long = SIZE_INCHES[size]
+    return short / long
+
+
+def printed_ratio_range(group_type: str, static_config: dict) -> tuple[float, float]:
+    """The narrowest and widest aspect a group is actually *printed* at.
+
+    The primary group spans two: 8x12 at 0.667 and the A-series at 0.707, with
+    the master's own 0.684 between them. That matters to the mockup compositor.
+    A panel at 0.667 is not a 2.6% distortion of the master - it is exactly the
+    8x12 the buyer receives; a panel anywhere inside the range shows a crop
+    between two the buyer legitimately receives; and only outside the range is
+    the mockup showing something no size in the group is ever cropped to. Note
+    that no single aspect can be within 2% of *both* ends, so a nearest-ratio
+    rule would reject the master itself (GL-21 P3.5/F2, owner 2026-07-28)."""
+    ratios = [size_ratio(size) for size in static_config["aspect_ratio_groups"][group_type]]
+    return min(ratios), max(ratios)
+
+
 def target_ratio_for_group_type(group_type: str) -> float:
     """5x7 / 10x24 style group_type names are WIDTHxHEIGHT in inches - the exact
     ratio Gelato prints (confirmed via live product variant title, e.g.

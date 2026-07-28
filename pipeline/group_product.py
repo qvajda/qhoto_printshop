@@ -30,19 +30,12 @@ class PrintResolutionError(Exception):
 
 MIN_PRINT_DPI = 150
 
-# Physical print dimensions (short_edge_in, long_edge_in) per offered size, for the
-# pre-create DPI guard only. Gelato enforces its own DPI at product creation; this
-# fails loud *before* a live call when the upscaled master can't clear 150 DPI
-# (Gelato's stated poster minimum) at a group's largest size (B5). A-series inches
-# are the ISO mm sizes converted (A3 297x420mm, A2 420x594mm, A1 594x841mm).
-_SIZE_INCHES = {
-    "5x7": (5, 7),
-    "8x12": (8, 12),
-    "A3": (11.69, 16.54),
-    "A2": (16.54, 23.39),
-    "A1": (23.39, 33.11),
-    "10x24": (10, 24),
-}
+# Physical print dimensions, used here for the pre-create DPI guard only. Gelato
+# enforces its own DPI at product creation; this fails loud *before* a live call
+# when the upscaled master can't clear 150 DPI (Gelato's stated poster minimum)
+# at a group's largest size (B5). The table itself lives in image_crop, next to
+# the aspect ratios derived from it.
+from pipeline.image_crop import SIZE_INCHES as _SIZE_INCHES  # noqa: E402
 
 
 def _assert_print_dpi(sizes: list, local_path) -> None:

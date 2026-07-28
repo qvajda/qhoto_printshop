@@ -256,9 +256,8 @@ def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_cr
     # Real (non-mocked) mockup_render output - proves the actual end-to-end
     # integration. Primary renders straight from base_image_local_path (no crop
     # step); flat scenes come first (image_type='flat_mockup'), lifestyle after.
-    # Bundles are the aspect-correct stubs, not assets/mockups/primary/portrait:
-    # those four are mid-rework and GL-21's C3 guard rejects them (asserted by
-    # test_create_or_reuse_group_product_fails_loud_on_aspect_broken_real_bundles).
+    # Bundles are the aspect-correct stubs; the real ones are exercised by
+    # test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles.
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -277,10 +276,10 @@ def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_cr
         "ORDER BY gallery_order",
         (result["group_product_id"],),
     ).fetchall()
+    scenes = static_config["mockup_templates"]["primary"]["portrait"]
     assert [r["image_type"] for r in image_rows] == [
-        "flat_mockup", "flat_mockup", "lifestyle", "lifestyle",
-    ]
-    assert [r["gallery_order"] for r in image_rows] == [0, 1, 2, 3]
+        "flat_mockup" if s.startswith("flat") else "lifestyle" for s in scenes]
+    assert [r["gallery_order"] for r in image_rows] == list(range(len(scenes)))
     # Rendered/persisted URLs only - never the raw master or a Gelato URL.
     for row in image_rows:
         assert row["image_url"] != master_path
@@ -296,7 +295,9 @@ def test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles(tmp
     # test that proves the shipped scene library actually composites. It replaces
     # the GL-21 placeholder that asserted these bundles fail loud: they did, while
     # they carried attempt-1/2 apertures from 0.561 to 0.693 against a 0.684
-    # master, and GL-6 attempt 3 re-authored all four to within 0.01%.
+    # master, and GL-6 attempt 3 re-authored them. Expectations are derived from
+    # the config rather than listed: P4 is adding scenes, and a hardcoded list
+    # would have to be edited once per bundle for no added coverage.
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -313,7 +314,10 @@ def test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles(tmp
         "SELECT image_type, gallery_order FROM product_images WHERE group_product_id = ? "
         "ORDER BY gallery_order", (result["group_product_id"],),
     ).fetchall()
-    assert [r["image_type"] for r in rows] == ["flat_mockup", "flat_mockup", "lifestyle", "lifestyle"]
+    scenes = _static_config()["mockup_templates"]["primary"]["portrait"]
+    assert scenes, "the primary group must ship at least one real bundle"
+    assert [r["image_type"] for r in rows] == [
+        "flat_mockup" if s.startswith("flat") else "lifestyle" for s in scenes]
     row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
     assert row["status"] == "created"
 
@@ -401,7 +405,7 @@ def test_create_or_reuse_group_product_never_uses_gelato_preview_or_base_url_as_
         "SELECT image_url FROM product_images WHERE group_product_id = ?",
         (result["group_product_id"],),
     ).fetchall()
-    assert len(image_rows) == 4
+    assert len(image_rows) == len(static_config["mockup_templates"]["primary"]["portrait"])
     for row in image_rows:
         assert row["image_url"] != "https://gelato-preview.example.com/sneaky.jpg"
         assert row["image_url"] != "https://replicate.delivery/dead-link.png"
