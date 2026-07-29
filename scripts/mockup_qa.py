@@ -65,6 +65,8 @@ SPILL_PROJ_MAX = 8.0    # Lab units of key-direction chroma tolerated on the pri
 SPILL_BAND_BUDGET = 0.001  # x the band's own size: an occluder's real colour shows at
                         # the rim of its hole, and that is scene content, not residue
 PLATEAU_TOL = 0.05      # alpha within this of 0/1 counts as hard
+PLATEAU_RIM_PX = 3      # how far a mid-alpha px may be from both a 0 and a 1 and still
+                        # count as sitting on a rim - see d_occluder_opacity
 PLATEAU_BUDGET = 0.01   # x the matte's perimeter: a matte derived from a photograph's
                         # own edge gradient leaves a few soft px on it. Attempt 1's
                         # alpha-172 stamps are ~10x this and nowhere near an edge.
@@ -360,7 +362,17 @@ def d_occluder_opacity(p: dict) -> dict:
         return _finding("occluder-opacity", True, None, "n/a - pre-matte bundle, no matte to check")
     src = p["matte"]
     mid = (src > PLATEAU_TOL) & (src < 1 - PLATEAU_TOL)
-    k = np.ones((5, 5), np.uint8)
+    # "On a rim" is measured within PLATEAU_RIM_PX, not 2px as it used to be. A
+    # straight anti-aliased rim is 1-2px wide, but a *corner* rim is a wedge, and
+    # the tip of a wedge is further from both plateaus than its sides are: on
+    # lifestyle_shelf_books' shadowed bottom-left corner, where the panel fades
+    # into the shelf's own shadow, the wedge measures 5px deep and 21 px of it
+    # read as a plateau against a budget of 20. That is a soft edge in the
+    # photograph, correctly ramped, failed on its geometry rather than its alpha.
+    # 3px still leaves the defect class untouched: attempt 1's alpha-172 clip
+    # stamps measure 296 px at every reach from 2px to 5px, because a stamped
+    # prop is wide, not a rim (see _occluder_demo).
+    k = np.ones((2 * PLATEAU_RIM_PX + 1,) * 2, np.uint8)
     near0 = cv2.dilate((src <= PLATEAU_TOL).astype(np.uint8), k).astype(bool)
     near1 = cv2.dilate((src >= 1 - PLATEAU_TOL).astype(np.uint8), k).astype(bool)
     plateau = mid & ~(near0 & near1)          # partial, but not on a 0<->1 rim
