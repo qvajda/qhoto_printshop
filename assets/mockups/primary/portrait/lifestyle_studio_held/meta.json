@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_studio_held",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      728.8,
+      133.2
+    ],
+    [
+      1687.2,
+      131.2
+    ],
+    [
+      1673.0,
+      1467.7
+    ],
+    [
+      749.9,
+      1475.7
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

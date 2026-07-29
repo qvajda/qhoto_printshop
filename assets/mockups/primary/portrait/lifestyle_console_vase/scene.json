@@ -1,0 +1,131 @@
+{
+  "completed_at": "2026-07-29T16:00:56.779185Z",
+  "created_at": "2026-07-29T16:00:26.327000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "3m3ccmrjtxrmr0czntdrjcwg18",
+  "input": {
+    "prompt": "Photograph of a blank unframed matte poster mounted flush against a warm white plaster wall above a pale oak console table. The blank poster's proportions match the reference card exactly \u00e2\u20ac\u201d same width-to-height ratio, same flat green. The whole blank poster is mono-color of bright green, its corners square to the camera. Standing on the console in front of the poster's lower edge: a tall cream stoneware vase and a stacked pair of hardback books in oxblood and bone, both clearly overlapping the bottom of the poster and casting soft contact shadows on the wall behind them. The bright green should not be reflected to any nearby surfaces. Soft even indoor daylight fills the room from the left; the poster's own face is lit flatly and evenly, with no shadow, no gradient and no hotspot across it. Straight-on frontal view, 50 mm, sharp, the poster's height filling about two thirds of the image. Warm neutral palette of plaster, oak, cream and oxblood, no plants and no foliage anywhere in the scene.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PX3Jb2OU9WIKPyVEHzZrnhE561pwUWzdYmcIQZTpNdRNYJZP/geometry_card_primary_0.6869.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2265\nGenerated image in 30.15 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 30.397917575,
+    "total_time": 30.452185468
+  },
+  "output": "https://replicate.delivery/xezq/xEPdkKDEnN76DRFhMWZ1QFIGtVvNWmWvIGFpWgpNOcLuVfeWA/tmpmpnbbr5r.png",
+  "started_at": "2026-07-29T16:00:26.381267Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-3ud3gmbkklo5sawg2jvqvffacolyceinijvr7hyjlka3gcflzpna",
+    "get": "https://api.replicate.com/v1/predictions/3m3ccmrjtxrmr0czntdrjcwg18",
+    "cancel": "https://api.replicate.com/v1/predictions/3m3ccmrjtxrmr0czntdrjcwg18/cancel",
+    "web": "https://replicate.com/p/3m3ccmrjtxrmr0czntdrjcwg18"
+  },
+  "version": "hidden",
+  "prompt": "Photograph of a blank unframed matte poster mounted flush against a warm white plaster wall above a pale oak console table. The blank poster's proportions match the reference card exactly \u00e2\u20ac\u201d same width-to-height ratio, same flat green. The whole blank poster is mono-color of bright green, its corners square to the camera. Standing on the console in front of the poster's lower edge: a tall cream stoneware vase and a stacked pair of hardback books in oxblood and bone, both clearly overlapping the bottom of the poster and casting soft contact shadows on the wall behind them. The bright green should not be reflected to any nearby surfaces. Soft even indoor daylight fills the room from the left; the poster's own face is lit flatly and evenly, with no shadow, no gradient and no hotspot across it. Straight-on frontal view, 50 mm, sharp, the poster's height filling about two thirds of the image. Warm neutral palette of plaster, oak, cream and oxblood, no plants and no foliage anywhere in the scene.",
+  "generated_at": "2026-07-29T16:00:56.779185Z",
+  "generated_via": "Replicate (manual), prediction 3m3ccmrjtxrmr0czntdrjcwg18, https://replicate.com/p/3m3ccmrjtxrmr0czntdrjcwg18",
+  "prediction_id": "3m3ccmrjtxrmr0czntdrjcwg18",
+  "model": "google/nano-banana-pro",
+  "model_source": "the prediction export does not name the model; defaulted, not read",
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "scene": "lifestyle_console_vase",
+  "source_image": "assets\\mockups\\inflow\\primary\\lifestyle_console_vase.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    69.0,
+    169.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        39.61,
+        -41.0,
+        29.0
+      ],
+      [
+        41.18,
+        -42.0,
+        30.0
+      ],
+      [
+        43.14,
+        -43.0,
+        30.0
+      ],
+      [
+        45.1,
+        -45.0,
+        31.0
+      ],
+      [
+        47.06,
+        -47.0,
+        32.0
+      ],
+      [
+        49.02,
+        -48.0,
+        33.0
+      ],
+      [
+        50.98,
+        -50.0,
+        34.0
+      ],
+      [
+        52.94,
+        -52.0,
+        36.0
+      ],
+      [
+        54.9,
+        -54.0,
+        37.0
+      ],
+      [
+        57.25,
+        -56.0,
+        39.0
+      ],
+      [
+        58.82,
+        -57.0,
+        40.0
+      ],
+      [
+        61.18,
+        -59.0,
+        41.0
+      ],
+      [
+        62.35,
+        -60.0,
+        42.0
+      ]
+    ],
+    "sigma": 1.019
+  },
+  "quad_aspect": 0.7184,
+  "aspect_delta": 0.05,
+  "cover_crop": 0.0476,
+  "matte_coverage": 0.2601,
+  "group_type": "primary",
+  "orientation": "portrait"
+}

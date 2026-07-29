@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_console_vase",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      751.0,
+      147.0
+    ],
+    [
+      1649.0,
+      147.0
+    ],
+    [
+      1649.0,
+      1397.0
+    ],
+    [
+      751.0,
+      1397.0
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}
