@@ -328,17 +328,48 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     return dict(scene=scene, aspect=round(aspect, 4), crop=round(crop, 4), dir=str(d))
 
 
+SHAPE_KEYS = ("scene", "group_type", "orientation", "tag")   # what the *bundle* is, which
+                                                             # extract() and meta.json own -
+                                                             # not provenance, and duplicating
+                                                             # them into scene.json lets the
+                                                             # two disagree
+
+
+def normalise_provenance(sidecar: dict) -> dict:
+    """`extract` reads provenance['key_rgb'] and the gate's d_key_spill reads
+    scene.json['key_rgb'] straight off disk, but the sidecar template writes
+    'key_rgb_requested' (the colour asked for, not necessarily what rendered).
+    Without this, every hand-made scene's key-spill detector silently reports
+    "n/a - bundle declares no key colour" - a detector switched off by a
+    spelling, not by a decision."""
+    provenance = dict(sidecar)
+    if "key_rgb" not in provenance and "key_rgb_requested" in provenance:
+        provenance["key_rgb"] = provenance["key_rgb_requested"]
+    return provenance
+
+
 def _provenance_for(image_path: Path) -> dict:
-    """Carry the generation manifest's model/prompt/seed/key into scene.json, so
-    a bundle can always be traced back to the call that made it."""
+    """Where the pixels came from, carried into scene.json so a bundle can always
+    be traced back to the call that made it.
+
+    Two shapes, because there are two kinds of source. A `scene_generate.py`
+    batch under outputs/ has one manifest.json for the whole fire; a hand-run
+    scene in assets/mockups/inflow/ has one sidecar per image, which is the
+    durable record (outputs/ is git-ignored - the sidecar is what survives a
+    `git clean`, and it is what `reauthor` resolves against now)."""
     mani = image_path.parent / "manifest.json"
-    if not mani.exists():
+    if mani.exists():
+        m = json.loads(mani.read_text())
+        job = next((j for j in m["jobs"] if j.get("path")
+                    and Path(j["path"]).name == image_path.name), {})
+        return {k: job.get(k) for k in ("prompt", "seed", "key", "key_rgb")} | {
+            "model": m["model"], "licence": m["licence"],
+            "aspect_ratio": m["aspect_ratio"], "megapixels": m["megapixels"]}
+    sidecar = image_path.with_suffix(".json")
+    if not sidecar.exists():
         return {}
-    m = json.loads(mani.read_text())
-    job = next((j for j in m["jobs"] if j.get("path") and Path(j["path"]).name == image_path.name), {})
-    return {k: job.get(k) for k in ("prompt", "seed", "key", "key_rgb")} | {
-        "model": m["model"], "licence": m["licence"],
-        "aspect_ratio": m["aspect_ratio"], "megapixels": m["megapixels"]}
+    return {k: v for k, v in normalise_provenance(json.loads(sidecar.read_text())).items()
+            if k not in SHAPE_KEYS}
 
 
 def _all_bundles(group_type, orientation):

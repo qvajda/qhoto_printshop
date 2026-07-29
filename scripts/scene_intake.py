@@ -98,19 +98,6 @@ def _validate_template_sidecar(sidecar: dict, sidecar_path: Path) -> dict | None
     return sidecar
 
 
-def _normalise_provenance(sidecar: dict) -> dict:
-    """`extract` reads provenance['key_rgb'] and the gate's d_key_spill reads
-    scene.json['key_rgb'] straight off disk, but the sidecar template writes
-    'key_rgb_requested' (the colour asked for, not necessarily what rendered).
-    Without this, every hand-made scene's key-spill detector silently reports
-    "n/a - bundle declares no key colour" - a detector switched off by a
-    spelling, not by a decision."""
-    provenance = dict(sidecar)
-    if "key_rgb" not in provenance and "key_rgb_requested" in provenance:
-        provenance["key_rgb"] = provenance["key_rgb_requested"]
-    return provenance
-
-
 def _is_replicate_export(raw: dict) -> bool:
     return all(k in raw for k in REPLICATE_EXPORT_KEYS)
 
@@ -256,7 +243,7 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
         orientation = orientation_override or sidecar.get("orientation", "portrait")
         scene = sidecar.get("scene") or image_path.stem
         tag = sidecar.get("tag")
-        provenance = _normalise_provenance(sidecar)
+        provenance = scene_author.normalise_provenance(sidecar)
     tag = tag_override or tag or scene.split("_", 1)[0]
     key_rgb = tuple(provenance["key_rgb"])
 

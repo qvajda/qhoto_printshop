@@ -4,7 +4,7 @@ bundle: that intake refuses without provenance, stops before extract on an
 aspect that authoring can never fix, never touches assets/ in --dry-run, and
 that the sidecar's key_rgb_requested spelling actually reaches scene.json as
 key_rgb (silently dropping that normalisation switches key-spill off on every
-hand-made scene - see scene_intake._normalise_provenance).
+hand-made scene - see scene_author.normalise_provenance).
 
 Also covers scene_screen.key_contamination: the pivot doc §3.2 defect (a fern
 frond near-key enough to be swallowed into the mask) that mask-solidity alone

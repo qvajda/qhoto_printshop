@@ -1,6 +1,20 @@
 {
+  "model": null,
+  "model_notes": "No model - this scene was never generated. The bundle's own scene.json records mode \"seeded\", model absent, seed_polygon set (the panel was traced by hand on an ordinary photograph, not extracted from a flat-key render). Recording null here honestly rather than guessing a model.",
+  "generated_via": "Ordinary photograph, hand-seeded via scene_author.py's seed-polygon path (no image generation of any kind)",
+  "generated_at": null,
+  "prompt": null,
+  "reference_images": [],
+  "key": null,
+  "key_rgb_requested": null,
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Source of record for this bundle: assets/mockups/inflow/ is what survives a `git clean`, so scene.json's source_image points here and `scene_author.py reauthor` resolves against it (was the git-ignored outputs/attempt1_bookstack_photo.png). seed/licence/aspect_ratio/megapixels below were backfilled from that run's manifest.json, which is git-ignored and is the only place they used to live.",
+  "key_rgb": null,
   "scene": "flat_leaning_bookstack",
-  "source_image": "outputs\\attempt1_bookstack_photo.png",
+  "source_image": "assets\\mockups\\inflow\\primary\\flat_leaning_bookstack.png",
   "mode": "seeded",
   "seed_polygon": [
     [

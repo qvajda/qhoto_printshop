@@ -1,18 +1,32 @@
 {
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. This scene predates the 2026-07-29 Nano Banana Pro pivot; kept here only so its source survives a `git clean` (it lives under the git-ignored outputs/gl6_keyed/, per docs/2026-07-29-p4b-scene-generation-pivot.md open item 2).",
+  "generated_via": "scripts/scene_generate.py fire (P0 batch, gl6_keyed), seed 22",
+  "generated_at": null,
   "prompt": "A portrait poster sheet clipped to a slim brass rail with two wooden pegs, hanging against a warm off-white wall beside a window, soft daylight raking across it. The sheet is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
-  "seed": 22,
+  "reference_images": [],
   "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Source of record for this bundle: assets/mockups/inflow/ is what survives a `git clean`, so scene.json's source_image points here and `scene_author.py reauthor` resolves against it (was the git-ignored outputs/gl6_keyed/clips_v2_emerald_s22.png). seed/licence/aspect_ratio/megapixels below were backfilled from that run's manifest.json, which is git-ignored and is the only place they used to live.",
+  "seed": 22,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
   "key_rgb": [
     0,
     177,
     64
   ],
-  "model": "black-forest-labs/flux-schnell",
-  "licence": "Apache-2.0 (flux-schnell)",
-  "aspect_ratio": "3:4",
-  "megapixels": "1",
   "scene": "flat_clips_windowlight",
-  "source_image": "outputs\\gl6_keyed\\clips_v2_emerald_s22.png",
+  "source_image": "assets\\mockups\\inflow\\primary\\flat_clips_windowlight.png",
   "mode": "keyed",
   "seed_polygon": null,
   "key_lab_ab": [

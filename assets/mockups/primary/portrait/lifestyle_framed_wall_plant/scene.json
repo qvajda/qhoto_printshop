@@ -1,18 +1,32 @@
 {
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. This scene predates the 2026-07-29 Nano Banana Pro pivot; kept here only so its source survives a `git clean` (it lives under the git-ignored outputs/gl6_p4a2/, per docs/2026-07-29-p4b-scene-generation-pivot.md open item 2).",
+  "generated_via": "scripts/scene_generate.py fire (P4a2 batch, gl6_p4a2), seed 66 - the 16th of a deliberate 16-seed buy on a variant already pre-screened clean on sharp/frontal",
+  "generated_at": null,
   "prompt": "A slim matte-black portrait picture frame hanging flat on a warm sage plaster wall above a terracotta pot, lit softly from the left. The frame is a plain flat profile 12mm wide with no mount and no glass. Its opening measures 20cm wide by 30cm tall and is filled corner to corner by one solid panel of vivid emerald green, which meets the frame's inner edge as a hard crisp painted line. No glazing, no glass, no reflection, no white mat, no mount board, no second border inside the frame. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
-  "seed": 66,
+  "reference_images": [],
   "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Source of record for this bundle: assets/mockups/inflow/ is what survives a `git clean`, so scene.json's source_image points here and `scene_author.py reauthor` resolves against it (was the git-ignored outputs/gl6_p4a2/framed_v1_emerald_s66.png). seed/licence/aspect_ratio/megapixels below were backfilled from that run's manifest.json, which is git-ignored and is the only place they used to live.",
+  "seed": 66,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
   "key_rgb": [
     0,
     177,
     64
   ],
-  "model": "black-forest-labs/flux-schnell",
-  "licence": "Apache-2.0 (flux-schnell)",
-  "aspect_ratio": "3:4",
-  "megapixels": "1",
   "scene": "lifestyle_framed_wall_plant",
-  "source_image": "outputs\\gl6_p4a2\\framed_v1_emerald_s66.png",
+  "source_image": "assets\\mockups\\inflow\\primary\\lifestyle_framed_wall_plant.png",
   "mode": "keyed",
   "seed_polygon": null,
   "key_lab_ab": [
