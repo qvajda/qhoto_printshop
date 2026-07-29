@@ -19,10 +19,40 @@
     56.0,
     179.0
   ],
-  "quad_aspect": 0.6641,
-  "aspect_delta": -0.0293,
-  "cover_crop": 0.0293,
-  "matte_coverage": 0.174,
+  "key_locus": {
+    "knots": [
+      [
+        73.33,
+        -68.0,
+        48.0
+      ],
+      [
+        75.69,
+        -69.0,
+        50.0
+      ],
+      [
+        76.86,
+        -70.0,
+        50.0
+      ],
+      [
+        79.22,
+        -71.0,
+        50.0
+      ],
+      [
+        80.78,
+        -72.0,
+        51.0
+      ]
+    ],
+    "sigma": 1.483
+  },
+  "quad_aspect": 0.664,
+  "aspect_delta": -0.0295,
+  "cover_crop": 0.0295,
+  "matte_coverage": 0.1746,
   "group_type": "primary",
   "orientation": "portrait"
 }
