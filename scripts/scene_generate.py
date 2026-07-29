@@ -1,14 +1,31 @@
 """GL-6 attempt-3 P0: keyed scene generation (authoring-time only, throwaway).
 
+SUPERSEDED for scene generation (2026-07-29): mockup scenes are now hand-run
+through Nano Banana Pro (google/nano-banana-pro) straight into
+assets/mockups/inflow/, not batch-fired here. See
+docs/2026-07-29-p4b-scene-generation-pivot.md - P4b1's 61 delivered images
+scored 0/20 primary and 0/18 10x24 on `aspect` (schnell can't hold a stated
+opening size, and 10x24's 0.4167 sits outside its distribution entirely), while
+the shared negation-heavy prompt tail summoned the mat/glazing it forbade.
+Nano Banana passed 9/9 on the first geometry-carded attempt. This module is
+kept as the schnell batch harness and as historical provenance for the four
+bundles that *were* authored from its output (see §2 of the pivot doc) - their
+scene.json still points at outputs/gl6_*, and this file is what produced those
+pixels.
+
 Generates mockup *scenes* - not artwork - whose print area is a solid flat
 key-colour panel, so the matte extracts exactly (including curl and every
 overlapping prop) and the drop shadow FLUX renders belongs to the silhouette the
 art will actually occupy. Plan §3.2; the 2026-07-23 brief's "do not prompt for a
 keyed insert" is deliberately reversed.
 
-Model: black-forest-labs/flux-schnell (Apache-2.0 weights, the only image model
-this project may use - never flux-dev). aspect_ratio 3:4 @ 1 megapixel gives
-896x1152, exactly the existing bundles' size.
+Model: black-forest-labs/flux-schnell (Apache-2.0 weights) - this script's own
+choice, unchanged and not up for revisiting here. The "only image model this
+project may use" rule now lives with pipeline/generate.py: it governs the
+printed artefact a buyer pays for (the licence is the whole point), not scene
+photography, which CLAUDE.md's 2026-07-29 scene-generation constraint carves
+out separately. aspect_ratio 3:4 @ 1 megapixel gives 896x1152, exactly the
+existing bundles' size.
 
     scene_generate.py plan            # prompts + cost, no API call (default)
     scene_generate.py fire [--seeds N] [--only clips,leaning,framed,shelf]
@@ -48,6 +65,26 @@ COMMON = ("Straight-on frontal photograph, the panel rectangular and square to t
           "colour edge to edge, ending exactly at the panel's own outline. Natural "
           "daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal "
           "styling.")
+
+
+def _framed(w_cm, h_cm):
+    """P4a's proven framed tail: dimensioned opening, glass and mat named and
+    forbidden (§10.1). Only the opening's size varies per group."""
+    return (f"The frame is a plain flat profile 12mm wide with no mount and no glass. "
+            f"Its opening measures {w_cm}cm wide by {h_cm}cm tall and is filled corner "
+            f"to corner by one solid panel of {{key}}, which meets the frame's inner "
+            f"edge as a hard crisp painted line. No glazing, no glass, no reflection, "
+            f"no white mat, no mount board, no second border inside the frame. ") + COMMON
+
+
+def _sheet(w_cm, h_cm):
+    """The thin-sheet tail (§10.3), dimensioned per group. Hanging only - a sheet
+    standing on furniture is 0/21."""
+    return (f"The paper is 0.2mm thin, {w_cm}cm wide by {h_cm}cm tall, its cut edge "
+            f"visible as the edge of a sheet of paper. Not a mounted board, not a "
+            f"canvas, not foam board, no backing panel, no frame, no thick slab. The "
+            f"sheet is one solid panel of {{key}}. ") + COMMON
+
 
 PROMPTS = {
     "clips": [
@@ -155,6 +192,77 @@ PROMPTS = {
         "{key} from corner to corner, its four edges straight and its paper thin enough "
         "to see it is a single sheet. " + COMMON,
     ],
+
+    # ---- P4b wide probe (2026-07-29) -------------------------------------
+    # One composition per family, 4 seeds each: probe wide once, then buy seeds
+    # only on families that land (owner, 2026-07-29). Framed everywhere it can
+    # be - it is the one lifestyle branch P4a proved - and hanging sheets only.
+    # `pri_` = primary (opening 20x30), `s57_` = 5x7 (13x18), `t24_` = 10x24
+    # (25x60). Screen each with the matching --group.
+
+    "pri_sofa": ["A slim matte-black portrait picture frame hanging on a pale greige "
+                 "living-room wall above a low linen sofa, a cushion and a folded throw "
+                 "below it, soft daylight from the right. " + _framed(20, 30)],
+    "pri_bed": ["A thin natural oak portrait picture frame hanging on a warm white "
+                "bedroom wall above a linen headboard, a bedside table with a small lamp "
+                "beneath it. " + _framed(20, 30)],
+    "pri_hallway": ["A slender white portrait picture frame on a pale hallway wall above "
+                    "a narrow oak bench, a pair of shoes and a woven basket below, light "
+                    "from a door out of frame. " + _framed(20, 30)],
+    "pri_desk": ["A slim black portrait picture frame standing upright on a walnut desk "
+                 "against a pale plaster wall, a ceramic mug and two closed notebooks "
+                 "beside it, morning light from the left. " + _framed(20, 30)],
+    "pri_kitchen": ["A thin oak portrait picture frame leaning against a whitewashed "
+                    "kitchen wall on a wide floating shelf, two stoneware jars and a "
+                    "small olive plant beside it. " + _framed(20, 30)],
+    "pri_easel": ["A slim matte-black portrait picture frame resting on a pale wooden "
+                  "floor easel against a warm plaster wall, a trailing plant in a "
+                  "terracotta pot to one side. " + _framed(20, 30)],
+
+    "s57_nightstand": ["A small 13 by 18 centimetre portrait picture frame in slim black "
+                       "standing on an oak nightstand beside a small ceramic lamp and a "
+                       "hardback book, warm bedroom light. The frame is small enough that "
+                       "the lamp beside it is taller. " + _framed(13, 18)],
+    "s57_desk": ["A small 13 by 18 centimetre portrait picture frame in pale oak standing "
+                 "on a wooden desk beside a ceramic coffee mug and a pair of reading "
+                 "glasses, daylight from a window off frame. The mug reaches halfway up "
+                 "the frame. " + _framed(13, 18)],
+    "s57_kitchenshelf": ["A small 13 by 18 centimetre portrait picture frame in slim "
+                         "white standing on a floating kitchen shelf between two small "
+                         "stoneware cups and a tiny potted herb, soft daylight. The cups "
+                         "are half the frame's height. " + _framed(13, 18)],
+    "s57_easel": ["A small 13 by 18 centimetre portrait print held in a little brass "
+                  "tabletop easel on a marble console, a folded linen napkin and a small "
+                  "glass vase beside it. " + _framed(13, 18)],
+    "s57_books": ["A small 13 by 18 centimetre portrait picture frame in slim black "
+                  "propped on a stack of three hardback books on a side table, a small "
+                  "brass candlestick beside it, late afternoon light. " + _framed(13, 18)],
+    "s57_windowsill": ["A small 13 by 18 centimetre portrait picture frame in natural oak "
+                       "standing on a deep painted windowsill beside a small potted "
+                       "succulent, bright diffuse daylight. " + _framed(13, 18)],
+
+    "t24_doors": ["A very tall narrow portrait picture frame in slim matte black hanging "
+                  "on a pale plaster wall in the space between two doorways, the frame "
+                  "two and a half times taller than it is wide. " + _framed(25, 60)],
+    "t24_console": ["A very tall narrow portrait picture frame in thin oak hanging on a "
+                    "warm white wall above a narrow console table holding a small vase, "
+                    "the frame two and a half times taller than it is wide. "
+                    + _framed(25, 60)],
+    "t24_stairwell": ["A very tall narrow portrait picture frame in slim white hanging on "
+                      "a stairwell wall beside a plain handrail, the frame two and a half "
+                      "times taller than it is wide. " + _framed(25, 60)],
+    "t24_floorlean": ["A very tall narrow portrait picture frame in slim black leaning "
+                      "against a warm plaster wall on a pale oak floor, a trailing plant "
+                      "in a terracotta pot beside it, the frame two and a half times "
+                      "taller than it is wide. " + _framed(25, 60)],
+    "t24_hanger": ["A very tall narrow unframed sheet of thin matte poster paper held top "
+                   "and bottom in slim wooden magnetic poster hangers, hanging flat on a "
+                   "pale plaster wall, the sheet two and a half times taller than it is "
+                   "wide. " + _sheet(25, 60)],
+    "t24_clips": ["A very tall narrow unframed sheet of thin matte poster paper hanging "
+                  "from two small black bulldog clips on a thin wire against a warm "
+                  "off-white wall, a soft shadow behind it, the sheet two and a half "
+                  "times taller than it is wide. " + _sheet(25, 60)],
 }
 
 
@@ -187,7 +295,8 @@ def plan(only=None, seeds=SEEDS, variant=None):
     print(f"params     aspect_ratio=3:4, megapixels=1 -> 896x1152; seeds {list(seeds)}")
     print(f"keys       " + ", ".join(f"{k} rgb{v['rgb']}" for k, v in KEYS.items()))
     print(f"batch      {len(js)} images "
-          f"({len(PROMPTS if not only else only)} scene types x 3 variants x "
+          f"({len({j['scene_type'] for j in js})} scene types, "
+          f"{len({(j['scene_type'], j['variant']) for j in js})} variants x "
           f"{len(KEYS)} keys x {len(seeds)} seeds)")
     print(f"cost       {len(js)} x ${COST_PER_IMAGE:.3f} = ${len(js) * COST_PER_IMAGE:.2f}")
 

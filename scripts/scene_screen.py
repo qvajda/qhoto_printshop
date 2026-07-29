@@ -131,6 +131,79 @@ def _quad(filled):
     return quad, cnt
 
 
+CONTAM_MIN_AREA_FRAC = 0.0001      # a contamination cluster must cover at least this
+                                   # fraction of the panel's own area to count - scale-
+                                   # aware because this repo carries no per-scene
+                                   # constants. Calibrated against the real defect (pivot
+                                   # doc §3.2): a fern frond measured 244px (protrusion
+                                   # band) + 78px (intrusion band) against a ~2M px panel,
+                                   # 0.012% and 0.004% respectively - both an order of
+                                   # magnitude above this floor, while a single stray
+                                   # anti-aliased pixel is not.
+CONTAM_RIM_PX = 2                  # the panel's own edge sits just outside the hard key
+                                   # mask by construction, and just inside/outside the
+                                   # quad's own boundary - both are expected to read as
+                                   # midband and must not fire. This is the ~2px the
+                                   # brief allows past each measurement before it counts.
+
+
+def _clusters(mask: np.ndarray, min_area: int):
+    """Connected components of `mask` at or above `min_area`, as (kept-mask, bboxes)."""
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), 8)
+    ids = [i for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= min_area]
+    kept = np.isin(lab, ids) if ids else np.zeros(mask.shape, bool)
+    boxes = [tuple(int(v) for v in stats[i, :4]) for i in ids]
+    return kept, boxes
+
+
+def key_contamination(rgb: np.ndarray, ref: np.ndarray) -> dict:
+    """A prop whose colour sits near the key (pivot doc §3.2's fern frond): close
+    enough that the hard key mask swallows it, the panel still reads as a solid
+    rectangle, and `screen`'s `occluders` metric reports 0.0 - while `extract`
+    would put the prop *inside* the print area, and the art would print straight
+    over something visibly in front of the poster.
+
+    Two measurements the screen's own mask-solidity check provably cannot make,
+    because solidity only ever looks at the panel's *largest* component and
+    fills its holes - both blind spots this exists to cover:
+
+      protrusion  key-classified pixels OUTSIDE the panel's own quad, past a
+                  ~2px rim. A prop swallowed into the mask makes it bulge past
+                  the panel's own straight sides; that bulge is the signature.
+      intrusion   pixels at 1x-2.5x the key tolerance INSIDE the quad, excluding
+                  the panel's own ~2px anti-aliased rim (which lands in that
+                  band by construction and is the false positive this must not
+                  fire on) - the feathered mid-alpha pixels that become an
+                  occluder-opacity failure at the gate (budget ~41px on a scene
+                  this size; 568px killed the P4a clips candidate).
+
+    Returns pixel counts plus a bbox per surviving cluster, so a WARN reads like
+    the pivot doc's own sentence ("244 px ... at x 2946-2994, y 1849-1858")."""
+    mask = key_mask(rgb, ref)
+    comp, filled = panel(mask)
+    if comp is None:
+        return dict(protrusion=0, intrusion=0, clusters=[])
+    quad, _ = _quad(filled)
+    h, w = mask.shape
+    quad_fill = np.zeros((h, w), np.uint8)
+    cv2.fillPoly(quad_fill, [np.round(quad).astype(np.int32)], 1)
+    rim = np.ones((2 * CONTAM_RIM_PX + 1,) * 2, np.uint8)
+    min_area = max(4, int(CONTAM_MIN_AREA_FRAC * filled.sum()))
+
+    outside_quad = cv2.dilate(quad_fill, rim) == 0
+    protrusion, p_boxes = _clusters((mask > 0) & outside_quad, min_area)
+
+    dist = key_distance(rgb, ref)
+    midband = (dist >= KEY_LAB_TOL) & (dist < 2.5 * KEY_LAB_TOL)
+    panel_rim = cv2.dilate(comp, rim).astype(bool) & ~comp.astype(bool)
+    inside_quad = quad_fill.astype(bool)
+    intrusion, i_boxes = _clusters(midband & inside_quad & ~panel_rim, min_area)
+
+    return dict(protrusion=int(protrusion.sum()), intrusion=int(intrusion.sum()),
+                clusters=[dict(kind="protrusion", bbox=b) for b in p_boxes] +
+                         [dict(kind="intrusion", bbox=b) for b in i_boxes])
+
+
 def aspect_gap(aspect: float, group_type: str) -> float:
     """Distance from a panel's aspect to the range its group is *printed* at -
     the same measure C3 applies at render time, so the screen never promotes a

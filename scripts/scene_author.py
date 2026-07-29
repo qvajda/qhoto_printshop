@@ -44,11 +44,15 @@ import pipeline.mockup_render as mr                 # noqa: E402
 MOCKUPS = ROOT / "assets" / "mockups"
 
 
-def bundles(group_type="primary", orientation="portrait"):
+def bundles(group_type="primary", orientation="portrait", root=MOCKUPS):
     """Where a group's bundles live. The 5x7 and 10x24 groups are authored the
     same way the primary group is - only the target aspect differs, and that
-    comes from the group, never from a constant in here."""
-    return MOCKUPS / group_type / orientation
+    comes from the group, never from a constant in here.
+
+    `root` defaults to the real asset tree; `scene_intake.py --dry-run` passes
+    a staging root under outputs/ instead, so the same extract() runs unchanged
+    whether it is landing a bundle for real or just proving it would gate clean."""
+    return root / group_type / orientation
 
 
 RIM_PX = 1.0                                        # quad margin past the matte, so the
@@ -251,7 +255,7 @@ def quad_for(matte: np.ndarray) -> np.ndarray:
 
 def extract(image_path: Path, scene: str, tag: str, provenance: dict,
             seed_poly: np.ndarray = None, group_type="primary",
-            orientation="portrait") -> dict:
+            orientation="portrait", out_root=MOCKUPS) -> dict:
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
     h, w = rgb.shape[:2]
     if seed_poly is not None:
@@ -263,7 +267,7 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     g = gain_map(bg, matte)                       # from a seeded photo the paper is already blank
     quad = quad_for(matte)
 
-    d = bundles(group_type, orientation) / scene
+    d = bundles(group_type, orientation, root=out_root) / scene
     d.mkdir(parents=True, exist_ok=True)
     Image.fromarray(bg).save(d / "background.png")
     Image.fromarray((matte * 255).round().astype(np.uint8)).save(d / "matte.png")
