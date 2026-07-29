@@ -217,6 +217,37 @@ def test_replicate_export_authors_and_carries_input_body(tmp_path):
     assert "not name the model" in sj["model_source"]  # defaulted, never mistaken for read
 
 
+def test_reauthor_keeps_a_replicate_export_bundles_provenance(tmp_path, monkeypatch):
+    """`reauthor` must reproduce a bundle, not re-derive it.
+
+    A raw Replicate export names no model, no key and no scene - intake derives
+    all three (from the attached geometry card, and a documented default). Those
+    derivations are history once made, and re-reading the sidecar at reauthor
+    time loses them. Measured on lifestyle_studio_held before this was fixed:
+    the re-authored scene.json dropped prompt, prediction_id, model AND key_rgb,
+    so extract keyed off its emerald default and d_key_spill went back to
+    reporting "n/a - bundle declares no key colour" - a gate detector switched
+    off by a re-author, on a bundle that still said PASS."""
+    img = _make_replicate_scene(tmp_path)
+    assert scene_intake.main(["scene_intake.py", str(img), "--dry-run",
+                              "--name", "lifestyle_repl_reauth"]) == 0
+    sj_path = next((ROOT / "outputs" / "scene_intake" / "lifestyle_repl_reauth").rglob("scene.json"))
+    before = json.loads(sj_path.read_text())
+
+    # `bundles`/`extract` take their asset root as a *default* argument, bound at
+    # import, so patching MOCKUPS does not redirect them - patch the one function
+    # both go through, or this test re-authors into the real assets/ tree.
+    monkeypatch.setattr(scene_intake.scene_author, "bundles",
+                        lambda *a, **kw: sj_path.parents[1])
+    assert scene_intake.scene_author.main(
+        ["scene_author.py", "reauthor", "lifestyle_repl_reauth"]) == 0
+    after = json.loads(sj_path.read_text())
+    assert after["key_rgb"] == before["key_rgb"] == list(KEY_RGB)
+    assert after["prediction_id"] == before["prediction_id"]
+    assert after["model"] == before["model"]
+    assert after == before                     # idempotent, not merely key-preserving
+
+
 def test_replicate_export_non_succeeded_refuses(tmp_path):
     img = _make_replicate_scene(tmp_path, sidecar_overrides={"status": "failed"})
     rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run", "--name", "lifestyle_repl_fail"])

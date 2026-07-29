@@ -334,6 +334,11 @@ SHAPE_KEYS = ("scene", "group_type", "orientation", "tag")   # what the *bundle*
                                                              # them into scene.json lets the
                                                              # two disagree
 
+DERIVED_KEYS = ("scene", "source_image", "mode", "seed_polygon", "key_lab_ab", "key_locus",
+                "quad_aspect", "aspect_delta", "cover_crop", "matte_coverage",
+                "group_type", "orientation")   # everything in scene.json that extract()
+                                               # computes; the rest of the file is provenance
+
 
 def normalise_provenance(sidecar: dict) -> dict:
     """`extract` reads provenance['key_rgb'] and the gate's d_key_spill reads
@@ -414,7 +419,19 @@ def main(argv):
             poly = None if sj.get("seed_polygon") is None else np.asarray(sj["seed_polygon"],
                                                                          np.float32)
             meta = json.loads((d / "meta.json").read_text())
-            print(json.dumps(extract(src, scene, meta["tag"], _provenance_for(src), poly,
+            # Provenance comes from what this bundle already recorded, not from
+            # re-reading the source's sidecar. Provenance is history: it is not
+            # derivable, and re-deriving it silently loses whatever the authoring
+            # command knew and the sidecar does not. Measured on
+            # lifestyle_studio_held, whose sidecar is a raw Replicate prediction
+            # export: a re-derive dropped the prompt, the prediction id, the
+            # model and - the one that matters - key_rgb, so the re-authored
+            # bundle keyed off extract's emerald default and d_key_spill reported
+            # "n/a - bundle declares no key colour". A detector switched off by a
+            # re-author. This also makes `reauthor` idempotent for every sidecar
+            # shape, which is the property the whole re-author workflow rests on.
+            prov = {k: v for k, v in sj.items() if k not in DERIVED_KEYS}
+            print(json.dumps(extract(src, scene, meta["tag"], prov, poly,
                                      meta["group_type"], meta["orientation"])))
         return 0
     if cmd == "verify":
