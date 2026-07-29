@@ -377,6 +377,25 @@ def _provenance_for(image_path: Path) -> dict:
             if k not in SHAPE_KEYS}
 
 
+def _scene_args(argv):
+    """The scene names in `argv[2:]`, with every option AND its value dropped.
+
+    Dropping only the "--" words is not enough: every option this tool takes
+    carries a value, so `reauthor --group 5x7` read "5x7" as a scene name and
+    went looking for assets/mockups/5x7/portrait/5x7/scene.json. That is a
+    crash on the happy path for every non-primary group, which is why it
+    survived - the primary group never passes --group at all."""
+    out, skip = [], False
+    for a in argv[2:]:
+        if skip:
+            skip = False
+        elif a.startswith("--"):
+            skip = True
+        else:
+            out.append(a)
+    return out
+
+
 def _all_bundles(group_type, orientation):
     d = bundles(group_type, orientation)
     return [x.name for x in sorted(d.iterdir()) if x.is_dir()] if d.exists() else []
@@ -411,8 +430,7 @@ def main(argv):
         # costs one command, not an authoring session - proved in the GL-21
         # review, where re-running extract reproduced all four byte-identical
         # except the one layer that had been wrong.
-        for scene in [a for a in argv[2:] if not a.startswith("--")] or _all_bundles(
-                group_type, orientation):
+        for scene in _scene_args(argv) or _all_bundles(group_type, orientation):
             d = BUNDLES / scene
             sj = json.loads((d / "scene.json").read_text())
             src = ROOT / Path(sj["source_image"].replace("\\", "/"))
@@ -437,8 +455,7 @@ def main(argv):
     if cmd == "verify":
         art = Image.open(mockup_qa.MASTER).convert("RGB")
         ok = True
-        for scene in [a for a in argv[2:] if not a.startswith("--")] or _all_bundles(
-                group_type, orientation):
+        for scene in _scene_args(argv) or _all_bundles(group_type, orientation):
             r = mockup_qa.check(BUNDLES / scene, art)
             ok &= r["passed"]
             print(f"\n{scene}  [{'PASS' if r['passed'] else 'FAIL'}]")

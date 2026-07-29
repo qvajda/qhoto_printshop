@@ -248,6 +248,16 @@ def test_reauthor_keeps_a_replicate_export_bundles_provenance(tmp_path, monkeypa
     assert after == before                     # idempotent, not merely key-preserving
 
 
+def test_scene_args_drops_option_values_not_just_options():
+    """`reauthor --group 5x7` used to read "5x7" as a scene name and crash
+    looking for assets/mockups/5x7/portrait/5x7/scene.json - a crash on the
+    happy path for every non-primary group, which survived because the primary
+    group never passes --group at all."""
+    sa = scene_intake.scene_author
+    assert sa._scene_args(["scene_author.py", "reauthor", "--group", "5x7"]) == []
+    assert sa._scene_args(["scene_author.py", "reauthor", "a", "--group", "5x7", "b"]) == ["a", "b"]
+
+
 def test_replicate_export_non_succeeded_refuses(tmp_path):
     img = _make_replicate_scene(tmp_path, sidecar_overrides={"status": "failed"})
     rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run", "--name", "lifestyle_repl_fail"])
