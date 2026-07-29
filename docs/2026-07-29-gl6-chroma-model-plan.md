@@ -247,6 +247,51 @@ so it wants its own session and its own no-regression pass. Until then,
 compose props across the *middle* of an edge, never at a corner —
 `lifestyle_studio_held` does exactly this and its quad is clean.
 
+## 7 Outcome (2026-07-29, same day)
+
+Built and shipped on `feat/gl6-p4-scene-library`. All eight criteria met; the
+`MATTE_LO = 0.85` fallback of §1.5 was **not** used and `MATTE_LO` is still 0.6.
+
+**What it is.** `scene_screen.key_model` fits the key's locus through
+(L, a, b) — median a/b per 2-unit lightness bin, over the contiguous run of
+populated bins around the panel's mode, seeded from the old absolute test and
+refitted once against its own result. `key_deviation` returns distance from
+that curve divided by a tolerance `clip(KEY_FRAC · chroma(L), NOISE_FLOOR_K · σ,
+KEY_LAB_TOL)`. `KEY_FRAC = 0.5 < 1` is the load-bearing half: a neutral's
+deviation *is* the locus's own magnitude, so a dark neutral can never be
+swallowed at any lightness — which is precisely what §1.4's division got wrong
+in the other direction. 1.0 is the boundary, so `MATTE_LO/HI`, the
+contamination midband and the screen's `sharp` band all keep their meanings.
+`key_distance` is gone; the locus is held **constant** outside the observed
+lightness range, not extrapolated along the end slope (see `_locus_at`).
+
+| criterion | result |
+|---|---|
+| 1 no regression | 4/4 gate 8/8. Aspect Δ: clips +0.0000, framed_wall_plant −0.0001, shelf_books −0.0019, all inside 0.002. `flat_leaning_bookstack`'s three layers byte-identical; its `scene.json` gains `"key_locus": null` only |
+| 2 `lifestyle_studio_held` | 8/8. `occluder-opacity` 847 px @ 0.61 → **3 px** @ 0.22; fingers 97.8 % at alpha < 0.05 |
+| 3 `lifestyle_console_vase` | 8/8. `occluder-opacity` 5532 px @ 0.87 → **0** |
+| 4 highlight | **Verified synthetically, with a stated boundary.** A hotspot washing the key 80 % of the way to white (chroma 76 → 19 Lab units) mattes fully solid. A *fully clipped* white pixel carries no chroma and is not recovered — pinned by `test_fully_blown_highlight_is_not_recovered` so a later "fix" is examined rather than trusted. No corpus scene exercises it |
+| 5 props | clips jaws 93.6 %, studio_held fingers 97.8 % at alpha < 0.05; the remainder is the anti-aliased rim |
+| 6 `mockup_qa.py demo` | all 8 fire |
+| 7 suite | 595 pass (584 + 11 in `tests/test_chroma_model.py`) |
+| 8 no per-scene constants | every parameter fitted per image or commented with the defect and measurement it guards; knots + σ recorded in `scene.json.key_locus` |
+
+**One gate change, and it is not a workaround.** `d_occluder_opacity` measured
+"on a rim" within 2 px of both a 0 and a 1. A corner rim is a *wedge*, and a
+wedge's tip is further from both plateaus than its sides — `lifestyle_shelf_books`'
+shadowed bottom-left corner measured 5 px deep, 21 px against a budget of 20.
+Reach is now 3 px (`PLATEAU_RIM_PX`). Attempt 1's alpha-172 stamps measure 296 px
+at every reach from 2 to 5 px, so the defect class is untouched.
+
+**Not fixed, and measured to be sure.** §3.2's near-key fern is *not* separated
+by the locus: RGB (60,200,30) reads deviation 0.67 against a boundary of 1.0, so
+the mask still takes it. The locus does not help because the fern's problem was
+never lightness. `key_contamination` remains the detector that owns it, and
+`test_near_key_prop_is_not_silently_swallowed` holds it to firing with a shadow
+gradient in the frame.
+
+**Still open:** §6's occluded-corner extrapolation, untouched.
+
 ---
 
 # Part 2 — the session prompt
