@@ -290,7 +290,22 @@ never lightness. `key_contamination` remains the detector that owns it, and
 `test_near_key_prop_is_not_silently_swallowed` holds it to firing with a shadow
 gradient in the frame.
 
-**Still open:** §6's occluded-corner extrapolation, untouched.
+**Landed after the model, same session.** `lifestyle_studio_held` (0.7023) and
+`lifestyle_console_vase` (0.7184) are committed bundles — the primary library
+is **6**, and §3.2's table is that much shorter. §3.4's open question 1 is
+closed: every bundle's `source_image` now points at `assets/mockups/inflow/`,
+`_provenance_for` reads a per-image sidecar as well as a batch manifest, and
+the fields that lived only in the git-ignored manifest (seed, licence,
+aspect_ratio, megapixels) are backfilled into the four sidecars. Doing that
+surfaced a defect worth its own note: **`reauthor` used to re-derive
+provenance from the sidecar**, which on a raw Replicate export dropped
+`key_rgb` and switched `d_key_spill` off — a gate detector turned off by a
+re-author, on a bundle still reporting PASS. `reauthor` now carries the
+bundle's own recorded provenance and is idempotent for every sidecar shape.
+
+**Still open:** §6's occluded-corner extrapolation, untouched. §3.4's open
+question 2 (intake hard-stops on any screen failure, and the screen is
+stricter than the gate) has not bitten a second time yet.
 
 ---
 
