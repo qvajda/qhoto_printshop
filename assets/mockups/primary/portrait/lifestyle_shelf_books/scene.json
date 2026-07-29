@@ -12,7 +12,7 @@
   "aspect_ratio": "3:4",
   "megapixels": "1",
   "scene": "lifestyle_shelf_books",
-  "source_image": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\outputs\\gl6_keyed_shelf2\\shelf_v2_emerald_s22.png",
+  "source_image": "outputs\\gl6_keyed_shelf2\\shelf_v2_emerald_s22.png",
   "mode": "keyed",
   "seed_polygon": null,
   "key_lab_ab": [

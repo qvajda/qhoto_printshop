@@ -1,6 +1,6 @@
 {
   "scene": "flat_leaning_bookstack",
-  "source_image": "C:\\Users\\QVajd\\Documents\\claude\\qhoto_printshop\\outputs\\attempt1_bookstack_photo.png",
+  "source_image": "outputs\\attempt1_bookstack_photo.png",
   "mode": "seeded",
   "seed_polygon": [
     [

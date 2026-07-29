@@ -61,8 +61,7 @@ def soft_matte(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
     photograph's own edge gradient - so the matte inherits the real edge softness
     instead of a drawn one. Occluders need no special case: a clip jaw is simply
     not the key, so it is already a hole."""
-    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    dist = np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
+    dist = ss.key_distance(rgb, ref)
     lo, hi = MATTE_LO * ss.KEY_LAB_TOL, MATTE_HI * ss.KEY_LAB_TOL
     a = np.clip((hi - dist) / (hi - lo), 0.0, 1.0)
     keep = ss.panel(ss.key_mask(rgb, ref))[0]       # largest key region only
@@ -146,7 +145,7 @@ def neutralise(rgb: np.ndarray, ref: np.ndarray, matte: np.ndarray) -> np.ndarra
     blank paper the scene was always meant to show, still carrying the scene's
     own light, and a partial-alpha edge pixel now blends art into paper."""
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    dist = np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
+    dist = ss.key_distance(rgb, ref)
     # Inside the panel: drop the chroma outright, keep every bit of luminance.
     spill = np.clip((2.5 * ss.KEY_LAB_TOL - dist) / ss.KEY_LAB_TOL, 0.0, 1.0)
     # Weighting by the matte itself was the bug behind the green hairline: at a
@@ -285,7 +284,11 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
         "size": [w, h], "tag": tag, "overfill": 0.0,
     }, indent=2) + "\n")
     (d / "scene.json").write_text(json.dumps({
-        **provenance, "scene": scene, "source_image": str(image_path),
+        # relative to the repo, not the machine: `reauthor` resolves it back
+        # against ROOT, and an absolute path makes a bundle's provenance
+        # unreadable on anyone else's checkout
+        **provenance, "scene": scene,
+        "source_image": str(Path(image_path).resolve().relative_to(ROOT)),
         "mode": "seeded" if seed_poly is not None else "keyed",
         "seed_polygon": None if seed_poly is None else
                         [[round(float(x), 1), round(float(y), 1)] for x, y in seed_poly],

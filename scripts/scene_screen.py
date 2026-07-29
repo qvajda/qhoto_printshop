@@ -64,11 +64,26 @@ def key_ref(rgb: np.ndarray, hint_rgb) -> np.ndarray:
     return np.median(lab[:, :, 1:][comp == biggest], axis=0)
 
 
-def key_mask(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
+def key_distance(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
     """Lab a/b distance to the key, which ignores the scene light baked into the
-    panel's luminance - that light is the gain map, we want to keep it."""
+    panel's luminance - that light is the gain map, we want to keep it.
+
+    Known limitation, measured but not fixed (GL-21 P4a, 2026-07-29): a deeply
+    *shadowed* key desaturates, so a prop's contact shadow drifts away from the
+    key and lands in the matte's anti-aliased ramp - a band of half-transparent
+    print along that prop. It cost `clipsheet_v1_s44` 568 px at alpha 0.54
+    against a sharp 1px clip edge in the photograph itself, and QA's
+    occluder-opacity test catches it. Rescaling each pixel's chroma to the key's
+    own lightness fixes those bands and was tried: it also amplifies chroma
+    noise wherever L is small, and took flat_clips_windowlight from 0 to 30 339
+    px of mid-alpha. The right fix is a chroma model, not a division, and it is
+    not worth one candidate scene - reject the scene, keep the screen honest."""
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    return (np.linalg.norm(lab[:, :, 1:] - ref, axis=2) < KEY_LAB_TOL).astype(np.uint8)
+    return np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
+
+
+def key_mask(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
+    return (key_distance(rgb, ref) < KEY_LAB_TOL).astype(np.uint8)
 
 
 def panel(mask: np.ndarray):
@@ -144,14 +159,15 @@ def screen(path: Path, key_rgb, group_type="primary") -> dict:
     if min(e) < 4:                                   # degenerate region, not a panel
         return dict(name=path.stem, passed=False, fail=["area"],
                     metrics={"area": round(area, 3)}, path=str(path))
-    # The aspect that matters is the one scene_author will *derive*, not the
-    # corner quad's own: quad_for also has to contain the matte and clear its
-    # anti-aliased rim, and those moved this frame from 1.80% to 2.27% off the
-    # printed range - across the 2% limit. A screen that measures something
-    # other than what the gate measures promotes scenes the gate then rejects.
-    # Imported here, not at module scope: scene_author imports this module.
-    from scene_author import quad_for
-    derived = quad_for(filled.astype(np.float32))
+    # The aspect that matters is the one scene_author will *derive*, and that
+    # means deriving it the same way: from the anti-aliased matte, not from this
+    # hard key mask, and through quad_for's containment and rim margin. Measuring
+    # anything else promotes scenes the gate then rejects - the hard mask read
+    # clipsheet_v2_s44 at 0.7074 and the author derived 0.7276, 2.8% off the
+    # printed range and a C3 failure. Imported here, not at module scope:
+    # scene_author imports this module.
+    from scene_author import quad_for, soft_matte
+    derived = quad_for(soft_matte(rgb, ref))
     e = [float(np.linalg.norm(derived[i] - derived[(i + 1) % 4])) for i in range(4)]
     aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)          # width / height
     e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]   # frontal: the panel's own
@@ -164,8 +180,7 @@ def screen(path: Path, key_rgb, group_type="primary") -> dict:
     # perimeter. A hard painted edge crosses the key threshold within ~1-2px; a
     # soft gradient or a semi-transparent panel smears it over many more, and
     # that is a panel whose matte can never be cut cleanly.
-    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    dist = np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
+    dist = key_distance(rgb, ref)                    # the matte's own measure
     k9 = np.ones((9, 9), np.uint8)
     near = (cv2.dilate(comp, k9) - cv2.erode(comp, k9)).astype(bool)   # boundary ring only
     transition = ((dist > 0.5 * KEY_LAB_TOL) & (dist < 1.5 * KEY_LAB_TOL) & near).sum()
