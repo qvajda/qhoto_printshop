@@ -1,0 +1,20 @@
+{
+  "scene": "lifestyle_bench_fern",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "lifestyle",
+
+  "model": "google/nano-banana-pro",
+  "model_notes": "Gemini 3 Pro Image. Commercial use permitted via API. Outputs carry a SynthID watermark.",
+  "generated_via": "Replicate playground (manual)",
+  "generated_at": "2026-07-29",
+
+  "prompt": "<the exact prompt, verbatim>",
+  "reference_images": ["assets/mockups/geometry_cards/geometry_card_primary_0.6869.png"],
+
+  "key": "emerald",
+  "key_rgb_requested": [0, 177, 64],
+
+  "canvas": [2400, 1792],
+  "notes": "<anything a future session would otherwise have to re-derive>"
+}
