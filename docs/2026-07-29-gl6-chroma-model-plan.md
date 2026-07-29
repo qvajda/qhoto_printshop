@@ -307,6 +307,50 @@ bundle's own recorded provenance and is idempotent for every sidecar shape.
 question 2 (intake hard-stops on any screen failure, and the screen is
 stricter than the gate) has not bitten a second time yet.
 
+## 8 The re-screen backlog — do this before generating anything new
+
+The model changed the key mask, and `screen`'s `sharp`, `area`, `solidity` and
+`no-outside` all read that mask. Every scene rejected by the *old* screen was
+therefore judged by a measurement that no longer exists, and the batches under
+`outputs/gl6_*` are a corpus of ~160 already-paid-for images. Re-screen them
+before spending a cent on new generation.
+
+**Measured this session, on a read-only diff against each batch's recorded
+`screen.json`:**
+
+- **`sharp` collapses.** It was the second-commonest rejection after `aspect`,
+  and it was largely measuring the shadow: typical moves are 3.4 → 1.9,
+  4.8 → 1.8, 5.7 → 1.5, 6.4 → 2.3 against a limit of 3.0. That is the defect
+  this plan removed, showing up in the screen rather than the gate.
+- **Three confirmed new passes** without touching anything else:
+  `gl6_keyed/framed_v3_emerald_s11` (sharp 3.408 → 1.923),
+  `gl6_keyed/shelf_v3_emerald_s22` (sharp 3.701 → 1.083, aspect 0.7385 →
+  0.6967), `gl6_p4a/clipsheet_v2_emerald_s44` (aspect 0.7276 → 0.7000).
+  Several more sit one check away.
+- **`no-outside` newly fires on ~14 scenes**, and this is the part to look at
+  hard rather than celebrate. The model's mask reaches further into shadow, so
+  key-coloured *bounce* on a wall beside the panel now classifies as key. It is
+  either the detector finally seeing real spill, or the mask over-reaching past
+  the panel — decide which by looking, on at least three of them, before
+  trusting any verdict from this pass.
+- **`gl6_p4b1` is a wash: 0 newly passing at primary.** Its 61 images fail on
+  `aspect`, which is a schnell limitation no extractor fixes (pivot doc §1.1).
+  Don't spend time there.
+
+**Method.** `scene_screen.py <dir> --group <g>` **overwrites that batch's
+`screen.json`**, and those directories are git-ignored, so the old verdicts are
+destroyed on first run and exist nowhere else. Copy each `screen.json` aside
+first. A scene that now passes is copied into `assets/mockups/inflow/<group>/`
+with a sidecar (`_TEMPLATE.json`) and authored by `scene_intake.py` — never
+authored straight out of `outputs/`.
+
+**The two uncommitted 5x7 bundles, re-authored under the model and measured:**
+`lifestyle_small_bookstack` passes 8/8 at aspect 0.7285. `lifestyle_small_kitchenshelf`
+trades one failure for another — `occluder-opacity` 164 px @ 0.74 is gone, and
+`distortion` now fails at 2.26 % outside the printed range (quad 0.7308 vs
+0.7143). Aspect is not fixable by authoring, so that one is a regenerate, not a
+re-author. Both are still untracked, awaiting an owner verdict.
+
 ---
 
 # Part 2 — the session prompt
