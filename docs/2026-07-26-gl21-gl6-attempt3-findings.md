@@ -559,3 +559,91 @@ harness   3/4 rendered, deterministic, size-checked
 
 The primary set is **2 flat + 1 lifestyle**. P4b's target of 3 flat + 7
 lifestyle is therefore +9 for this group, not +6.
+
+---
+
+## 10. P4a — framed keyed spike (2026-07-29)
+
+**Go/no-go: GO.** Both keyed successes to date were bare sheets; framed is
+where attempt 2 died. Three batches, FLUX.1 [schnell], emerald only (magenta has
+failed `aspect` on nearly every candidate in every batch to date), 60 images,
+$0.17.
+
+| batch | content | screened |
+|---|---|---|
+| `gl6_p4a` | framed rewrite ×3, clipsheet ×2, shelfsheet ×2, 4 seeds | 1/28 |
+| `gl6_p4a2` | framed v1 × 16 fresh seeds | 2/14 |
+| `gl6_p4a3` | shelfsheet ×2 × 8 fresh seeds | 0/13 |
+
+(5 images lost to Replicate 404/timeout across the three runs.)
+
+### 10.1 The framed `sharp` failures were glazing
+
+All 18 pre-P4a framed candidates failed the screen, 9 of them on `sharp` at
+2.3–4.8 against a 3.0 limit. A soft key edge *inside a frame* is glass: FLUX
+renders glazing unasked, and glazing lays a reflection gradient and a bevel
+shadow across the exact boundary the matte has to cut. The rewritten prompt
+names and forbids the glass, forbids the mount and the mat, and dimensions the
+opening ("20cm wide by 30cm tall") instead of describing its ratio, which FLUX
+had been ignoring.
+
+The residual aspect scatter is **sampling, not prompting** — the dimensions are
+ignored too — so batch 2 bought seeds on the one variant whose edge and
+frontality were already clean (`sharp` 2.98, `frontal` 0.002).
+`framed_v1_emerald_s66` passed all eight detectors: distortion 0.6641 (0.38 %
+outside the printed range), matte-hidden 1.17 % trimmed / 0.00 % occluded,
+everything else 0 px. Full-frame plus both rebate corners at 4×: the art meets
+the frame's inner edge directly, no mat line, no hairline, the wall keeps its
+own colour. Shipped as `lifestyle_framed_wall_plant`.
+
+### 10.2 The screen was measuring something the gate does not
+
+Twice in this phase a candidate passed the screen and failed the gate on
+aspect. The screen measured the **hard key mask's** corner quad; the author
+derives from the **anti-aliased matte** through `quad_for`'s containment and rim
+margin. Not the same number: `clipsheet_v2_s44` screened 0.7074 and authored
+0.7276 — 2.8 % outside the printed range, a C3 failure. `scene_screen` now calls
+`soft_matte` and `quad_for` directly, so screen and gate agree to 4 decimal
+places, and it takes `--group` for the secondary batches.
+
+### 10.3 Thin-sheet: half landed, and one extractor limitation found
+
+- **clips** — 1 candidate survived the corrected screen and then failed the gate
+  on `occluder-opacity`: 568 px of alpha 0.54 along the two clip jaws.
+- **shelf** — **0 of 21** across both batches, every one on `aspect` (0.64–1.14)
+  plus `frontal` on a third. FLUX will not hold a portrait sheet standing on
+  furniture; it widens the sheet or swings the camera. `lifestyle_shelf_books`
+  stays as authored, and its residual slab look is a scene-selection matter for
+  P4b, not something this prompt family fixes.
+
+The clip band is the **extractor**, not the scene — the clip's edge is sharp to
+1 px in the photograph. A deeply shadowed key desaturates, so its Lab a/b drifts
+away from the key and lands in the matte's ramp. Rescaling each pixel's chroma
+to the key's own lightness fixes those bands and *was tried*: it also amplifies
+chroma noise wherever L is small and took `flat_clips_windowlight` from 0 to
+30 339 px of mid-alpha. Reverted. The right fix is a chroma model, not a
+division, and it is not worth one candidate scene — the limitation is recorded
+on `scene_screen.key_distance`, and `occluder-opacity` keeps catching it.
+
+### 10.4 State
+
+```
+library   flat_clips_windowlight  flat_leaning_bookstack
+          lifestyle_shelf_books   lifestyle_framed_wall_plant
+gate      4/4 PASS (8 detectors)      suite  567 passed
+harness   4/4 deterministic, size-checked
+          4a0a932b364d  1a9940260ae9  31c141a30e45  d82026d0cb4c
+```
+
+2 flat + 2 lifestyle. **P4b is +1 flat and +5 lifestyle for primary, then 10
+each for 5x7 and 10x24.** `scene_author` now takes `--group`/`--orientation` and
+records both, so the secondary groups need no further tool work.
+
+Prompt do/don't, updated by this phase:
+
+- **do** forbid glazing, mounts and mats explicitly in any framed prompt;
+- **do** buy seeds rather than rewrite a prompt when only `aspect` is failing —
+  it is a lottery FLUX plays regardless of the words;
+- **don't** ask for a sheet standing upright on furniture (0/21);
+- **don't** trust a screen metric that is not computed the way the author
+  computes it.
