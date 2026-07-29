@@ -276,8 +276,7 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
     print(f"pass  stage 2 screen: {screen_result['metrics']}")
 
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
-    ref = ss.key_ref(rgb, key_rgb)
-    contam = ss.key_contamination(rgb, ref)
+    contam = ss.key_contamination(rgb, ss.key_model(rgb, key_rgb))
     if contam["protrusion"] or contam["intrusion"]:
         print(f"WARN  stage 3 key-collision: {contam['protrusion']}px protrusion, "
               f"{contam['intrusion']}px intrusion - a prop near the key colour may be "

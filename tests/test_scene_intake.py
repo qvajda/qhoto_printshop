@@ -265,8 +265,7 @@ def _keyed_canvas(w=400, h=560, key=KEY_RGB):
 
 def test_key_contamination_silent_on_clean_panel():
     rgb = _keyed_canvas()
-    ref = ss.key_ref(rgb, KEY_RGB)
-    c = ss.key_contamination(rgb, ref)
+    c = ss.key_contamination(rgb, ss.key_model(rgb, KEY_RGB))
     assert c["protrusion"] == 0
     assert c["intrusion"] == 0
 
@@ -284,8 +283,7 @@ def test_key_contamination_fires_on_near_key_frond():
     # isolated, well inside the panel and away from its own rim - a colour
     # ~40 Lab units out, inside the 32-80 intrusion band
     cv2.circle(rgb, (150, 150), 10, (200, 220, 90), -1)
-    ref = ss.key_ref(rgb, KEY_RGB)
-    c = ss.key_contamination(rgb, ref)
+    c = ss.key_contamination(rgb, ss.key_model(rgb, KEY_RGB))
     assert c["protrusion"] > 0
     assert c["intrusion"] > 0
     assert c["clusters"]

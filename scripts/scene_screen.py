@@ -64,26 +64,158 @@ def key_ref(rgb: np.ndarray, hint_rgb) -> np.ndarray:
     return np.median(lab[:, :, 1:][comp == biggest], axis=0)
 
 
-def key_distance(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
-    """Lab a/b distance to the key, which ignores the scene light baked into the
-    panel's luminance - that light is the gain map, we want to keep it.
+LOCUS_BIN = 2.0                    # L units per knot. Fine enough to follow the roll-off
+                                   # (lifestyle_console_vase's key moves 20 Lab units of
+                                   # chroma between L 40 and L 62), coarse enough that a
+                                   # knot is a median over thousands of px, not noise.
+LOCUS_MIN_BIN = 64                 # px before a lightness bin is trusted as a knot: below
+                                   # this a bin is the panel's own speckle, and one bad knot
+                                   # bends the locus for every pixel that interpolates
+                                   # through it.
+KEY_FRAC = 0.5                     # the tolerance at a given lightness, as a fraction of
+                                   # the key's own chroma there. Below 1 by construction, so
+                                   # a *neutral* pixel (chroma 0, deviation = the locus's own
+                                   # magnitude) can never be classified as key at any
+                                   # lightness - that is the property the fixed 32-unit
+                                   # tolerance did not have, and the reason a deeply shadowed
+                                   # neutral was the naive division's failure mode. 0.5 leaves
+                                   # the bright end unchanged from the old absolute test
+                                   # (0.5 x the corpus's 62-88 unit keys is >= 31 against
+                                   # KEY_LAB_TOL's 32) so the shipped bundles do not move.
+NOISE_FLOOR_K = 4.0                # x the panel's own measured scatter about the locus: the
+                                   # graceful-degradation floor §2 asks for. Where the key is
+                                   # so dark that KEY_FRAC x chroma falls under the image's
+                                   # own noise, widen back to the noise instead of punching
+                                   # speckle holes in the matte. The corpus measures sigma
+                                   # 0.4-1.4, so this floor only engages below L ~ 6.
 
-    Known limitation, measured but not fixed (GL-21 P4a, 2026-07-29): a deeply
-    *shadowed* key desaturates, so a prop's contact shadow drifts away from the
-    key and lands in the matte's anti-aliased ramp - a band of half-transparent
-    print along that prop. It cost `clipsheet_v1_s44` 568 px at alpha 0.54
-    against a sharp 1px clip edge in the photograph itself, and QA's
-    occluder-opacity test catches it. Rescaling each pixel's chroma to the key's
-    own lightness fixes those bands and was tried: it also amplifies chroma
-    noise wherever L is small, and took flat_clips_windowlight from 0 to 30 339
-    px of mid-alpha. The right fix is a chroma model, not a division, and it is
-    not worth one candidate scene - reject the scene, keep the screen honest."""
+
+def _fit_locus(L: np.ndarray, ab: np.ndarray):
+    """The key's chroma locus: median a/b per lightness bin, as knots (L, a, b).
+
+    This is the model plan §2 asks for, and it is fitted per image from the
+    panel's own pixels - there is no per-scene constant here, only the panel's
+    own measurement of what its key looks like under its own light."""
+    if L.size == 0:
+        return np.zeros((0, 3), np.float32)
+    idx = np.clip((L / LOCUS_BIN).astype(int), 0, int(100 / LOCUS_BIN))
+    counts = np.bincount(idx, minlength=int(100 / LOCUS_BIN) + 1)
+    # The contiguous run of populated bins around the panel's modal lightness,
+    # not every populated bin. A gap in the middle is lightness the panel never
+    # exhibited, and `np.interp` would happily draw a straight line across it -
+    # inventing a locus for illumination that was never observed. An isolated
+    # far bin is worse than no knot at all: it bends the curve for every pixel
+    # that interpolates through it.
+    top = int(counts.argmax())
+    lo = hi = top
+    while lo > 0 and counts[lo - 1] >= LOCUS_MIN_BIN:
+        lo -= 1
+    while hi + 1 < len(counts) and counts[hi + 1] >= LOCUS_MIN_BIN:
+        hi += 1
+    knots = [[float(np.median(L[s])), *np.median(ab[s], axis=0)]
+             for b in range(lo, hi + 1) for s in [idx == b] if s.sum() >= LOCUS_MIN_BIN]
+    if not knots:                                        # too small/flat to bin - one knot
+        knots = [[float(np.median(L)), *np.median(ab, axis=0)]]
+    return np.asarray(knots, np.float32)
+
+
+def _locus_at(L: np.ndarray, knots: np.ndarray) -> np.ndarray:
+    """The locus's a/b at each pixel's lightness.
+
+    Held constant outside the lightness range the panel actually exhibits, not
+    extrapolated along the end slope. Extrapolating downward off the bright end
+    says "the key keeps desaturating as it gets lighter", which is true of a
+    highlight and equally true of the matte's own anti-aliased rim blending into
+    a pale wall - and the rim is the far commoner pixel. Constant is the
+    honest reading: outside what was observed, assume the nearest thing that was.
+    (Consequence, stated rather than hidden: a *blown* highlight desaturates past
+    the top knot and is not recovered - see the plan's criterion 4.)"""
+    if len(knots) == 1:
+        return np.broadcast_to(knots[0, 1:], L.shape + (2,))
+    return np.stack([np.interp(L, knots[:, 0], knots[:, 1 + i]) for i in range(2)], axis=-1)
+
+
+def key_model(rgb: np.ndarray, hint_rgb) -> dict:
+    """Fit the key's chroma model: where the key sits in Lab under *this* image's
+    own range of illumination, and how tight that fit is.
+
+    Replaces "Lab a/b distance to a fixed reference", which measured the wrong
+    thing (GL-21 P4a, 2026-07-29). Dropping L from the distance does not make the
+    measurement lightness-invariant: a surface's a/b themselves collapse toward
+    neutral as it darkens, so a shadowed key - still 100% key - drifts away from
+    the reference and lands in the matte's anti-aliased ramp as half-transparent
+    print. Measured on lifestyle_studio_held: 847 px of a hand's grip shadow at
+    alpha 0.61, distances 20-31 against a ramp whose lower edge is 19.2, while a
+    genuine prop (her finger) sits at 76. The two are not close; the fixed
+    reference simply could not tell them apart.
+
+    Rescaling each pixel's chroma to the key's own lightness was tried and is a
+    dead end: it amplifies chroma noise wherever L is small and took
+    flat_clips_windowlight from 0 to 30 339 px of mid-alpha. So: fit the locus,
+    do not divide by L. The panel's key traces a curve through (L, a, b) - the
+    corpus measures it as tight as +-2 units of chroma per lightness bin - and
+    membership becomes deviation from that curve, at a tolerance that shrinks
+    with the key's own chroma so a neutral is never swallowed (see KEY_FRAC).
+
+    Seeded from the old absolute test and refitted once against its own result:
+    the seed already spans the shadow (those pixels measure 19-32, i.e. inside
+    KEY_LAB_TOL - it was the *ramp*, not the mask, that they fell out of), and
+    the second pass lets the fit reach the lightness bins the first one only
+    just missed."""
+    ref = key_ref(rgb, hint_rgb)
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    return np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
+    L = lab[:, :, 0] * (100.0 / 255.0)
+    ab = lab[:, :, 1:] - 128.0
+    seed = panel((np.linalg.norm(ab - (np.asarray(ref, np.float32) - 128.0), axis=2)
+                  < KEY_LAB_TOL).astype(np.uint8))[0]
+    model = dict(ref=[float(v) for v in ref],
+                 knots=[[float(v) for v in (50.0, *(np.asarray(ref, np.float32) - 128.0))]],
+                 sigma=0.0)
+    if seed is None:
+        return model                                     # no key region: screen() reports it
+    # Fitted off the region's *interior*, never its rim: an anti-aliased edge
+    # pixel is a blend of key and background, so it sits off the locus by
+    # construction, and at a lightness the panel itself may not otherwise reach
+    # it would be the only contributor to a bin - a knot made entirely of
+    # background.
+    sel = cv2.erode(seed, np.ones((5, 5), np.uint8)).astype(bool)
+    if not sel.any():
+        sel = seed.astype(bool)
+    for _ in range(2):
+        knots = _fit_locus(L[sel], ab[sel])
+        resid = np.linalg.norm(ab[sel] - _locus_at(L[sel], knots), axis=1)
+        model = dict(ref=[float(v) for v in ref],
+                     knots=[[round(float(v), 2) for v in k] for k in knots],
+                     sigma=round(float(1.4826 * np.median(resid)), 3))
+        nxt = panel((key_deviation(rgb, model) < 1.0).astype(np.uint8))[0]
+        if nxt is None:
+            break
+        sel = cv2.erode(nxt, np.ones((5, 5), np.uint8)).astype(bool)
+        if not sel.any():
+            break
+    return model
 
 
-def key_mask(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
-    return (key_distance(rgb, ref) < KEY_LAB_TOL).astype(np.uint8)
+def key_deviation(rgb: np.ndarray, model: dict) -> np.ndarray:
+    """How far each pixel is from being the key surface, in units of the key's
+    own tolerance at that pixel's lightness. 1.0 is the boundary, so every
+    threshold this repo already carries as a multiple of KEY_LAB_TOL keeps its
+    meaning as a multiple of 1.0.
+
+    A shadowed key lies *on* the locus at low L and reads ~0. A prop lies off it
+    whatever its L. A neutral reads >= 1/KEY_FRAC by construction."""
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    L = lab[:, :, 0] * (100.0 / 255.0)
+    knots = np.asarray(model["knots"], np.float32)
+    locus = _locus_at(L, knots)
+    dev = np.linalg.norm(lab[:, :, 1:] - 128.0 - locus, axis=2)
+    tol = np.clip(KEY_FRAC * np.linalg.norm(locus, axis=2),
+                  NOISE_FLOOR_K * model["sigma"], KEY_LAB_TOL)
+    return dev / np.maximum(tol, 1e-6)
+
+
+def key_mask(rgb: np.ndarray, model: dict) -> np.ndarray:
+    return (key_deviation(rgb, model) < 1.0).astype(np.uint8)
 
 
 def panel(mask: np.ndarray):
@@ -156,7 +288,7 @@ def _clusters(mask: np.ndarray, min_area: int):
     return kept, boxes
 
 
-def key_contamination(rgb: np.ndarray, ref: np.ndarray) -> dict:
+def key_contamination(rgb: np.ndarray, model: dict) -> dict:
     """A prop whose colour sits near the key (pivot doc §3.2's fern frond): close
     enough that the hard key mask swallows it, the panel still reads as a solid
     rectangle, and `screen`'s `occluders` metric reports 0.0 - while `extract`
@@ -170,7 +302,7 @@ def key_contamination(rgb: np.ndarray, ref: np.ndarray) -> dict:
       protrusion  key-classified pixels OUTSIDE the panel's own quad, past a
                   ~2px rim. A prop swallowed into the mask makes it bulge past
                   the panel's own straight sides; that bulge is the signature.
-      intrusion   pixels at 1x-2.5x the key tolerance INSIDE the quad, excluding
+      intrusion   pixels at 1x-2.5x the key deviation INSIDE the quad, excluding
                   the panel's own ~2px anti-aliased rim (which lands in that
                   band by construction and is the false positive this must not
                   fire on) - the feathered mid-alpha pixels that become an
@@ -179,7 +311,7 @@ def key_contamination(rgb: np.ndarray, ref: np.ndarray) -> dict:
 
     Returns pixel counts plus a bbox per surviving cluster, so a WARN reads like
     the pivot doc's own sentence ("244 px ... at x 2946-2994, y 1849-1858")."""
-    mask = key_mask(rgb, ref)
+    mask = key_mask(rgb, model)
     comp, filled = panel(mask)
     if comp is None:
         return dict(protrusion=0, intrusion=0, clusters=[])
@@ -193,8 +325,8 @@ def key_contamination(rgb: np.ndarray, ref: np.ndarray) -> dict:
     outside_quad = cv2.dilate(quad_fill, rim) == 0
     protrusion, p_boxes = _clusters((mask > 0) & outside_quad, min_area)
 
-    dist = key_distance(rgb, ref)
-    midband = (dist >= KEY_LAB_TOL) & (dist < 2.5 * KEY_LAB_TOL)
+    dev = key_deviation(rgb, model)
+    midband = (dev >= 1.0) & (dev < 2.5)
     panel_rim = cv2.dilate(comp, rim).astype(bool) & ~comp.astype(bool)
     inside_quad = quad_fill.astype(bool)
     intrusion, i_boxes = _clusters(midband & inside_quad & ~panel_rim, min_area)
@@ -215,8 +347,8 @@ def aspect_gap(aspect: float, group_type: str) -> float:
 def screen(path: Path, key_rgb, group_type="primary") -> dict:
     rgb = np.asarray(Image.open(path).convert("RGB"))
     h, w = rgb.shape[:2]
-    ref = key_ref(rgb, key_rgb)
-    mask = key_mask(rgb, ref)
+    model = key_model(rgb, key_rgb)
+    mask = key_mask(rgb, model)
     comp, filled = panel(mask)
     if comp is None:
         return dict(name=path.stem, passed=False, fail=["area"], metrics={"area": 0.0},
@@ -240,7 +372,7 @@ def screen(path: Path, key_rgb, group_type="primary") -> dict:
     # printed range and a C3 failure. Imported here, not at module scope:
     # scene_author imports this module.
     from scene_author import quad_for, soft_matte
-    derived = quad_for(soft_matte(rgb, ref))
+    derived = quad_for(soft_matte(rgb, model))
     e = [float(np.linalg.norm(derived[i] - derived[(i + 1) % 4])) for i in range(4)]
     aspect = ((e[0] + e[2]) / 2) / ((e[1] + e[3]) / 2)          # width / height
     e = [float(np.linalg.norm(box[i] - box[(i + 1) % 4])) for i in range(4)]   # frontal: the panel's own
@@ -253,10 +385,10 @@ def screen(path: Path, key_rgb, group_type="primary") -> dict:
     # perimeter. A hard painted edge crosses the key threshold within ~1-2px; a
     # soft gradient or a semi-transparent panel smears it over many more, and
     # that is a panel whose matte can never be cut cleanly.
-    dist = key_distance(rgb, ref)                    # the matte's own measure
+    dev = key_deviation(rgb, model)                  # the matte's own measure
     k9 = np.ones((9, 9), np.uint8)
     near = (cv2.dilate(comp, k9) - cv2.erode(comp, k9)).astype(bool)   # boundary ring only
-    transition = ((dist > 0.5 * KEY_LAB_TOL) & (dist < 1.5 * KEY_LAB_TOL) & near).sum()
+    transition = ((dev > 0.5) & (dev < 1.5) & near).sum()
     perimeter = float(cv2.arcLength(cnt, True))
     sharp = float(transition / max(perimeter, 1))
 

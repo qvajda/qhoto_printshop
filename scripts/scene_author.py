@@ -70,15 +70,20 @@ DESPILL_MAX_CHROMA = 20.0                           # above this a pixel is a re
 GAIN_SIGMA, GAIN_STRENGTH, GAIN_FLOOR = 12.0, 0.9, 0.55
 
 
-def soft_matte(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
+def soft_matte(rgb: np.ndarray, model: dict) -> np.ndarray:
     """0..1 coverage: 1 deep in the key, 0 outside it, anti-aliased across the
     photograph's own edge gradient - so the matte inherits the real edge softness
     instead of a drawn one. Occluders need no special case: a clip jaw is simply
-    not the key, so it is already a hole."""
-    dist = ss.key_distance(rgb, ref)
-    lo, hi = MATTE_LO * ss.KEY_LAB_TOL, MATTE_HI * ss.KEY_LAB_TOL
-    a = np.clip((hi - dist) / (hi - lo), 0.0, 1.0)
-    keep = ss.panel(ss.key_mask(rgb, ref))[0]       # largest key region only
+    not the key, so it is already a hole.
+
+    The ramp is in units of `key_deviation`, where 1.0 is the key's own tolerance
+    at that pixel's lightness - so MATTE_LO/HI keep the meaning they had as
+    multiples of KEY_LAB_TOL, and a *shadowed* key no longer walks into the ramp
+    just because it darkened (the 847 px at alpha 0.61 under a hand's grip on
+    lifestyle_studio_held; see scene_screen.key_model)."""
+    dev = ss.key_deviation(rgb, model)
+    a = np.clip((MATTE_HI - dev) / (MATTE_HI - MATTE_LO), 0.0, 1.0)
+    keep = ss.panel(ss.key_mask(rgb, model))[0]     # largest key region only
     if keep is None:
         raise SystemExit("no key region found - is this a keyed scene?")
     near = cv2.dilate(keep, np.ones((7, 7), np.uint8)).astype(bool)
@@ -153,15 +158,16 @@ def seeded_matte(rgb: np.ndarray, poly: np.ndarray) -> np.ndarray:
     return np.clip(cv2.GaussianBlur(fg.astype(np.float32), (0, 0), 0.8), 0, 1)
 
 
-def neutralise(rgb: np.ndarray, ref: np.ndarray, matte: np.ndarray) -> np.ndarray:
+def neutralise(rgb: np.ndarray, model: dict, matte: np.ndarray) -> np.ndarray:
     """Drop the key's chroma wherever it reaches - inside the panel and in the
     spill ring around it - and keep every bit of luminance. The panel becomes the
     blank paper the scene was always meant to show, still carrying the scene's
     own light, and a partial-alpha edge pixel now blends art into paper."""
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    dist = ss.key_distance(rgb, ref)
+    ref = np.asarray(model["ref"], np.float32)
+    dev = ss.key_deviation(rgb, model)
     # Inside the panel: drop the chroma outright, keep every bit of luminance.
-    spill = np.clip((2.5 * ss.KEY_LAB_TOL - dist) / ss.KEY_LAB_TOL, 0.0, 1.0)
+    spill = np.clip(2.5 - dev, 0.0, 1.0)
     # Weighting by the matte itself was the bug behind the green hairline: at a
     # partial-matte pixel the background kept ~half its key chroma, and the art
     # composited over it at that same partial alpha, so the residue showed
@@ -259,11 +265,11 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
     h, w = rgb.shape[:2]
     if seed_poly is not None:
-        matte, bg, ref = seeded_matte(rgb, seed_poly), rgb, None
+        matte, bg, model = seeded_matte(rgb, seed_poly), rgb, None
     else:
-        ref = ss.key_ref(rgb, provenance.get("key_rgb", (0, 177, 64)))
-        matte = soft_matte(rgb, ref)
-        bg = neutralise(rgb, ref, matte)          # keyed only: there is no key to remove
+        model = ss.key_model(rgb, provenance.get("key_rgb", (0, 177, 64)))
+        matte = soft_matte(rgb, model)
+        bg = neutralise(rgb, model, matte)        # keyed only: there is no key to remove
     g = gain_map(bg, matte)                       # from a seeded photo the paper is already blank
     quad = quad_for(matte)
 
@@ -307,7 +313,12 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
         "mode": "seeded" if seed_poly is not None else "keyed",
         "seed_polygon": None if seed_poly is None else
                         [[round(float(x), 1), round(float(y), 1)] for x, y in seed_poly],
-        "key_lab_ab": None if ref is None else [round(float(x), 2) for x in ref],
+        "key_lab_ab": None if model is None else [round(v, 2) for v in model["ref"]],
+        # The fitted chroma model, so a bundle stays a pure function of source +
+        # tool: the locus knots are what decided every matte pixel, and without
+        # them a re-author is unauditable (GL-6 chroma model, criterion 8).
+        "key_locus": None if model is None else
+                     {"knots": model["knots"], "sigma": model["sigma"]},
         "quad_aspect": round(aspect, 4),
         "aspect_delta": round(aspect / master_aspect - 1, 4),
         "cover_crop": round(crop, 4),
