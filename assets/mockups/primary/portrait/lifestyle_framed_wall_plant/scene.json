@@ -22,5 +22,7 @@
   "quad_aspect": 0.6641,
   "aspect_delta": -0.0293,
   "cover_crop": 0.0293,
-  "matte_coverage": 0.174
+  "matte_coverage": 0.174,
+  "group_type": "primary",
+  "orientation": "portrait"
 }

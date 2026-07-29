@@ -20,6 +20,7 @@ The overlay carries the gain map and nothing else: no repaint band, no stamped-
 back occluders. The matte handles both, per pixel (GL-21 C2).
 
     scene_author.py extract  <image.png> <scene_name> [--tag flat|lifestyle]
+                             [--group 5x7|10x24] [--orientation landscape]
     scene_author.py reauthor [<scene_name>...]     # re-derive from scene.json
     scene_author.py verify   [<scene_name>...]
 """
@@ -40,7 +41,16 @@ import mockup_qa                                    # noqa: E402
 import scene_screen as ss                           # noqa: E402
 import pipeline.mockup_render as mr                 # noqa: E402
 
-BUNDLES = ROOT / "assets" / "mockups" / "primary" / "portrait"
+MOCKUPS = ROOT / "assets" / "mockups"
+
+
+def bundles(group_type="primary", orientation="portrait"):
+    """Where a group's bundles live. The 5x7 and 10x24 groups are authored the
+    same way the primary group is - only the target aspect differs, and that
+    comes from the group, never from a constant in here."""
+    return MOCKUPS / group_type / orientation
+
+
 RIM_PX = 1.0                                        # quad margin past the matte, so the
                                                     # matte's anti-aliased rim sits on
                                                     # fully-covered art
@@ -240,7 +250,8 @@ def quad_for(matte: np.ndarray) -> np.ndarray:
 
 
 def extract(image_path: Path, scene: str, tag: str, provenance: dict,
-            seed_poly: np.ndarray = None) -> dict:
+            seed_poly: np.ndarray = None, group_type="primary",
+            orientation="portrait") -> dict:
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
     h, w = rgb.shape[:2]
     if seed_poly is not None:
@@ -252,7 +263,7 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     g = gain_map(bg, matte)                       # from a seeded photo the paper is already blank
     quad = quad_for(matte)
 
-    d = BUNDLES / scene
+    d = bundles(group_type, orientation) / scene
     d.mkdir(parents=True, exist_ok=True)
     Image.fromarray(bg).save(d / "background.png")
     Image.fromarray((matte * 255).round().astype(np.uint8)).save(d / "matte.png")
@@ -279,7 +290,7 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     master_aspect = master.size[0] / master.size[1]
     _, crop = mr.cover_crop_to_aspect(master, aspect, max_crop=1.0)
     (d / "meta.json").write_text(json.dumps({
-        "scene": scene, "group_type": "primary", "orientation": "portrait",
+        "scene": scene, "group_type": group_type, "orientation": orientation,
         "aperture": [[round(float(x), 1), round(float(y), 1)] for x, y in quad],
         "size": [w, h], "tag": tag, "overfill": 0.0,
     }, indent=2) + "\n")
@@ -297,6 +308,7 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
         "aspect_delta": round(aspect / master_aspect - 1, 4),
         "cover_crop": round(crop, 4),
         "matte_coverage": round(float((matte > 0.5).mean()), 4),
+        "group_type": group_type, "orientation": orientation,
     }, indent=2) + "\n")
     return dict(scene=scene, aspect=round(aspect, 4), crop=round(crop, 4), dir=str(d))
 
@@ -314,8 +326,16 @@ def _provenance_for(image_path: Path) -> dict:
         "aspect_ratio": m["aspect_ratio"], "megapixels": m["megapixels"]}
 
 
+def _all_bundles(group_type, orientation):
+    d = bundles(group_type, orientation)
+    return [x.name for x in sorted(d.iterdir()) if x.is_dir()] if d.exists() else []
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "verify"
+    group_type = argv[argv.index("--group") + 1] if "--group" in argv else "primary"
+    orientation = argv[argv.index("--orientation") + 1] if "--orientation" in argv else "portrait"
+    BUNDLES = bundles(group_type, orientation)
     if cmd == "extract":
         image_path, scene = Path(argv[2]), argv[3]
         tag = argv[argv.index("--tag") + 1] if "--tag" in argv else (
@@ -331,8 +351,8 @@ def main(argv):
             else:
                 poly = np.asarray([[float(v) for v in p.split(",")]
                                    for p in src.split(";")], np.float32)
-        print(json.dumps(extract(image_path, scene, tag,
-                                 _provenance_for(image_path), poly), indent=2))
+        print(json.dumps(extract(image_path, scene, tag, _provenance_for(image_path),
+                                 poly, group_type, orientation), indent=2))
         return 0
     if cmd == "reauthor":
         # Re-derive bundles from what scene.json already records. A bundle is a
@@ -340,19 +360,22 @@ def main(argv):
         # costs one command, not an authoring session - proved in the GL-21
         # review, where re-running extract reproduced all four byte-identical
         # except the one layer that had been wrong.
-        for scene in argv[2:] or [d.name for d in sorted(BUNDLES.iterdir()) if d.is_dir()]:
+        for scene in [a for a in argv[2:] if not a.startswith("--")] or _all_bundles(
+                group_type, orientation):
             d = BUNDLES / scene
             sj = json.loads((d / "scene.json").read_text())
             src = ROOT / Path(sj["source_image"].replace("\\", "/"))
             poly = None if sj.get("seed_polygon") is None else np.asarray(sj["seed_polygon"],
                                                                          np.float32)
-            print(json.dumps(extract(src, scene, json.loads((d / "meta.json").read_text())["tag"],
-                                     _provenance_for(src), poly)))
+            meta = json.loads((d / "meta.json").read_text())
+            print(json.dumps(extract(src, scene, meta["tag"], _provenance_for(src), poly,
+                                     meta["group_type"], meta["orientation"])))
         return 0
     if cmd == "verify":
         art = Image.open(mockup_qa.MASTER).convert("RGB")
         ok = True
-        for scene in argv[2:] or [d.name for d in sorted(BUNDLES.iterdir()) if d.is_dir()]:
+        for scene in [a for a in argv[2:] if not a.startswith("--")] or _all_bundles(
+                group_type, orientation):
             r = mockup_qa.check(BUNDLES / scene, art)
             ok &= r["passed"]
             print(f"\n{scene}  [{'PASS' if r['passed'] else 'FAIL'}]")
