@@ -1,0 +1,133 @@
+{
+  "scene": "lifestyle_floor_leaning",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "lifestyle",
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. Generated before the 2026-07-29 Nano Banana Pro pivot and harvested from that corpus on 2026-07-30: the chroma model changed the key mask, so this image passes a screen that rejected it when it was generated (plan \u00a78). Kept here so the source survives a `git clean` - it lives under the git-ignored outputs/gl6_keyed/.",
+  "generated_via": "scripts/scene_generate.py fire (gl6_keyed), seed 11, Replicate prediction 75hycmfas1rna0czm9dv6v0t28",
+  "generated_at": null,
+  "prompt": "A portrait board leaning against a pale plaster wall on a light oak floor, a small stack of hardback books resting against its lower left corner and a ceramic vase to its right, soft afternoon light. The board's face is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+  "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Harvested from outputs/gl6_keyed/leaning_v1_emerald_s11.png (docs/2026-07-29-gl6-chroma-model-plan.md \u00a78 re-screen backlog). seed/licence/aspect_ratio/megapixels read from that batch's git-ignored manifest.json, the only place they lived.",
+  "seed": 11,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "source_image": "assets\\mockups\\inflow\\primary\\lifestyle_floor_leaning.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    68.0,
+    156.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        57.25,
+        -51.0,
+        27.0
+      ],
+      [
+        59.22,
+        -52.0,
+        27.0
+      ],
+      [
+        61.57,
+        -54.0,
+        28.0
+      ],
+      [
+        63.53,
+        -56.0,
+        29.0
+      ],
+      [
+        65.1,
+        -57.0,
+        29.0
+      ],
+      [
+        67.45,
+        -58.0,
+        30.0
+      ],
+      [
+        68.63,
+        -59.0,
+        30.0
+      ],
+      [
+        70.98,
+        -60.0,
+        28.0
+      ],
+      [
+        73.73,
+        -61.0,
+        28.0
+      ],
+      [
+        74.51,
+        -61.0,
+        27.0
+      ],
+      [
+        76.86,
+        -62.0,
+        26.0
+      ],
+      [
+        78.82,
+        -62.0,
+        24.0
+      ],
+      [
+        81.57,
+        -62.0,
+        22.0
+      ],
+      [
+        83.53,
+        -62.0,
+        19.0
+      ],
+      [
+        84.71,
+        -62.0,
+        19.0
+      ],
+      [
+        86.27,
+        -62.0,
+        20.0
+      ],
+      [
+        89.02,
+        -53.0,
+        19.0
+      ]
+    ],
+    "sigma": 1.398
+  },
+  "quad_aspect": 0.6817,
+  "aspect_delta": -0.0037,
+  "cover_crop": 0.0037,
+  "matte_coverage": 0.2825
+}

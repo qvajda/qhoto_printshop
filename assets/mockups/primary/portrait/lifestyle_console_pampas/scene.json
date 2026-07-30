@@ -1,0 +1,93 @@
+{
+  "scene": "lifestyle_console_pampas",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "lifestyle",
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. Generated before the 2026-07-29 Nano Banana Pro pivot and harvested from that corpus on 2026-07-30: the chroma model changed the key mask, so this image passes a screen that rejected it when it was generated (plan \u00a78). Kept here so the source survives a `git clean` - it lives under the git-ignored outputs/gl6_keyed/.",
+  "generated_via": "scripts/scene_generate.py fire (gl6_keyed), seed 11, Replicate prediction vnefjf4h5drp00czm9js98t16r",
+  "generated_at": null,
+  "prompt": "A portrait panel standing on a marble sideboard against a soft white wall, a glass vase with dried grasses to one side, late daylight from a window off frame. The panel's face is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+  "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Harvested from outputs/gl6_keyed/shelf_v3_emerald_s11.png (docs/2026-07-29-gl6-chroma-model-plan.md \u00a78 re-screen backlog). seed/licence/aspect_ratio/megapixels read from that batch's git-ignored manifest.json, the only place they lived.",
+  "seed": 11,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "source_image": "assets\\mockups\\inflow\\primary\\lifestyle_console_pampas.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    66.0,
+    164.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        61.57,
+        -57.0,
+        36.0
+      ],
+      [
+        63.14,
+        -58.0,
+        36.0
+      ],
+      [
+        65.1,
+        -60.0,
+        36.0
+      ],
+      [
+        67.45,
+        -61.0,
+        36.0
+      ],
+      [
+        69.02,
+        -62.0,
+        36.0
+      ],
+      [
+        70.2,
+        -63.0,
+        37.0
+      ],
+      [
+        72.94,
+        -64.0,
+        36.0
+      ],
+      [
+        75.29,
+        -65.0,
+        35.0
+      ],
+      [
+        76.08,
+        -65.0,
+        35.0
+      ]
+    ],
+    "sigma": 1.288
+  },
+  "quad_aspect": 0.6961,
+  "aspect_delta": 0.0173,
+  "cover_crop": 0.0171,
+  "matte_coverage": 0.2234
+}

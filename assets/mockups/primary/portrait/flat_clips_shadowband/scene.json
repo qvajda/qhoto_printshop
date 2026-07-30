@@ -1,0 +1,118 @@
+{
+  "scene": "flat_clips_shadowband",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "flat",
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. Generated before the 2026-07-29 Nano Banana Pro pivot and harvested from that corpus on 2026-07-30: the chroma model changed the key mask, so this image passes a screen that rejected it when it was generated (plan \u00a78). Kept here so the source survives a `git clean` - it lives under the git-ignored outputs/gl6_keyed/.",
+  "generated_via": "scripts/scene_generate.py fire (gl6_keyed), seed 11, Replicate prediction hj6j59xewdrp60czm9d8qgf3qw",
+  "generated_at": null,
+  "prompt": "A large portrait sheet of paper pinned flat to a pale studio wall with four small matte-black clips, a faint shadow under its edges. The sheet is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+  "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Harvested from outputs/gl6_keyed/clips_v3_emerald_s11.png (docs/2026-07-29-gl6-chroma-model-plan.md \u00a78 re-screen backlog). seed/licence/aspect_ratio/megapixels read from that batch's git-ignored manifest.json, the only place they lived.",
+  "seed": 11,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "source_image": "assets\\mockups\\inflow\\primary\\flat_clips_shadowband.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    68.0,
+    151.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        56.86,
+        -51.0,
+        24.0
+      ],
+      [
+        58.82,
+        -52.0,
+        26.0
+      ],
+      [
+        61.18,
+        -53.0,
+        26.0
+      ],
+      [
+        63.14,
+        -55.0,
+        26.0
+      ],
+      [
+        65.1,
+        -55.0,
+        26.0
+      ],
+      [
+        67.06,
+        -56.0,
+        26.0
+      ],
+      [
+        69.02,
+        -57.0,
+        25.0
+      ],
+      [
+        70.98,
+        -58.0,
+        25.0
+      ],
+      [
+        73.73,
+        -60.0,
+        25.0
+      ],
+      [
+        75.29,
+        -60.0,
+        24.0
+      ],
+      [
+        76.47,
+        -60.0,
+        22.0
+      ],
+      [
+        78.04,
+        -60.0,
+        21.0
+      ],
+      [
+        80.0,
+        -60.0,
+        19.0
+      ],
+      [
+        82.75,
+        -57.0,
+        14.0
+      ]
+    ],
+    "sigma": 1.483
+  },
+  "quad_aspect": 0.7038,
+  "aspect_delta": 0.0286,
+  "cover_crop": 0.0278,
+  "matte_coverage": 0.4424
+}

@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_floor_terracotta",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      335.0,
+      440.1
+    ],
+    [
+      726.2,
+      441.1
+    ],
+    [
+      738.3,
+      1029.0
+    ],
+    [
+      328.9,
+      1029.0
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}
