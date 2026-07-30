@@ -597,3 +597,109 @@ Still untracked, still awaiting the owner's verdict, and the measurement is
 §8's: `lifestyle_small_bookstack` passes 8/8 at aspect 0.7285;
 `lifestyle_small_kitchenshelf` fails `distortion` at 2.26 % outside the printed
 range (quad 0.7308 vs 0.7143), which is a regenerate, not a re-author.
+
+---
+
+## 9 Owner review of the 11 primary bundles (2026-07-30), and what it changed
+
+The library was reviewed as **finished composites**, not artefacts: all eleven
+`primary/portrait` bundles rendered full-frame against master 39 by
+`scripts/gl6_review_render.py` (which globs bundles on disk rather than reading
+`mockup_templates` — the point is reviewing scenes that are not wired yet) into
+one directory. Five accepted, six not.
+
+**Accepted and wired** (`mockup_templates` primary/portrait, 4 → 5):
+`flat_clips_shadowband`, `flat_clips_windowlight`, `lifestyle_console_vase`,
+`lifestyle_floor_leaning`, `lifestyle_floor_terracotta`. Three of the four
+scenes that had been wired since PR #2 were rejected, so the shipped gallery
+changed composition, not just size.
+
+**Rejected on subjective grounds** — no defect, the scene just doesn't sell:
+`lifestyle_studio_held` (a painter's studio implies the art is hand-painted, a
+claim the listing must not make), `flat_pegs_windowsill` (pegs floating in
+mid-air read as impossible), `lifestyle_shelf_books` and
+`lifestyle_console_vase` both "too sparse, bland wall" as *lifestyle* shots —
+the latter two are re-cropped into `flat_` scenes rather than discarded.
+
+### 9.1 The finding: four rejections were one defect
+
+Four of the eleven notes described the same thing in different words —
+"stairs-effect on the borders", "black dotted lines … left, top and right
+edge", "dark dotted lines … near top-right", "black band between print and
+frame". **All four passed the gate 8/8.**
+
+Measured on `lifestyle_console_pampas`'s left edge, one row per 100 px: the
+matte boundary was exactly **one partial pixel wide** and its alpha jittered
+0.34 → 0.84 → 0.78 → 1.00 → 0.95 → 0.48 against a print at ~222 and a wall at
+~130. That jitter *is* the dotted line.
+
+Root cause: `soft_matte`'s ramp is `key_deviation` clipped into
+`MATTE_LO..MATTE_HI` with **no spatial term at all**. A source edge sharper than
+the ramp's own 0.4-unit width puts at most one pixel per row inside it, and that
+pixel's chroma is a single noisy sample with nothing to average against.
+`seeded_matte` never had the failure mode because its `GaussianBlur` was already
+there.
+
+Fixed in `de79795` with the same small blur, banded: `EDGE_BLUR_SIGMA = 0.6`
+inside `EDGE_BLUR_BAND_PX = 2.0` of confidently-key territory. The band is the
+discriminator — a genuine edge reaches solid key within a couple of px (the
+defect *is* the ramp being too narrow), an occluder is a real object several to
+tens of px wide, and a blanket blur walked three bundles' occluder rims past the
+`occluder-opacity` budget. After: 3–4 px of smooth ramp on every row.
+
+**A hypothesis worth recording as refuted**, because it is the obvious one and
+will be proposed again: *replace the alpha near a quad edge with the quad
+polygon's analytic coverage, since a print's edges are straight by
+construction*. Tested and rejected — the compositing quad is deliberately padded
+outward past the matte (`RIM_PX` plus a coverage quantile in `quad_for`), so the
+two edges do not coincide, and even a tight corner-fit quad diverges from the
+real, often slightly bowed, matte edge almost everywhere. It false-positives on
+nearly every bundle, defective or not.
+
+**New gate detector, `edge-alpha-jitter`** (the gate is 9 detectors now): the
+90th-percentile jump between adjacent boundary-crossing alpha samples along each
+straight print edge, corners excluded. An occluder crossing an edge reads solidly
+0 or 1 there and contributes no crossing sample, so it cannot false-positive.
+Proven the same way every other detector is — it fires on a snapshot of the
+pre-fix bundle and is silent on the fixed one.
+
+**Not explained.** `flat_leaning_bookstack` is a `seeded`/GrabCut bundle, already
+blurred, and no jitter reproduces on it. The owner's "stairs-effect" there is a
+*different* defect and remains undiagnosed. It does not block anything — that
+scene is rejected for good — but do not assume `de79795` covered it.
+
+### 9.2 Authoring consequence of the chroma model: stop asking for flat light
+
+§7 criterion 4 recorded that a hotspot washing the key 80 % of the way to white
+still mattes solid. Nobody wrote down what that means for the **prompt**, and the
+owner had to point it out: *the "lit flatly and evenly, with no shadow, no
+gradient and no hotspot across it" clause is no longer needed.* It survived into
+every prompt after the model landed as cargo cult. It costs prompt budget and it
+constrains the photograph for no reason.
+
+Two related trims, owner-measured on Nano Banana Pro and not on schnell:
+
+- **Most negations are unnecessary.** "no frame" is inferred from "unframed matte
+  poster". The negative channel exists, but spending it on things the positive
+  prompt already implies is waste.
+- **Still load-bearing, do not trim:** the grip clear of the corners (§6's corner
+  extrapolation is still unfixed, and a gripped corner is unrecoverable),
+  all-four-corners-visible-with-margin, "the bright green should not be reflected
+  to any nearby surfaces", and nothing green anywhere in frame (README's
+  "emerald and green foliage don't mix").
+
+### 9.3 Two tooling defects the review surfaced
+
+- **`scene_screen.py` could not read `inflow/` at all** — it hard-required a batch
+  `manifest.json` and crashed with `FileNotFoundError` on the exact command
+  `assets/mockups/inflow/README.md` tells you to run before authoring. Now falls
+  back to per-image sidecars (`72ff00c`).
+- **A raw Replicate-prediction sidecar records no `key_rgb`**, so a bundle
+  authored from one gets `d_key_spill` silently switched off — the same defect
+  class as §7's `reauthor` provenance drop. Three inflow sidecars are still in
+  that shape (`lifestyle_console_vase`, `lifestyle_sideboard_leaning`,
+  `lifestyle_studio_held`) and the screen skips them. Their committed bundles are
+  unaffected. Normalise them before anyone re-`extract`s from those sources.
+
+Also still open: `lifestyle_sideboard_leaning` sits in `inflow/` with no bundle
+and no record of why it was never authored.
