@@ -452,12 +452,18 @@ def main(argv):
         jobs = json.loads(mani.read_text())["jobs"]
         keys = {j["name"]: tuple(j["key_rgb"]) for j in jobs if j.get("path")}
     else:
+        # Driven off the images, not off *.json: this tool writes its own
+        # screen.json into the directory it reads, so globbing the json side
+        # made every second run crash on its own previous output.
         keys = {}
-        for s in sorted(in_dir.glob("*.json")):
+        for p in sorted(in_dir.glob("*.png")):
+            s = p.with_suffix(".json")
+            if not s.exists():
+                continue
             side = json.loads(s.read_text(encoding="utf-8"))
             rgb = side.get("key_rgb") or side.get("key_rgb_requested")
             if rgb:      # no key colour recorded = no screen, same as no manifest entry
-                keys[s.stem] = tuple(rgb)
+                keys[p.stem] = tuple(rgb)
     results = []
     for p in sorted(in_dir.glob("*.png")):
         if p.stem not in keys:

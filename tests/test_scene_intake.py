@@ -328,3 +328,40 @@ def test_key_contamination_fires_on_near_key_frond():
     assert c["protrusion"] > 0
     assert c["intrusion"] > 0
     assert c["clusters"]
+
+
+# --------------------------------------------------------------------------- screen CLI
+
+def test_screen_reads_sidecars_and_survives_its_own_output(tmp_path):
+    """Two things at once, because they were one bug each.
+
+    `scene_screen.py <dir>` used to hard-require a batch manifest.json and die
+    with FileNotFoundError on assets/mockups/inflow/ - the one command that
+    directory's README tells you to run before authoring. The sidecar fallback
+    then globbed *.json in a directory the tool writes its own screen.json
+    into, so the *second* run crashed on the first run's output. Run it twice."""
+    d = tmp_path / "primary"
+    _make_scene(tmp_path, stem="lifestyle_a")
+    assert not (d / "manifest.json").exists()
+
+    # the return code is the P0 ">= 2 of 4 scene types" gate, not a crash flag -
+    # one scene can never satisfy it, so what is asserted is the written verdict
+    ss.main(["scene_screen.py", str(d), "--group", "primary"])
+    first = json.loads((d / "screen.json").read_text())
+    assert [r["name"] for r in first] == ["lifestyle_a"]
+
+    ss.main(["scene_screen.py", str(d), "--group", "primary"])
+    assert json.loads((d / "screen.json").read_text()) == first
+
+
+def test_screen_skips_an_image_with_no_key_colour_recorded(tmp_path):
+    """No key recorded = no screen, the same way an image absent from a batch
+    manifest is skipped. A raw Replicate export carries no key_rgb, and
+    screening one under a guessed key would report a verdict nothing backs."""
+    d = tmp_path / "primary"
+    _make_scene(tmp_path, stem="lifestyle_keyed")
+    _make_scene(tmp_path, stem="lifestyle_raw")
+    (d / "lifestyle_raw.json").write_text(json.dumps({"id": "abc", "status": "succeeded"}))
+
+    ss.main(["scene_screen.py", str(d), "--group", "primary"])
+    assert [r["name"] for r in json.loads((d / "screen.json").read_text())] == ["lifestyle_keyed"]
