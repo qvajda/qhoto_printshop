@@ -1,0 +1,29 @@
+{
+  "scene": "flat_shelf_books",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      320.4,
+      149.2
+    ],
+    [
+      743.2,
+      150.1
+    ],
+    [
+      749.8,
+      791.2
+    ],
+    [
+      311.6,
+      730.5
+    ]
+  ],
+  "size": [
+    896,
+    890
+  ],
+  "tag": "flat",
+  "overfill": 0.0
+}

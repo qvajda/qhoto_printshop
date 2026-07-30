@@ -1,0 +1,25 @@
+{
+  "scene": "flat_shelf_books",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "flat",
+
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. This scene predates the 2026-07-29 Nano Banana Pro pivot; kept here only so its source survives a `git clean` (it lives under the git-ignored outputs/gl6_keyed_shelf2/, per docs/2026-07-29-p4b-scene-generation-pivot.md open item 2).",
+  "generated_via": "scripts/scene_generate.py fire (gl6_keyed_shelf2 - a re-fire of the shelf prompt, not a first shot), seed 22; this image is a vertical re-crop of lifestyle_shelf_books.png (crop box (0,200)-(896,1090) of the original 896x1152 frame) - same pixels, no re-generation",
+  "generated_at": null,
+
+  "prompt": "A single thin sheet of poster paper with sharp square corners leaning against a pale limewash wall on a floating oak shelf, a stack of two books and a small brass candlestick beside it. The sheet is one solid panel of vivid emerald green from corner to corner, its four edges straight and its paper thin enough to see it is a single sheet. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+
+  "key": "emerald",
+  "key_rgb_requested": [0, 177, 64],
+
+  "canvas": [896, 890],
+  "notes": "Owner verdict on lifestyle_shelf_books, 2026-07-30 (verbatim): 'Good - despite a corner being obstructed it works. Too sparse with bland wall. Not fitting as a lifestyle mockup, could fit better as a flat_leaning mockup with just a slight amount of cropping (removing dead-space above the frame and below the shelf).' This scene is that recrop, additive - lifestyle_shelf_books stays as-is, untouched. Crop removes 200px of blank wall above the panel and 62px below the shelf's deepest visible point (shelf front lip bottoms out at y=1035 in the original frame; panel's own lowest corner is at y=991.2), leaving ~90px margin below the shelf and ~159px above the panel top (was at y=349.2) - full width kept, only vertical dead-space trimmed, per the owner's instruction. This scene currently FAILS scene_screen.py's frontal check (0.089 against a 0.06 limit, unchanged by re-cropping vertically) - screening is a ranker, not the gate; the 9-detector gate is what decides.",
+
+  "seed": 22,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1"
+}
