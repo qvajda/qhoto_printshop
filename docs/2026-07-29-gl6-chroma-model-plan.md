@@ -494,3 +494,106 @@ prompt, not in a rediscovery.
    gate — fails the screen's `frontal` at 0.087. If that bites a second time,
    make non-`aspect` screen failures overridable rather than loosening the
    screen.
+
+---
+
+# Part 4 — the harvest, done (2026-07-30)
+
+§8's backlog is closed. **Zero generation spend; the primary library went 6 →
+11.** Every `screen.json` was copied to `outputs/_screen_json_backup_2026-07-30/`
+before the first re-screen, because `scene_screen.py` overwrites it and those
+directories are git-ignored.
+
+## 4.1 What the re-screen moved
+
+Six manifest-bearing batches, 116 images, `--group primary`. `gl6_p4b1` skipped
+per §8 (61 images failing `aspect`, a schnell limit no extractor fixes).
+
+| batch | old | new | newly passing |
+|---|---|---|---|
+| `gl6_keyed` | 6/37 | 8/37 | `framed_v3_s11`, `shelf_v3_s22` |
+| `gl6_keyed_framed` | 0/10 | 0/10 | — |
+| `gl6_keyed_shelf2` | 0/8 | 0/8 | — |
+| `gl6_p4a` | 1/28 | 2/28 | `clipsheet_v2_s44` |
+| `gl6_p4a2` | 2/14 | 2/14 | — |
+| `gl6_p4a3` | 0/13 | 0/13 | — |
+
+**Nothing newly failed.** The three new passes are exactly the three §8
+predicted. The interesting number is not the three: it is that of the 12 scenes
+now passing, **10 had never been authored** — six of them were passing the old
+screen too and were simply never picked up. The backlog's real value was the
+inventory, not the mask change.
+
+## 4.2 `no-outside`: the detector is right, and it is not close
+
+§8 asked for this to be decided by looking, on at least three scenes, before
+any verdict from the pass was trusted. Thirteen scenes newly fire it. Verdict:
+**the detector is seeing real key-coloured props — green foliage in frame — not
+the mask over-reaching past the panel.** It is not spill either. Measured, on
+the dominant outside cluster of each of the thirteen:
+
+- **12 of 13 read Lab a between −17 and −29** — genuinely, saturatedly green,
+  which wall bounce off a cream or grey wall is not. Looked at four
+  (`gl6_p4a2/framed_v1_s121`, `gl6_keyed/framed_v1_s11`,
+  `gl6_p4a3/shelfsheet_v2_s286`, `gl6_p4a/framed_v3_s11`): the first three are
+  a potted plant, sitting 4–255 px from the panel, plainly a separate object.
+  This is §3.2's fern class, and CLAUDE.md's own rule ("the key colour must
+  appear nowhere else … key it magenta instead") is what those scenes broke.
+- **The 13th is the one exception and it is not a counter-example.**
+  `gl6_p4a/framed_v3_s11`'s cluster is a brass sconce at Lab a **+15** — warm,
+  not green — and it is inside the mask because that image has no key surface
+  to fit: its "panel" is a yellow→green gradient print, and the locus fit
+  records **σ = 3.381** against 0.4–1.5 everywhere else in the corpus. That
+  scene already fails `solidity` and `sharp` on its own. A garbage panel gets a
+  loose locus, which is the honest behaviour, and σ is the signature if it ever
+  matters on a scene that would otherwise pass. None does today, so nothing was
+  changed for it.
+- **The harvest cost of `no-outside` is zero.** All 13 were already failing
+  before, and 12 of the 13 fail at least one *other* check as well
+  (`aspect`/`frontal`/`solidity`/`sharp`). Not one landing decision turned on it.
+
+## 4.3 Landed
+
+Five, each `scene_intake.py` 8/8, each reviewed full-frame → bare-beside-
+composite → corners → edge strips:
+
+| scene | aspect | cover-crop | source |
+|---|---|---|---|
+| `flat_clips_shadowband` | 0.7038 | 2.78 % | `gl6_keyed/clips_v3_emerald_s11` |
+| `flat_pegs_windowsill` | 0.7000 | 2.25 % | `gl6_p4a/clipsheet_v2_emerald_s44` |
+| `lifestyle_floor_leaning` | 0.6817 | 0.37 % | `gl6_keyed/leaning_v1_emerald_s11` |
+| `lifestyle_floor_terracotta` | 0.6802 | 0.58 % | `gl6_keyed/leaning_v3_emerald_s11` |
+| `lifestyle_console_pampas` | 0.6961 | 1.71 % | `gl6_keyed/shelf_v3_emerald_s11` |
+
+All five inside the printed range 0.6667–0.7071, so `distortion` reports no gap.
+Library re-gates **11/11 at 8/8**; 597 tests pass.
+
+**Dropped for duplication, not quality** (all four gated 8/8):
+`clipsheet_v1_s44` sits between the two flats landed; `framed_v1_s88` is
+`lifestyle_framed_wall_plant`'s own prompt at another seed; `leaning_v1_s22` and
+`shelf_v3_s22` duplicate the two scenes landed from those prompts.
+
+**Dropped on the gate:** `framed_v3_s11` (`occluder-opacity` 70 px of flat
+mid-alpha at 0.80, budget 26). Same yellow→green gradient panel as §4.2's
+exception. Not authored around — the source has no uniform key.
+
+## 4.4 Two things worth carrying, neither fixed
+
+1. **`gain_map`'s reference is one hotspot.** `ref = percentile(lum, 99)`, so a
+   specular patch on the panel normalises the whole print down against it.
+   `leaning_v1_s22` measures gain median **0.718** where the five landed scenes
+   measure 0.847–0.969, and that is exactly why its composite reads dull. A
+   stated ceiling of the heuristic, not a defect the gate can see; no landed
+   scene is near it, so it was left alone rather than refitted on nine images.
+2. **`assets/mockups/manifest.json` is dead and lying.** Nothing in
+   `pipeline/`, `scripts/` or `tests/` reads it. It already listed a
+   `lifestyle_bedroom_console` that does not exist and omitted two shipped
+   bundles before this session; it now omits seven. Either delete it or make
+   something read it — owner's call, so it was not touched.
+
+## 4.5 The 5x7 pair, unchanged
+
+Still untracked, still awaiting the owner's verdict, and the measurement is
+§8's: `lifestyle_small_bookstack` passes 8/8 at aspect 0.7285;
+`lifestyle_small_kitchenshelf` fails `distortion` at 2.26 % outside the printed
+range (quad 0.7308 vs 0.7143), which is a regenerate, not a re-author.
