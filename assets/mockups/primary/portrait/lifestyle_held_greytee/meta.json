@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_held_greytee",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      644.7,
+      138.3
+    ],
+    [
+      1735.1,
+      139.3
+    ],
+    [
+      1729.1,
+      1704.8
+    ],
+    [
+      645.7,
+      1700.8
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}
