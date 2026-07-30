@@ -118,9 +118,9 @@
     ],
     "sigma": 1.483
   },
-  "quad_aspect": 0.7068,
-  "aspect_delta": 0.033,
-  "cover_crop": 0.0319,
+  "quad_aspect": 0.7077,
+  "aspect_delta": 0.0343,
+  "cover_crop": 0.0332,
   "matte_coverage": 0.242,
   "group_type": "primary",
   "orientation": "portrait"

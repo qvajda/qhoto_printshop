@@ -83,6 +83,12 @@ SCENE_BUDGET = 0.001    # x the outside-print area: the gain map is allowed to
 COVERAGE_TOL = 0.0005   # fraction of the print area allowed to read as un-printed:
                         # an anti-aliased rim always leaves a few px indistinguishable
                         # from the background. Attempt 2's occluder notches were 5.1%.
+JITTER_TOL = 0.08       # p90 of |alpha_i - alpha_(i+1)| between adjacent boundary-
+                        # crossing samples along one straight print edge. A real
+                        # photographic edge (or this repo's own occluder rims) varies
+                        # smoothly row to row; soft_matte's un-blurred ramp did not -
+                        # measured 0.108-0.879 across the keyed corpus before GL-21 P4b2's
+                        # fix, all under 0.04 after it.
 
 
 # --------------------------------------------------------------------------- parts
@@ -433,8 +439,71 @@ def d_scene_fidelity(p: dict) -> dict:
                     f"(max {delta[outside].max():.0f}/255, budget {budget})")
 
 
+def _edge_crossings(matte: np.ndarray, a, b, walk=8) -> list:
+    """The alpha of the first partial pixel (>0.02) encountered scanning
+    inward from quad corner `a` toward `b`, one sample per row if the edge
+    runs closer to vertical or per column if closer to horizontal - the exact
+    quantity a reviewer's eye lands on scanning the print's own border, and
+    what the owner's manual measurement sampled by hand."""
+    h, w = matte.shape
+    a, b = np.asarray(a, np.float64), np.asarray(b, np.float64)
+    vertical = abs(b[1] - a[1]) > abs(b[0] - a[0])
+    lo, hi = sorted((a[1], b[1]) if vertical else (a[0], b[0]))
+    out = []
+    for c in range(int(np.ceil(lo)) + 3, int(np.floor(hi)) - 3):    # corners excluded
+        along = (a[1], b[1]) if vertical else (a[0], b[0])
+        cross = (a[0], b[0]) if vertical else (a[1], b[1])
+        frac = (c - along[0]) / (along[1] - along[0]) if along[1] != along[0] else 0.0
+        edge = cross[0] + frac * (cross[1] - cross[0])
+        val = None
+        for sign in (1, -1):
+            for k in range(-2, walk):
+                x, y = (int(round(edge)) + sign * k, c) if vertical else (c, int(round(edge)) + sign * k)
+                if not (0 <= x < w and 0 <= y < h):
+                    continue
+                v = matte[y, x]
+                if v > 0.02:
+                    val = float(v)
+                    break
+            if val is not None:
+                break
+        out.append(val)
+    return out
+
+
+def d_edge_alpha_jitter(p: dict) -> dict:
+    """The print's four edges are straight by construction (the quad IS that
+    edge), so the boundary alpha sampled along one should vary smoothly as a
+    function of position, not row to row at random. soft_matte's chroma ramp
+    could collapse to a single partial pixel per row when the source edge was
+    sharper than the ramp's own width, and that pixel's alpha was then a raw,
+    uncorrelated chroma sample - the "black dotted line" / "stairs" the owner
+    saw on lifestyle_console_pampas, lifestyle_studio_held and
+    lifestyle_framed_wall_plant (2026-07-30). Measured as the 90th-percentile
+    jump between adjacent boundary-crossing samples along each edge (corners
+    excluded, a genuine occluder crossing the edge reads solidly 0 or 1 rather
+    than jittering and so contributes no crossing sample there); worst edge
+    wins. See JITTER_TOL for the calibration against the keyed corpus."""
+    if p["matte"] is None:
+        return _finding("edge-alpha-jitter", True, None, "n/a - pre-matte bundle, no matte edge to measure")
+    quad = p["quad"]
+    worst, worst_edge = 0.0, None
+    for i in range(4):
+        vals = [v for v in _edge_crossings(p["matte"], quad[i], quad[(i + 1) % 4]) if v is not None]
+        if len(vals) < 20:
+            continue
+        jit = float(np.percentile(np.abs(np.diff(vals)), 90))
+        if jit > worst:
+            worst, worst_edge = jit, i
+    return _finding("edge-alpha-jitter", worst <= JITTER_TOL, round(worst, 3),
+                    f"edge {worst_edge}: p90 row-to-row alpha jump {worst:.2f} "
+                    f"(limit {JITTER_TOL:.2f})" if worst_edge is not None else
+                    "no edge had enough boundary crossings to measure")
+
+
 DETECTORS = ["fringe", "key-spill", "distortion", "matte-hidden", "coverage",
-             "occluder-opacity", "silhouette-vs-shadow", "scene-fidelity"]
+             "occluder-opacity", "silhouette-vs-shadow", "scene-fidelity",
+             "edge-alpha-jitter"]
 
 
 def check(bundle_dir: Path, art: Image.Image) -> dict:
@@ -445,7 +514,7 @@ def check(bundle_dir: Path, art: Image.Image) -> dict:
     key = json.loads(prov.read_text()).get("key_rgb") if prov.exists() else None
     findings = [d_fringe(p), d_key_spill(p, key), d_distortion(p), d_matte_hidden(p),
                 d_coverage(p), d_occluder_opacity(p), d_silhouette_vs_shadow(p),
-                d_scene_fidelity(p)]
+                d_scene_fidelity(p), d_edge_alpha_jitter(p)]
     return dict(scene=bundle.scene, dir=str(bundle_dir), findings=findings,
                 passed=all(f["passed"] for f in findings), parts=p)
 
@@ -564,7 +633,27 @@ def demo():
     ok &= _occluder_demo(art)
     ok &= _spill_demo()
     ok &= _scene_fidelity_demo(art)
+    ok &= _edge_jitter_demo(art)
     return ok
+
+
+def _edge_jitter_demo(art):
+    """The pre-fix lifestyle_console_pampas bundle, snapshotted before GL-21
+    P4b2 added soft_matte's edge blur - the live bundle is now the fixed one,
+    so the defect only still exists in this copy (same convention as A1/A2/A3:
+    a reference corpus of a bundle caught with its defect in place)."""
+    ref = A3 / "lifestyle_console_pampas"
+    if not ref.exists():
+        print(f"  SKIP   edge-alpha-jitter    {ref} missing")
+        return True
+    broken = _run("edge-alpha-jitter", ref, art)
+    live = ROOT / "assets" / "mockups" / "primary" / "portrait" / "lifestyle_console_pampas"
+    fixed = _run("edge-alpha-jitter", live, art)
+    return _report("edge-alpha-jitter", not broken["passed"] and fixed["passed"],
+                   "lifestyle_console_pampas", "soft_matte's un-blurred chroma ramp put a "
+                   "single noisy pixel on the edge, alpha 0.34/0.84/0.78/1.00/0.95/0.48 "
+                   "row to row (owner report, 2026-07-30)",
+                   f"pre-fix: {broken['detail']} | post-fix: {fixed['detail']}")
 
 
 def _scene_fidelity_demo(art):

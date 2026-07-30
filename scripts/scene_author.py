@@ -60,6 +60,18 @@ RIM_PX = 1.0                                        # quad margin past the matte
                                                     # fully-covered art
 
 MATTE_LO, MATTE_HI = 0.6, 1.0                       # x KEY_LAB_TOL: the anti-aliased rim
+EDGE_BLUR_SIGMA = 0.6                                # see soft_matte's docstring
+EDGE_BLUR_BAND_PX = 2.0                             # x distance-to-solid-key, in px - how
+                                                    # far a pixel may sit from confidently-key
+                                                    # territory and still count as "on the true
+                                                    # edge" rather than "inside an occluder".
+                                                    # Swept 0.5-0.7 sigma x 1.0-2.0 px against
+                                                    # every keyed primary bundle (GL-21 P4b2);
+                                                    # this pair is the only one where every
+                                                    # bundle passes both occluder-opacity and
+                                                    # edge-alpha-jitter at once - narrower loses
+                                                    # the jitter fix on the hand-held scene,
+                                                    # wider walks the hand's own grip into it.
 DESPILL_CAP = 4.0                                   # Lab units of key-direction chroma
                                                     # allowed to survive anywhere. Tighter
                                                     # values chase a +-6 G-R difference inside
@@ -80,14 +92,46 @@ def soft_matte(rgb: np.ndarray, model: dict) -> np.ndarray:
     at that pixel's lightness - so MATTE_LO/HI keep the meaning they had as
     multiples of KEY_LAB_TOL, and a *shadowed* key no longer walks into the ramp
     just because it darkened (the 847 px at alpha 0.61 under a hand's grip on
-    lifestyle_studio_held; see scene_screen.key_model)."""
+    lifestyle_studio_held; see scene_screen.key_model).
+
+    A source edge sharper than the ramp's own 0.4-unit width (MATTE_HI-MATTE_LO)
+    puts at most one pixel per row inside it, and that pixel's chroma is a
+    single noisy sample with nothing to average it against - measured on
+    lifestyle_console_pampas's left edge: alpha at the crossing pixel read
+    0.34, 0.84, 0.78, 1.00, 0.95, 0.48 on six consecutive sampled rows (owner
+    report, "black dotted line", 2026-07-30), an unpredictable jump the eye
+    reads as a dotted/stair-stepped border against a background darker than
+    the print. `seeded_matte` never had this failure mode because its own
+    GaussianBlur was already there; this ramp had no spatial term at all - it
+    was exactly as noisy as the raw per-pixel chroma measurement.
+
+    A blanket blur fixes that but also widens every *occluder* hole's rim past
+    the occluder-opacity gate's plateau budget - a clip jaw or book spine
+    already has a genuinely anti-aliased edge there, and blurring it again
+    pushed 3 bundles over budget in testing, including holes that reach the
+    panel's own outer edge (flat_clips grips the paper's border;
+    lifestyle_shelf_books and lifestyle_studio_held both have a prop doing the
+    same), which an outer-silhouette mask cannot tell apart from the true
+    photographic edge by shape alone. What does tell them apart: a genuine
+    edge reaches confidently-key territory (alpha > 0.98) within a couple of
+    px, because the whole defect is the ramp being *too narrow*; an occluder
+    is a real object several to tens of px wide, so key territory stays out
+    of reach for much longer. EDGE_BLUR_BAND_PX x distance-to-that-territory
+    is the discriminator, and EDGE_BLUR_SIGMA/EDGE_BLUR_BAND_PX together are
+    the one setting (of a sigma x band sweep) where every keyed primary bundle
+    passes both occluder-opacity and edge-alpha-jitter at once."""
     dev = ss.key_deviation(rgb, model)
     a = np.clip((MATTE_HI - dev) / (MATTE_HI - MATTE_LO), 0.0, 1.0)
     keep = ss.panel(ss.key_mask(rgb, model))[0]     # largest key region only
     if keep is None:
         raise SystemExit("no key region found - is this a keyed scene?")
     near = cv2.dilate(keep, np.ones((7, 7), np.uint8)).astype(bool)
-    return np.where(near, a, 0.0).astype(np.float32)
+    masked = np.where(near, a, 0.0).astype(np.float32)
+    blurred = cv2.GaussianBlur(masked, (0, 0), EDGE_BLUR_SIGMA)
+    solid = (masked > 0.98).astype(np.uint8)
+    dist_to_solid = cv2.distanceTransform(1 - solid, cv2.DIST_L2, 5)
+    genuine_edge = dist_to_solid <= EDGE_BLUR_BAND_PX
+    return np.where(genuine_edge, blurred, masked)
 
 
 def _fill(mask: np.ndarray) -> np.ndarray:

@@ -1,23 +1,23 @@
 {
-  "scene": "lifestyle_shelf_books",
-  "group_type": "primary",
+  "scene": "lifestyle_small_bookstack",
+  "group_type": "5x7",
   "orientation": "portrait",
   "aperture": [
     [
-      320.4,
-      349.2
+      226.1,
+      225.1
     ],
     [
-      743.2,
-      350.1
+      647.4,
+      226.1
     ],
     [
-      749.8,
-      991.2
+      644.4,
+      811.7
     ],
     [
-      311.6,
-      930.5
+      217.0,
+      804.6
     ]
   ],
   "size": [
