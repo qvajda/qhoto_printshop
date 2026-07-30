@@ -98,10 +98,11 @@
   "mockup_templates": {
     "primary": {
       "portrait": [
+        "flat_clips_shadowband",
         "flat_clips_windowlight",
-        "flat_leaning_bookstack",
-        "lifestyle_shelf_books",
-        "lifestyle_framed_wall_plant"
+        "lifestyle_console_vase",
+        "lifestyle_floor_leaning",
+        "lifestyle_floor_terracotta"
       ],
       "landscape": []
     },
