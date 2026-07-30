@@ -440,10 +440,24 @@ def sheet(results, out_path, cols=6, tile=220):
 def main(argv):
     in_dir = Path(argv[1]) if len(argv) > 1 and not argv[1].startswith("--") else IN_DIR
     group_type = argv[argv.index("--group") + 1] if "--group" in argv else "primary"
-    manifest = json.loads((in_dir / "manifest.json").read_text())
-    # only images this manifest actually produced - a stale PNG from an earlier
-    # prompt revision must not be screened under the current run's provenance
-    keys = {j["name"]: tuple(j["key_rgb"]) for j in manifest["jobs"] if j.get("path")}
+    # Two provenance shapes, the same two scene_author._provenance_for handles: a
+    # scene_generate.py batch has one manifest.json for the whole fire, a hand-run
+    # scene in assets/mockups/inflow/ has one sidecar per image. Without the second
+    # branch this tool could not screen inflow at all - which is the one command
+    # assets/mockups/inflow/README.md tells you to run before authoring.
+    mani = in_dir / "manifest.json"
+    if mani.exists():
+        # only images this manifest actually produced - a stale PNG from an earlier
+        # prompt revision must not be screened under the current run's provenance
+        jobs = json.loads(mani.read_text())["jobs"]
+        keys = {j["name"]: tuple(j["key_rgb"]) for j in jobs if j.get("path")}
+    else:
+        keys = {}
+        for s in sorted(in_dir.glob("*.json")):
+            side = json.loads(s.read_text(encoding="utf-8"))
+            rgb = side.get("key_rgb") or side.get("key_rgb_requested")
+            if rgb:      # no key colour recorded = no screen, same as no manifest entry
+                keys[s.stem] = tuple(rgb)
     results = []
     for p in sorted(in_dir.glob("*.png")):
         if p.stem not in keys:
