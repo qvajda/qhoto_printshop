@@ -322,15 +322,14 @@ def test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles(tmp
     assert row["status"] == "created"
 
 
-def test_create_or_reuse_group_product_5x7_builds_crop_then_zero_images_known_gap(tmp_path):
-    # No 5x7 mockup bundles exist yet (GL-6-proper's job, not this task's - see the
-    # brief's "known, plan-accepted gap"). This currently and correctly produces ZERO
-    # product_images rows: config.get_mockup_templates("5x7", ...) resolves to [],
-    # empty scene list -> empty render loop -> nothing to insert. Not a bug. What this
-    # test actually guards: the group-specific cover-crop still gets built (proving the
-    # non-primary crop-then-render path runs), and the group still lands on status
-    # 'created' (not 'mockup_failed') - an empty gallery is a valid outcome, not a
-    # failure.
+def test_create_or_reuse_group_product_5x7_builds_crop_then_renders_its_gallery(tmp_path):
+    # Was "...then_zero_images_known_gap": no 5x7 bundle existed until 2026-07-31,
+    # so the gallery came back empty and the test pinned that as accepted. The
+    # library now has one, and the same path renders it - which is what closes the
+    # gap this test was named after: a 5x7 listing shipping with no gallery images
+    # at all while nothing failed. Still guarded: the group-specific cover-crop is
+    # built (the non-primary crop-then-render path really runs) and the group lands
+    # on 'created'.
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path, size=(1600, 3700))  # clears 150 DPI at 5x7
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -351,7 +350,7 @@ def test_create_or_reuse_group_product_5x7_builds_crop_then_zero_images_known_ga
         "SELECT image_url FROM product_images WHERE group_product_id = ?",
         (result["group_product_id"],),
     ).fetchall()
-    assert image_rows == []  # known gap: no 5x7 bundles authored yet
+    assert image_rows, "a 5x7 listing would ship with no gallery images at all"
 
     gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
     assert gp_row["status"] == "created"
@@ -721,7 +720,10 @@ def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
             conn, group_id, ["10x24"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
         )
 
-    mock_put.assert_called_once()  # the crop was actually built and uploaded
+    # The crop was actually built and uploaded. Not assert_called_once: since
+    # 2026-07-31 the 10x24 group has mockup bundles, so the gallery renders and
+    # uploads too - this asserts the crop specifically, not the call count.
+    assert any(f"{candidate_id}_10x24_crop.png" in c.args[0] for c in mock_put.call_args_list)
     variants_arg = mock_create.call_args[0][1]
     assert variants_arg[0]["image_url"] == f"https://cdn.example.com/base/{candidate_id}_10x24_crop.png"
     assert variants_arg[0]["image_url"] != candidate["base_image_url"]

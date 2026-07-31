@@ -478,8 +478,12 @@ def test_run_group_mockup_cycle_skips_group_type_with_empty_mockup_templates(tmp
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     _insert_primary_group(conn, candidate_id, status="approved_published")
-    # Real static_config.json today: both 5x7 and 10x24 have empty scene lists.
-    static_config = config.load_static_config()
+    # Both secondary groups emptied here rather than read off the real config:
+    # 5x7 and 10x24 had no scenes until 2026-07-31, and this test silently
+    # became a test of the library's contents rather than of the skip.
+    static_config = copy.deepcopy(config.load_static_config())
+    for g in ("5x7", "10x24"):
+        static_config["mockup_templates"][g] = {"portrait": [], "landscape": []}
 
     with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
         processed = group_mockup.run_group_mockup_cycle(
@@ -498,10 +502,11 @@ def test_run_group_mockup_cycle_still_processes_group_type_with_scenes_configure
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     _insert_primary_group(conn, candidate_id, status="approved_published")
-    # Only 5x7 gets a scene here - 10x24 stays empty in real config, so this also
-    # proves the skip is per-group_type, not all-or-nothing.
+    # Only 5x7 gets a scene here and 10x24 is emptied, so this also proves the
+    # skip is per-group_type, not all-or-nothing.
     static_config = copy.deepcopy(config.load_static_config())
-    static_config["mockup_templates"]["5x7"]["portrait"] = ["dummy_scene"]
+    static_config["mockup_templates"]["5x7"] = {"portrait": ["dummy_scene"], "landscape": []}
+    static_config["mockup_templates"]["10x24"] = {"portrait": [], "landscape": []}
 
     with patch("pipeline.group_mockup.group_product.create_or_reuse_group_product") as mock_create:
         mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "g1"}
