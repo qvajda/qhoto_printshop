@@ -1,0 +1,39 @@
+{
+  "completed_at": "2026-07-31T16:26:18.263509Z",
+  "created_at": "2026-07-31T16:25:41.875000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "qt5zepqaydrmt0czq3za38xcwg",
+  "input": {
+    "prompt": "Photograph of a cosy reading nook, taken from a few meters from the corner itself. A blank unframed matte print hangs flat on the wall. The print is a tall, narrow column — much taller than it is wide, its height about two and a half times its width, like a door panel or a strip of wallpaper; the poster's proportions match the REFERENCE CARD EXACTLY, same width-to-height ratio, same flat green. The poster is large in the picture, running most of the height of the frame, hung flat and square to the camera. All four corners of the print stay fully visible with a clear margin of wall around them. The whole blank print is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. The 2 sides of the reading nook are visible: one of the walls is a large window that casts golden-hour light across teh whole picture, the other wall has a bookcase and the poster hung next to the bookcase. A round rug of burgundy hue is present on the floor. A comfy chair is present on the left side of the picture, including a footrest. The chair has its back towards the window. The bookcase is tall and filled with various books with brown and cream bindings and no discernable text. A comfy beige blanket is wrapped over the armrest of the reading chair. A small side-table is next to the chair, on which a off-white mug is present alongside a book. Nothing green anywhere in the picture. Frontal view, 35 mm, sharp. The image should evoke a homely and calm feeling, welcoming. This is to be used as a mockup for ETSY print on demand of posters.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PXo73on3XANMLxA3oRCOJnyCY8zQGNa8kc3xTuYiCkW0HdKD/geometry_card_10x24_0.4167.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2462\nGenerated image in 36.01 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 36.371401898,
+    "total_time": 36.388509154
+  },
+  "output": "https://replicate.delivery/xezq/QX4P6XKqpVr6MtDX8slFf0xw2IxqH8VwG2zEHsxQbmNV9TfWA/tmpthzps3vg.png",
+  "started_at": "2026-07-31T16:25:41.892107Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-rsraplyr5tijxi2vwuhrzbf6zi53rz5vo3ze7fklsigpvp26v5ha",
+    "get": "https://api.replicate.com/v1/predictions/qt5zepqaydrmt0czq3za38xcwg",
+    "cancel": "https://api.replicate.com/v1/predictions/qt5zepqaydrmt0czq3za38xcwg/cancel",
+    "web": "https://replicate.com/p/qt5zepqaydrmt0czq3za38xcwg"
+  },
+  "version": "hidden",
+  "gate_waivers": {
+    "edge-alpha-jitter": "owner 2026-07-31, accepted on review: the source's own top edge wobbles ~0.5px sub-pixel column to column (measured against the raw PNG's green channel - the matte tracks it faithfully, 2px ramp, so this is the photograph, not soft_matte). Visible only on zoom",
+    "fringe": "owner 2026-07-31, accepted on review: 4 border px, same wobbling top edge - the art's own colour lands a pixel off its edge where the boundary shifts mid-column"
+  }
+}

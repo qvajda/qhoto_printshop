@@ -339,7 +339,8 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
     print(f"  {'WARN' if contam['protrusion'] or contam['intrusion'] else 'ok  '} "
           f"collision protrusion={contam['protrusion']}px intrusion={contam['intrusion']}px")
     for f in gate["findings"]:
-        print(f"  {'ok  ' if f['passed'] else 'FAIL'} gate   {f['name']:20} {f['detail']}")
+        mark = "WAIV" if f.get("waived") else ("ok  " if f["passed"] else "FAIL")
+        print(f"  {mark} gate   {f['name']:20} {f['detail']}")
 
     passed = (screen_result["passed"] or force) and gate["passed"]
     print(f"{'=' * 70}\n{'PASS' if passed else 'FAIL'} overall"

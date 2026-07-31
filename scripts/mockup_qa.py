@@ -506,15 +506,40 @@ DETECTORS = ["fringe", "key-spill", "distortion", "matte-hidden", "coverage",
              "edge-alpha-jitter"]
 
 
+def _waive(findings: list, waivers: dict) -> list:
+    """An owner may accept a named detector's failure on one bundle, and the
+    only honest way to record that is on the bundle: `gate_waivers` in
+    scene.json, detector name -> the reason, carried in from the source's own
+    sidecar so a re-author keeps it.
+
+    A waived finding still runs, still reports its measurement, and says so in
+    every sheet and verdict - what changes is only whether it blocks. This is
+    not a way to quieten a detector: switching one off across the corpus is a
+    change to the detector, made once with a measurement behind it. Waiving one
+    is a statement about one photograph, which is why the reason is required
+    text and lives next to the pixels it excuses."""
+    out = []
+    for f in findings:
+        why = waivers.get(f["name"])
+        if f["passed"] or not why:
+            out.append(f)
+            continue
+        out.append({**f, "passed": True, "waived": True,
+                    "detail": f"WAIVED ({why}) - measured: {f['detail']}"})
+    return out
+
+
 def check(bundle_dir: Path, art: Image.Image) -> dict:
     bundle_dir = Path(bundle_dir)
     bundle = mr.load_bundle(bundle_dir)
     p = _parts(bundle, art)
     prov = bundle_dir / "scene.json"
-    key = json.loads(prov.read_text()).get("key_rgb") if prov.exists() else None
-    findings = [d_fringe(p), d_key_spill(p, key), d_distortion(p), d_matte_hidden(p),
-                d_coverage(p), d_occluder_opacity(p), d_silhouette_vs_shadow(p),
-                d_scene_fidelity(p), d_edge_alpha_jitter(p)]
+    scene_json = json.loads(prov.read_text()) if prov.exists() else {}
+    key = scene_json.get("key_rgb")
+    findings = _waive([d_fringe(p), d_key_spill(p, key), d_distortion(p), d_matte_hidden(p),
+                       d_coverage(p), d_occluder_opacity(p), d_silhouette_vs_shadow(p),
+                       d_scene_fidelity(p), d_edge_alpha_jitter(p)],
+                      scene_json.get("gate_waivers") or {})
     return dict(scene=bundle.scene, dir=str(bundle_dir), findings=findings,
                 passed=all(f["passed"] for f in findings), parts=p)
 
