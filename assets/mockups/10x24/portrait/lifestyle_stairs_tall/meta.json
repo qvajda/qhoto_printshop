@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_stairs_tall",
+  "group_type": "10x24",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      1008.1,
+      184.4
+    ],
+    [
+      1456.8,
+      182.4
+    ],
+    [
+      1457.8,
+      1269.9
+    ],
+    [
+      1009.1,
+      1270.9
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

@@ -1,0 +1,35 @@
+{
+  "completed_at": "2026-07-29T16:11:07.344846Z",
+  "created_at": "2026-07-29T16:10:41.788000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "0aexcwbpzhrmr0czntj9deh2q4",
+  "input": {
+    "prompt": "Photograph of a blank unframed matte poster leaning back against a warm white plaster wall, its bottom edge resting on the surface of a pale oak sideboard. The blank poster's proportions match the reference card exactly — same width-to-height ratio, same flat green. The whole blank poster is mono-color of bright green. Directly in front of it on the sideboard, overlapping the poster's lower left corner, a stack of two hardback books lying flat in oxblood and bone with a small cream stoneware cup standing on top of them, and to the right a low brass dish — the books and the cup clearly overlap the poster and hide part of its lower edge. The bright green should not be reflected to any nearby surfaces. Soft even indoor daylight fills the room; the poster's face is lit flatly and evenly, with no shadow, no gradient and no hotspot across it, and no object casts a shadow onto the poster's face. Camera level with the middle of the poster, straight-on frontal view, 50 mm, sharp, the poster's height filling about four fifths of the image. Warm neutral palette of plaster, oak, cream, oxblood and brass, no plants and no foliage anywhere in the scene. The image should evoke a homely feeling.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PX3Jb2OU9WIKPyVEHzZrnhE561pwUWzdYmcIQZTpNdRNYJZP/geometry_card_primary_0.6869.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2354\nGenerated image in 25.22 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 25.53591986,
+    "total_time": 25.556846285
+  },
+  "output": "https://replicate.delivery/xezq/zsCU2jRRHyooCRmLbVTSAcyfbsgLK35ZRqutGkx4jf8bg99WA/tmpi71cuyhs.png",
+  "started_at": "2026-07-29T16:10:41.808926Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-znpe4b3vg37vrj6zyybfkunmhhta5ve7u5ihoafpqqihlhstmvya",
+    "get": "https://api.replicate.com/v1/predictions/0aexcwbpzhrmr0czntj9deh2q4",
+    "cancel": "https://api.replicate.com/v1/predictions/0aexcwbpzhrmr0czntj9deh2q4/cancel",
+    "web": "https://replicate.com/p/0aexcwbpzhrmr0czntj9deh2q4"
+  },
+  "version": "hidden"
+}

@@ -1,0 +1,20 @@
+{
+  "scene": "lifestyle_small_bookstack",
+  "group_type": "5x7",
+  "orientation": "portrait",
+  "tag": "lifestyle",
+
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. From the P4b1 batch, since superseded by the 2026-07-29 Nano Banana Pro pivot for new scene work (docs/2026-07-29-p4b-scene-generation-pivot.md).",
+  "generated_via": "scripts/scene_generate.py fire (P4b1 wide probe, gl6_p4b1), seed 319",
+  "generated_at": null,
+
+  "prompt": "A small 13 by 18 centimetre portrait picture frame in slim black propped on a stack of three hardback books on a side table, a small brass candlestick beside it, late afternoon light. The frame is a plain flat profile 12mm wide with no mount and no glass. Its opening measures 13cm wide by 18cm tall and is filled corner to corner by one solid panel of vivid emerald green, which meets the frame's inner edge as a hard crisp painted line. No glazing, no glass, no reflection, no white mat, no mount board, no second border inside the frame. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+
+  "key": "emerald",
+  "key_rgb_requested": [0, 177, 64],
+
+  "canvas": [896, 1152],
+  "notes": "UNDECIDED as of 2026-07-29 - the owner has not decided whether to keep this bundle (it is uncommitted; see pivot doc §1 table, 5x7 group 2/23 passed screen). Source is flux-schnell carrying the shared COMMON prompt tail's raking light and _framed()'s six-clause negation string that pivot doc §1.2 blames for the primary batch's sharp/nested defects (a deeply shadowed key desaturating out of tolerance, and FLUX rendering the exact things it was told to negate). Bundle's scene.json source_image is outputs\\\\gl6_p4b1\\\\s57_books_v1_emerald_s319.png (git-ignored); this file is that same PNG, copied here per open item 2 so the source survives a `git clean` regardless of the keep/drop decision. Do not repoint the bundle's scene.json and do not commit the bundle - only this inflow copy is being added."
+}

@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_small_bookstack",
+  "group_type": "5x7",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      226.1,
+      225.1
+    ],
+    [
+      647.4,
+      226.1
+    ],
+    [
+      644.4,
+      811.7
+    ],
+    [
+      217.0,
+      804.6
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

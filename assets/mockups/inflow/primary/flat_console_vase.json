@@ -1,0 +1,22 @@
+{
+  "scene": "flat_console_vase",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "flat",
+
+  "model": "google/nano-banana-pro",
+  "model_notes": "Gemini 3 Pro Image. Commercial use permitted via API. Outputs carry a SynthID watermark.",
+  "generated_via": "Replicate (manual), prediction 3m3ccmrjtxrmr0czntdrjcwg18, https://replicate.com/p/3m3ccmrjtxrmr0czntdrjcwg18; this image is a re-crop of lifestyle_console_vase.png (crop box (280,30)-(1850,1792) of the original 2400x1792 frame) - same pixels, no re-generation",
+  "generated_at": "2026-07-29",
+
+  "prompt": "Photograph of a blank unframed matte poster mounted flush against a warm white plaster wall above a pale oak console table. The blank poster's proportions match the reference card exactly — same width-to-height ratio, same flat green. The whole blank poster is mono-color of bright green, its corners square to the camera. Standing on the console in front of the poster's lower edge: a tall cream stoneware vase and a stacked pair of hardback books in oxblood and bone, both clearly overlapping the bottom of the poster and casting soft contact shadows on the wall behind them. The bright green should not be reflected to any nearby surfaces. Soft even indoor daylight fills the room from the left; the poster's own face is lit flatly and evenly, with no shadow, no gradient and no hotspot across it. Straight-on frontal view, 50 mm, sharp, the poster's height filling about two thirds of the image. Warm neutral palette of plaster, oak, cream and oxblood, no plants and no foliage anywhere in the scene.",
+  "reference_images": [
+    "https://replicate.delivery/pbxt/PX3Jb2OU9WIKPyVEHzZrnhE561pwUWzdYmcIQZTpNdRNYJZP/geometry_card_primary_0.6869.png"
+  ],
+
+  "key": "emerald",
+  "key_rgb_requested": [0, 177, 64],
+
+  "canvas": [1570, 1762],
+  "notes": "Owner verdict on lifestyle_console_vase, 2026-07-30 (verbatim): 'Good but a bit sparse + fairly boring wall. Keep, perhaps could be recropped as a flat instead of lifestyle if needed.' This scene is that recrop, additive - lifestyle_console_vase stays as-is, untouched, wired and unchanged. Crop tightens both sides (original panel occupied only x751-1649 of a 2400px-wide frame, with the vase's own left edge at x465 and the books' right edge at x1180 - most of the width either side was bare wall/table) and trims a thin sliver of dead wall above the panel (top 30px of 147). Crop box (280,30)-(1850,1792): left margin ~185px clear of the vase, right margin ~200px clear of the panel's own right edge, bottom untouched (the table's legs already run to the original frame's bottom edge, so there is no dead floor space below to trim). No side of the crop enters the panel, the vase, or the books."
+}

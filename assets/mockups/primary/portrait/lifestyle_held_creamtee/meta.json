@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_held_creamtee",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      641.7,
+      101.4
+    ],
+    [
+      1765.1,
+      98.4
+    ],
+    [
+      1761.1,
+      1701.7
+    ],
+    [
+      646.7,
+      1704.7
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

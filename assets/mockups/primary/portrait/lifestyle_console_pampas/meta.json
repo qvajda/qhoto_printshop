@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_console_pampas",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      250.3,
+      457.1
+    ],
+    [
+      640.6,
+      458.1
+    ],
+    [
+      651.8,
+      1036.2
+    ],
+    [
+      237.1,
+      1035.2
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

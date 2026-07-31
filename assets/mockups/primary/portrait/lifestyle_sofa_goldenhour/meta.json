@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_sofa_goldenhour",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      965.0,
+      156.1
+    ],
+    [
+      1433.9,
+      157.1
+    ],
+    [
+      1432.9,
+      842.9
+    ],
+    [
+      965.0,
+      841.9
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

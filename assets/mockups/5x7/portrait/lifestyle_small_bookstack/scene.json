@@ -1,0 +1,53 @@
+{
+  "prompt": "A small 13 by 18 centimetre portrait picture frame in slim black propped on a stack of three hardback books on a side table, a small brass candlestick beside it, late afternoon light. The frame is a plain flat profile 12mm wide with no mount and no glass. Its opening measures 13cm wide by 18cm tall and is filled corner to corner by one solid panel of vivid emerald green, which meets the frame's inner edge as a hard crisp painted line. No glazing, no glass, no reflection, no white mat, no mount board, no second border inside the frame. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "seed": 319,
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "model": "black-forest-labs/flux-schnell",
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "scene": "lifestyle_small_bookstack",
+  "source_image": "outputs\\gl6_p4b1\\s57_books_v1_emerald_s319.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    51.0,
+    193.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        77.25,
+        -74.0,
+        60.0
+      ],
+      [
+        79.61,
+        -76.0,
+        64.0
+      ],
+      [
+        80.39,
+        -77.0,
+        65.0
+      ],
+      [
+        82.35,
+        -79.0,
+        65.0
+      ]
+    ],
+    "sigma": 1.048
+  },
+  "quad_aspect": 0.7284,
+  "aspect_delta": 0.0646,
+  "cover_crop": 0.0607,
+  "matte_coverage": 0.2374,
+  "group_type": "5x7",
+  "orientation": "portrait"
+}

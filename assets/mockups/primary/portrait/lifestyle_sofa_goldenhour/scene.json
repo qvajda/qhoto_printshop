@@ -1,0 +1,86 @@
+{
+  "completed_at": "2026-07-31T15:56:25.694500Z",
+  "created_at": "2026-07-31T15:55:44.388000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "z1s8qevxghrmr0czq3hs7n17ew",
+  "input": {
+    "prompt": "Photograph of a cosy living room in golden hour light, framed fairly close \u00e2\u20ac\u201d the sofa fills the bottom of the picture and the floor lamp at the left is only partly in shot. A large blank print in portrait orientation in a thin dark wooden frame hangs on the wall above a two-seater sofa, centred over it, and it is big: it takes up a large part of the picture. The print sits directly against the frame's inner edge. The blank area inside the frame matches the reference card's proportions exactly \u00e2\u20ac\u201d same width-to-height ratio, same flat green; it is a rectangle clearly taller than it is wide, hung flat and square to the camera. Nothing overlaps the print. The whole blank area inside the frame is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. Low golden-hour sunlight comes in from the right and washes across the whole scene, laying long warm shadows over the wall, the sofa and the floor. A tall floor-standing lamp to the left of the sofa, a linen sofa in soft oatmeal, a cushion or two. Nothing green anywhere in the picture \u00e2\u20ac\u201d no plants, no foliage. Straight-on frontal view at seated height, 35 mm, sharp. The image should evoke a homely feeling, warm and unhurried.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PXnegRg9r7yt4HkNQyshJChWmaZg8XHJEoMmOPQSNki3vv25/geometry_card_primary_0.6869.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2318\nGenerated image in 40.95 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 41.285897137,
+    "total_time": 41.306500785
+  },
+  "output": "https://replicate.delivery/xezq/ighFzwEoCVYnH9ofFm690leeesQ6HLiOsFMYIZ7fQwJP1703C/tmpcc9gaiah.png",
+  "started_at": "2026-07-31T15:55:44.408603Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-namhpp5iw6qwqurjfna66p5g6ta2t67h7qbsxu4khbzl5yyeerzq",
+    "get": "https://api.replicate.com/v1/predictions/z1s8qevxghrmr0czq3hs7n17ew",
+    "cancel": "https://api.replicate.com/v1/predictions/z1s8qevxghrmr0czq3hs7n17ew/cancel",
+    "web": "https://replicate.com/p/z1s8qevxghrmr0czq3hs7n17ew"
+  },
+  "version": "hidden",
+  "prompt": "Photograph of a cosy living room in golden hour light, framed fairly close \u00e2\u20ac\u201d the sofa fills the bottom of the picture and the floor lamp at the left is only partly in shot. A large blank print in portrait orientation in a thin dark wooden frame hangs on the wall above a two-seater sofa, centred over it, and it is big: it takes up a large part of the picture. The print sits directly against the frame's inner edge. The blank area inside the frame matches the reference card's proportions exactly \u00e2\u20ac\u201d same width-to-height ratio, same flat green; it is a rectangle clearly taller than it is wide, hung flat and square to the camera. Nothing overlaps the print. The whole blank area inside the frame is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. Low golden-hour sunlight comes in from the right and washes across the whole scene, laying long warm shadows over the wall, the sofa and the floor. A tall floor-standing lamp to the left of the sofa, a linen sofa in soft oatmeal, a cushion or two. Nothing green anywhere in the picture \u00e2\u20ac\u201d no plants, no foliage. Straight-on frontal view at seated height, 35 mm, sharp. The image should evoke a homely feeling, warm and unhurried.",
+  "generated_at": "2026-07-31T15:56:25.694500Z",
+  "generated_via": "Replicate (manual), prediction z1s8qevxghrmr0czq3hs7n17ew, https://replicate.com/p/z1s8qevxghrmr0czq3hs7n17ew",
+  "prediction_id": "z1s8qevxghrmr0czq3hs7n17ew",
+  "model": "google/nano-banana-pro",
+  "model_source": "the prediction export does not name the model; defaulted, not read",
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "scene": "lifestyle_sofa_goldenhour",
+  "source_image": "assets\\mockups\\inflow\\primary\\lifestyle_sofa_goldenhour.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    70.0,
+    170.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        57.65,
+        -56.0,
+        40.0
+      ],
+      [
+        58.82,
+        -57.0,
+        42.0
+      ],
+      [
+        61.96,
+        -59.0,
+        43.0
+      ],
+      [
+        62.35,
+        -60.0,
+        44.0
+      ]
+    ],
+    "sigma": 1.127
+  },
+  "quad_aspect": 0.683,
+  "aspect_delta": -0.0017,
+  "cover_crop": 0.0017,
+  "matte_coverage": 0.0742,
+  "group_type": "primary",
+  "orientation": "portrait"
+}

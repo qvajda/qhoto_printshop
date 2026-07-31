@@ -20,6 +20,7 @@ The overlay carries the gain map and nothing else: no repaint band, no stamped-
 back occluders. The matte handles both, per pixel (GL-21 C2).
 
     scene_author.py extract  <image.png> <scene_name> [--tag flat|lifestyle]
+                             [--group 5x7|10x24] [--orientation landscape]
     scene_author.py reauthor [<scene_name>...]     # re-derive from scene.json
     scene_author.py verify   [<scene_name>...]
 """
@@ -40,12 +41,37 @@ import mockup_qa                                    # noqa: E402
 import scene_screen as ss                           # noqa: E402
 import pipeline.mockup_render as mr                 # noqa: E402
 
-BUNDLES = ROOT / "assets" / "mockups" / "primary" / "portrait"
+MOCKUPS = ROOT / "assets" / "mockups"
+
+
+def bundles(group_type="primary", orientation="portrait", root=MOCKUPS):
+    """Where a group's bundles live. The 5x7 and 10x24 groups are authored the
+    same way the primary group is - only the target aspect differs, and that
+    comes from the group, never from a constant in here.
+
+    `root` defaults to the real asset tree; `scene_intake.py --dry-run` passes
+    a staging root under outputs/ instead, so the same extract() runs unchanged
+    whether it is landing a bundle for real or just proving it would gate clean."""
+    return root / group_type / orientation
+
+
 RIM_PX = 1.0                                        # quad margin past the matte, so the
                                                     # matte's anti-aliased rim sits on
                                                     # fully-covered art
 
 MATTE_LO, MATTE_HI = 0.6, 1.0                       # x KEY_LAB_TOL: the anti-aliased rim
+EDGE_BLUR_SIGMA = 0.6                                # see soft_matte's docstring
+EDGE_BLUR_BAND_PX = 2.0                             # x distance-to-solid-key, in px - how
+                                                    # far a pixel may sit from confidently-key
+                                                    # territory and still count as "on the true
+                                                    # edge" rather than "inside an occluder".
+                                                    # Swept 0.5-0.7 sigma x 1.0-2.0 px against
+                                                    # every keyed primary bundle (GL-21 P4b2);
+                                                    # this pair is the only one where every
+                                                    # bundle passes both occluder-opacity and
+                                                    # edge-alpha-jitter at once - narrower loses
+                                                    # the jitter fix on the hand-held scene,
+                                                    # wider walks the hand's own grip into it.
 DESPILL_CAP = 4.0                                   # Lab units of key-direction chroma
                                                     # allowed to survive anywhere. Tighter
                                                     # values chase a +-6 G-R difference inside
@@ -56,20 +82,56 @@ DESPILL_MAX_CHROMA = 20.0                           # above this a pixel is a re
 GAIN_SIGMA, GAIN_STRENGTH, GAIN_FLOOR = 12.0, 0.9, 0.55
 
 
-def soft_matte(rgb: np.ndarray, ref: np.ndarray) -> np.ndarray:
+def soft_matte(rgb: np.ndarray, model: dict) -> np.ndarray:
     """0..1 coverage: 1 deep in the key, 0 outside it, anti-aliased across the
     photograph's own edge gradient - so the matte inherits the real edge softness
     instead of a drawn one. Occluders need no special case: a clip jaw is simply
-    not the key, so it is already a hole."""
-    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    dist = np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
-    lo, hi = MATTE_LO * ss.KEY_LAB_TOL, MATTE_HI * ss.KEY_LAB_TOL
-    a = np.clip((hi - dist) / (hi - lo), 0.0, 1.0)
-    keep = ss.panel(ss.key_mask(rgb, ref))[0]       # largest key region only
+    not the key, so it is already a hole.
+
+    The ramp is in units of `key_deviation`, where 1.0 is the key's own tolerance
+    at that pixel's lightness - so MATTE_LO/HI keep the meaning they had as
+    multiples of KEY_LAB_TOL, and a *shadowed* key no longer walks into the ramp
+    just because it darkened (the 847 px at alpha 0.61 under a hand's grip on
+    lifestyle_studio_held; see scene_screen.key_model).
+
+    A source edge sharper than the ramp's own 0.4-unit width (MATTE_HI-MATTE_LO)
+    puts at most one pixel per row inside it, and that pixel's chroma is a
+    single noisy sample with nothing to average it against - measured on
+    lifestyle_console_pampas's left edge: alpha at the crossing pixel read
+    0.34, 0.84, 0.78, 1.00, 0.95, 0.48 on six consecutive sampled rows (owner
+    report, "black dotted line", 2026-07-30), an unpredictable jump the eye
+    reads as a dotted/stair-stepped border against a background darker than
+    the print. `seeded_matte` never had this failure mode because its own
+    GaussianBlur was already there; this ramp had no spatial term at all - it
+    was exactly as noisy as the raw per-pixel chroma measurement.
+
+    A blanket blur fixes that but also widens every *occluder* hole's rim past
+    the occluder-opacity gate's plateau budget - a clip jaw or book spine
+    already has a genuinely anti-aliased edge there, and blurring it again
+    pushed 3 bundles over budget in testing, including holes that reach the
+    panel's own outer edge (flat_clips grips the paper's border;
+    lifestyle_shelf_books and lifestyle_studio_held both have a prop doing the
+    same), which an outer-silhouette mask cannot tell apart from the true
+    photographic edge by shape alone. What does tell them apart: a genuine
+    edge reaches confidently-key territory (alpha > 0.98) within a couple of
+    px, because the whole defect is the ramp being *too narrow*; an occluder
+    is a real object several to tens of px wide, so key territory stays out
+    of reach for much longer. EDGE_BLUR_BAND_PX x distance-to-that-territory
+    is the discriminator, and EDGE_BLUR_SIGMA/EDGE_BLUR_BAND_PX together are
+    the one setting (of a sigma x band sweep) where every keyed primary bundle
+    passes both occluder-opacity and edge-alpha-jitter at once."""
+    dev = ss.key_deviation(rgb, model)
+    a = np.clip((MATTE_HI - dev) / (MATTE_HI - MATTE_LO), 0.0, 1.0)
+    keep = ss.panel(ss.key_mask(rgb, model))[0]     # largest key region only
     if keep is None:
         raise SystemExit("no key region found - is this a keyed scene?")
     near = cv2.dilate(keep, np.ones((7, 7), np.uint8)).astype(bool)
-    return np.where(near, a, 0.0).astype(np.float32)
+    masked = np.where(near, a, 0.0).astype(np.float32)
+    blurred = cv2.GaussianBlur(masked, (0, 0), EDGE_BLUR_SIGMA)
+    solid = (masked > 0.98).astype(np.uint8)
+    dist_to_solid = cv2.distanceTransform(1 - solid, cv2.DIST_L2, 5)
+    genuine_edge = dist_to_solid <= EDGE_BLUR_BAND_PX
+    return np.where(genuine_edge, blurred, masked)
 
 
 def _fill(mask: np.ndarray) -> np.ndarray:
@@ -140,15 +202,16 @@ def seeded_matte(rgb: np.ndarray, poly: np.ndarray) -> np.ndarray:
     return np.clip(cv2.GaussianBlur(fg.astype(np.float32), (0, 0), 0.8), 0, 1)
 
 
-def neutralise(rgb: np.ndarray, ref: np.ndarray, matte: np.ndarray) -> np.ndarray:
+def neutralise(rgb: np.ndarray, model: dict, matte: np.ndarray) -> np.ndarray:
     """Drop the key's chroma wherever it reaches - inside the panel and in the
     spill ring around it - and keep every bit of luminance. The panel becomes the
     blank paper the scene was always meant to show, still carrying the scene's
     own light, and a partial-alpha edge pixel now blends art into paper."""
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-    dist = np.linalg.norm(lab[:, :, 1:] - ref, axis=2)
+    ref = np.asarray(model["ref"], np.float32)
+    dev = ss.key_deviation(rgb, model)
     # Inside the panel: drop the chroma outright, keep every bit of luminance.
-    spill = np.clip((2.5 * ss.KEY_LAB_TOL - dist) / ss.KEY_LAB_TOL, 0.0, 1.0)
+    spill = np.clip(2.5 - dev, 0.0, 1.0)
     # Weighting by the matte itself was the bug behind the green hairline: at a
     # partial-matte pixel the background kept ~half its key chroma, and the art
     # composited over it at that same partial alpha, so the residue showed
@@ -241,19 +304,20 @@ def quad_for(matte: np.ndarray) -> np.ndarray:
 
 
 def extract(image_path: Path, scene: str, tag: str, provenance: dict,
-            seed_poly: np.ndarray = None) -> dict:
+            seed_poly: np.ndarray = None, group_type="primary",
+            orientation="portrait", out_root=MOCKUPS) -> dict:
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
     h, w = rgb.shape[:2]
     if seed_poly is not None:
-        matte, bg, ref = seeded_matte(rgb, seed_poly), rgb, None
+        matte, bg, model = seeded_matte(rgb, seed_poly), rgb, None
     else:
-        ref = ss.key_ref(rgb, provenance.get("key_rgb", (0, 177, 64)))
-        matte = soft_matte(rgb, ref)
-        bg = neutralise(rgb, ref, matte)          # keyed only: there is no key to remove
+        model = ss.key_model(rgb, provenance.get("key_rgb", (0, 177, 64)))
+        matte = soft_matte(rgb, model)
+        bg = neutralise(rgb, model, matte)        # keyed only: there is no key to remove
     g = gain_map(bg, matte)                       # from a seeded photo the paper is already blank
     quad = quad_for(matte)
 
-    d = BUNDLES / scene
+    d = bundles(group_type, orientation, root=out_root) / scene
     d.mkdir(parents=True, exist_ok=True)
     Image.fromarray(bg).save(d / "background.png")
     Image.fromarray((matte * 255).round().astype(np.uint8)).save(d / "matte.png")
@@ -280,39 +344,112 @@ def extract(image_path: Path, scene: str, tag: str, provenance: dict,
     master_aspect = master.size[0] / master.size[1]
     _, crop = mr.cover_crop_to_aspect(master, aspect, max_crop=1.0)
     (d / "meta.json").write_text(json.dumps({
-        "scene": scene, "group_type": "primary", "orientation": "portrait",
+        "scene": scene, "group_type": group_type, "orientation": orientation,
         "aperture": [[round(float(x), 1), round(float(y), 1)] for x, y in quad],
         "size": [w, h], "tag": tag, "overfill": 0.0,
     }, indent=2) + "\n")
     (d / "scene.json").write_text(json.dumps({
-        **provenance, "scene": scene, "source_image": str(image_path),
+        # relative to the repo, not the machine: `reauthor` resolves it back
+        # against ROOT, and an absolute path makes a bundle's provenance
+        # unreadable on anyone else's checkout
+        **provenance, "scene": scene,
+        "source_image": str(Path(image_path).resolve().relative_to(ROOT)),
         "mode": "seeded" if seed_poly is not None else "keyed",
         "seed_polygon": None if seed_poly is None else
                         [[round(float(x), 1), round(float(y), 1)] for x, y in seed_poly],
-        "key_lab_ab": None if ref is None else [round(float(x), 2) for x in ref],
+        "key_lab_ab": None if model is None else [round(v, 2) for v in model["ref"]],
+        # The fitted chroma model, so a bundle stays a pure function of source +
+        # tool: the locus knots are what decided every matte pixel, and without
+        # them a re-author is unauditable (GL-6 chroma model, criterion 8).
+        "key_locus": None if model is None else
+                     {"knots": model["knots"], "sigma": model["sigma"]},
         "quad_aspect": round(aspect, 4),
         "aspect_delta": round(aspect / master_aspect - 1, 4),
         "cover_crop": round(crop, 4),
         "matte_coverage": round(float((matte > 0.5).mean()), 4),
+        "group_type": group_type, "orientation": orientation,
     }, indent=2) + "\n")
     return dict(scene=scene, aspect=round(aspect, 4), crop=round(crop, 4), dir=str(d))
 
 
+SHAPE_KEYS = ("scene", "group_type", "orientation", "tag")   # what the *bundle* is, which
+                                                             # extract() and meta.json own -
+                                                             # not provenance, and duplicating
+                                                             # them into scene.json lets the
+                                                             # two disagree
+
+DERIVED_KEYS = ("scene", "source_image", "mode", "seed_polygon", "key_lab_ab", "key_locus",
+                "quad_aspect", "aspect_delta", "cover_crop", "matte_coverage",
+                "group_type", "orientation")   # everything in scene.json that extract()
+                                               # computes; the rest of the file is provenance
+
+
+def normalise_provenance(sidecar: dict) -> dict:
+    """`extract` reads provenance['key_rgb'] and the gate's d_key_spill reads
+    scene.json['key_rgb'] straight off disk, but the sidecar template writes
+    'key_rgb_requested' (the colour asked for, not necessarily what rendered).
+    Without this, every hand-made scene's key-spill detector silently reports
+    "n/a - bundle declares no key colour" - a detector switched off by a
+    spelling, not by a decision."""
+    provenance = dict(sidecar)
+    if "key_rgb" not in provenance and "key_rgb_requested" in provenance:
+        provenance["key_rgb"] = provenance["key_rgb_requested"]
+    return provenance
+
+
 def _provenance_for(image_path: Path) -> dict:
-    """Carry the generation manifest's model/prompt/seed/key into scene.json, so
-    a bundle can always be traced back to the call that made it."""
+    """Where the pixels came from, carried into scene.json so a bundle can always
+    be traced back to the call that made it.
+
+    Two shapes, because there are two kinds of source. A `scene_generate.py`
+    batch under outputs/ has one manifest.json for the whole fire; a hand-run
+    scene in assets/mockups/inflow/ has one sidecar per image, which is the
+    durable record (outputs/ is git-ignored - the sidecar is what survives a
+    `git clean`, and it is what `reauthor` resolves against now)."""
     mani = image_path.parent / "manifest.json"
-    if not mani.exists():
+    if mani.exists():
+        m = json.loads(mani.read_text())
+        job = next((j for j in m["jobs"] if j.get("path")
+                    and Path(j["path"]).name == image_path.name), {})
+        return {k: job.get(k) for k in ("prompt", "seed", "key", "key_rgb")} | {
+            "model": m["model"], "licence": m["licence"],
+            "aspect_ratio": m["aspect_ratio"], "megapixels": m["megapixels"]}
+    sidecar = image_path.with_suffix(".json")
+    if not sidecar.exists():
         return {}
-    m = json.loads(mani.read_text())
-    job = next((j for j in m["jobs"] if j.get("path") and Path(j["path"]).name == image_path.name), {})
-    return {k: job.get(k) for k in ("prompt", "seed", "key", "key_rgb")} | {
-        "model": m["model"], "licence": m["licence"],
-        "aspect_ratio": m["aspect_ratio"], "megapixels": m["megapixels"]}
+    return {k: v for k, v in normalise_provenance(json.loads(sidecar.read_text())).items()
+            if k not in SHAPE_KEYS}
+
+
+def _scene_args(argv):
+    """The scene names in `argv[2:]`, with every option AND its value dropped.
+
+    Dropping only the "--" words is not enough: every option this tool takes
+    carries a value, so `reauthor --group 5x7` read "5x7" as a scene name and
+    went looking for assets/mockups/5x7/portrait/5x7/scene.json. That is a
+    crash on the happy path for every non-primary group, which is why it
+    survived - the primary group never passes --group at all."""
+    out, skip = [], False
+    for a in argv[2:]:
+        if skip:
+            skip = False
+        elif a.startswith("--"):
+            skip = True
+        else:
+            out.append(a)
+    return out
+
+
+def _all_bundles(group_type, orientation):
+    d = bundles(group_type, orientation)
+    return [x.name for x in sorted(d.iterdir()) if x.is_dir()] if d.exists() else []
 
 
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "verify"
+    group_type = argv[argv.index("--group") + 1] if "--group" in argv else "primary"
+    orientation = argv[argv.index("--orientation") + 1] if "--orientation" in argv else "portrait"
+    BUNDLES = bundles(group_type, orientation)
     if cmd == "extract":
         image_path, scene = Path(argv[2]), argv[3]
         tag = argv[argv.index("--tag") + 1] if "--tag" in argv else (
@@ -328,8 +465,8 @@ def main(argv):
             else:
                 poly = np.asarray([[float(v) for v in p.split(",")]
                                    for p in src.split(";")], np.float32)
-        print(json.dumps(extract(image_path, scene, tag,
-                                 _provenance_for(image_path), poly), indent=2))
+        print(json.dumps(extract(image_path, scene, tag, _provenance_for(image_path),
+                                 poly, group_type, orientation), indent=2))
         return 0
     if cmd == "reauthor":
         # Re-derive bundles from what scene.json already records. A bundle is a
@@ -337,19 +474,32 @@ def main(argv):
         # costs one command, not an authoring session - proved in the GL-21
         # review, where re-running extract reproduced all four byte-identical
         # except the one layer that had been wrong.
-        for scene in argv[2:] or [d.name for d in sorted(BUNDLES.iterdir()) if d.is_dir()]:
+        for scene in _scene_args(argv) or _all_bundles(group_type, orientation):
             d = BUNDLES / scene
             sj = json.loads((d / "scene.json").read_text())
             src = ROOT / Path(sj["source_image"].replace("\\", "/"))
             poly = None if sj.get("seed_polygon") is None else np.asarray(sj["seed_polygon"],
                                                                          np.float32)
-            print(json.dumps(extract(src, scene, json.loads((d / "meta.json").read_text())["tag"],
-                                     _provenance_for(src), poly)))
+            meta = json.loads((d / "meta.json").read_text())
+            # Provenance comes from what this bundle already recorded, not from
+            # re-reading the source's sidecar. Provenance is history: it is not
+            # derivable, and re-deriving it silently loses whatever the authoring
+            # command knew and the sidecar does not. Measured on
+            # lifestyle_studio_held, whose sidecar is a raw Replicate prediction
+            # export: a re-derive dropped the prompt, the prediction id, the
+            # model and - the one that matters - key_rgb, so the re-authored
+            # bundle keyed off extract's emerald default and d_key_spill reported
+            # "n/a - bundle declares no key colour". A detector switched off by a
+            # re-author. This also makes `reauthor` idempotent for every sidecar
+            # shape, which is the property the whole re-author workflow rests on.
+            prov = {k: v for k, v in sj.items() if k not in DERIVED_KEYS}
+            print(json.dumps(extract(src, scene, meta["tag"], prov, poly,
+                                     meta["group_type"], meta["orientation"])))
         return 0
     if cmd == "verify":
         art = Image.open(mockup_qa.MASTER).convert("RGB")
         ok = True
-        for scene in argv[2:] or [d.name for d in sorted(BUNDLES.iterdir()) if d.is_dir()]:
+        for scene in _scene_args(argv) or _all_bundles(group_type, orientation):
             r = mockup_qa.check(BUNDLES / scene, art)
             ok &= r["passed"]
             print(f"\n{scene}  [{'PASS' if r['passed'] else 'FAIL'}]")

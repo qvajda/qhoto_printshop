@@ -1,0 +1,29 @@
+{
+  "scene": "flat_clips_shadowband",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      166.9,
+      208.0
+    ],
+    [
+      737.2,
+      211.0
+    ],
+    [
+      732.2,
+      1021.0
+    ],
+    [
+      161.8,
+      1019.0
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "flat",
+  "overfill": 0.0
+}

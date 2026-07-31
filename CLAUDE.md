@@ -9,11 +9,33 @@ Shop currency: EUR. Read the relevant spec section before touching a
 pipeline stage — don't guess at behavior that's already specified.
 
 ## Hard constraints — do not change without flagging first
-- Image generation: Replicate + FLUX.1 [schnell] only. Never substitute
-  FLUX.1 [dev] without raising it explicitly (different commercial license).
-  A design is only ever image-generated once — group-level crop/retry
-  (below) reuses the same base image, it never triggers a new generation
-  call.
+- **Artwork generation (the thing that gets printed and sold): Replicate +
+  FLUX.1 [schnell] only.** Never substitute FLUX.1 [dev] without raising it
+  explicitly (different commercial license). A design is only ever
+  image-generated once — group-level crop/retry (below) reuses the same base
+  image, it never triggers a new generation call. This constraint governs
+  `pipeline/generate.py` and nothing else; its rationale is the licence of the
+  artefact a buyer pays for.
+- **Mockup *scene* generation is a separate concern and is not bound to
+  schnell (owner decision, 2026-07-29).** A scene is offline authoring input —
+  a listing photograph, never a printed product — so the bar is "commercial
+  use permitted", not "Apache-2.0 weights". **Nano Banana Pro
+  (`google/nano-banana-pro`, Gemini 3 Pro Image, on Replicate) is the default
+  scene generator.** schnell could not do this job: it ignores stated
+  proportions (54 of 61 images in the P4b1 batch failed `aspect`; the 10x24
+  group went 0/18 with a minimum gap of 0.20 against a 0.02 budget) and it has
+  no negative channel, so "no mat, no glazing" reliably summons both. Two
+  things to carry: every Nano Banana output has a **SynthID watermark**, and
+  scene generation is **hand-run by the owner into
+  `assets/mockups/inflow/`** — there is no batch harness and it does not need
+  one, because the reason `scene_generate.py` existed was schnell needing ~60
+  attempts per usable scene.
+- **Aspect is specified with a geometry card, not with prose.** No image model
+  reliably converts "A1" or "20cm by 30cm" or "2:3" into a rendered rectangle.
+  `assets/mockups/geometry_cards/` holds one card per group at the midpoint of
+  that group's printed ratio range; pass it as a reference image. This is what
+  took a scene from 0.7572 (6.6 % outside the printed range, rejected) to
+  0.6967 (inside, 9/9 on the screen) on the next attempt.
 - **Generated image = flat full-bleed artwork, NOT a poster-in-a-room
   render.** The prompt must force flat 2D art filling the frame (no frame,
   border, wall, room, mockup) and the injected niche must be subject/style

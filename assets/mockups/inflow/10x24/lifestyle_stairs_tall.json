@@ -1,0 +1,35 @@
+{
+  "completed_at": "2026-07-31T16:13:44.316939Z",
+  "created_at": "2026-07-31T16:13:15.595000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "nf86z947sdrmt0czq3sva2t4xw",
+  "input": {
+    "prompt": "Photograph of a cosy between two floors landing of a stairwell, picture taken from standing on the landing itself, a few steps leading upwards are visible. A blank, tall, unframed matte print hangs flat on the wall. The print is a narrow column — much taller than it is wide, its height about two and a half times its width, like a door panel or a strip of wallpaper; the poster's proportions match EXACTLY the REFERENCE CARD, same width-to-height ratio, same flat green. It is large in the picture, running most of the height of the frame, hung flat and square to the camera. All four corners of the print stay fully visible with a clear margin of wall around them. The whole blank print is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. A round rug of dark-blue hue is present on the floor of the landing. Nothing green anywhere in the picture. Straight-on frontal view, 35 mm, sharp. The image should evoke a homely feeling while remaining clean and modern. A tall ceramic vase is present, standing on the floor in the corner of the landing - with a few long ostrich feathers placed within the vase and poking out of it gracefully.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PXnvHxr4CqwVf00uM7pfbeXz3NuxChbxoMINHSsd761tHzuh/geometry_card_10x24_0.4167.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2355\nGenerated image in 27.78 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 28.698913867,
+    "total_time": 28.721939477
+  },
+  "output": "https://replicate.delivery/xezq/lMZJhlzg1rZ5IF4AsJIrBwbFELuuk7DS7O1sCd7Kefb3unetA/tmpngwwx9cv.png",
+  "started_at": "2026-07-31T16:13:15.618025Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-l4zrrv72kjwbat5pxxf26i65rpofgvxayyachxlmaqs52ytii4bq",
+    "get": "https://api.replicate.com/v1/predictions/nf86z947sdrmt0czq3sva2t4xw",
+    "cancel": "https://api.replicate.com/v1/predictions/nf86z947sdrmt0czq3sva2t4xw/cancel",
+    "web": "https://replicate.com/p/nf86z947sdrmt0czq3sva2t4xw"
+  },
+  "version": "hidden"
+}

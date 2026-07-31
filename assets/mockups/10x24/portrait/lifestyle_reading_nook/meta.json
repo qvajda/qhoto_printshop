@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_reading_nook",
+  "group_type": "10x24",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      1355.1,
+      206.0
+    ],
+    [
+      1794.2,
+      153.2
+    ],
+    [
+      1792.2,
+      1263.9
+    ],
+    [
+      1355.1,
+      1228.3
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

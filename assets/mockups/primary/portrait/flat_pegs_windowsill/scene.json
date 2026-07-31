@@ -1,0 +1,198 @@
+{
+  "tag": "flat",
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. Generated before the 2026-07-29 Nano Banana Pro pivot and harvested from that corpus on 2026-07-30: the chroma model changed the key mask, so this image passes a screen that rejected it when it was generated (plan \u00a78). Kept here so the source survives a `git clean` - it lives under the git-ignored outputs/gl6_p4a/.",
+  "generated_via": "scripts/scene_generate.py fire (gl6_p4a), seed 44, Replicate prediction 6q2jc8zvt5rp20cznbd9h7enrw",
+  "generated_at": null,
+  "prompt": "A single unframed sheet of thin matte poster paper clipped to a slim brass rail with two wooden pegs against a warm off-white wall beside a window, daylight raking across it. The paper is 0.2mm thin, its cut edge visible as the edge of a sheet of paper. Not a mounted board, not a canvas, not foam board, no backing panel, no frame, no thick slab. The sheet is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+  "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Harvested from outputs/gl6_p4a/clipsheet_v2_emerald_s44.png (docs/2026-07-29-gl6-chroma-model-plan.md \u00a78 re-screen backlog). seed/licence/aspect_ratio/megapixels read from that batch's git-ignored manifest.json, the only place they lived.",
+  "seed": 44,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "scene": "flat_pegs_windowsill",
+  "source_image": "assets\\mockups\\inflow\\primary\\flat_pegs_windowsill.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    76.0,
+    159.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        10.98,
+        -21.0,
+        15.0
+      ],
+      [
+        12.94,
+        -22.0,
+        18.0
+      ],
+      [
+        14.51,
+        -24.0,
+        20.0
+      ],
+      [
+        16.86,
+        -26.0,
+        22.0
+      ],
+      [
+        18.43,
+        -27.0,
+        24.0
+      ],
+      [
+        20.78,
+        -29.0,
+        25.0
+      ],
+      [
+        23.14,
+        -31.0,
+        26.0
+      ],
+      [
+        25.1,
+        -32.0,
+        27.0
+      ],
+      [
+        27.06,
+        -34.0,
+        27.0
+      ],
+      [
+        29.02,
+        -35.0,
+        27.0
+      ],
+      [
+        30.98,
+        -36.0,
+        28.0
+      ],
+      [
+        32.94,
+        -38.0,
+        28.0
+      ],
+      [
+        34.9,
+        -39.0,
+        29.0
+      ],
+      [
+        37.25,
+        -41.0,
+        30.0
+      ],
+      [
+        39.22,
+        -42.0,
+        31.0
+      ],
+      [
+        40.78,
+        -43.0,
+        31.0
+      ],
+      [
+        43.53,
+        -45.0,
+        31.0
+      ],
+      [
+        45.1,
+        -46.0,
+        32.0
+      ],
+      [
+        47.06,
+        -47.0,
+        32.0
+      ],
+      [
+        49.02,
+        -48.0,
+        31.0
+      ],
+      [
+        51.37,
+        -50.0,
+        31.0
+      ],
+      [
+        52.94,
+        -50.0,
+        31.0
+      ],
+      [
+        54.9,
+        -51.0,
+        31.0
+      ],
+      [
+        56.86,
+        -53.0,
+        31.0
+      ],
+      [
+        58.82,
+        -54.0,
+        31.0
+      ],
+      [
+        61.18,
+        -55.0,
+        31.0
+      ],
+      [
+        63.14,
+        -56.0,
+        30.0
+      ],
+      [
+        64.31,
+        -57.0,
+        30.0
+      ],
+      [
+        67.06,
+        -58.0,
+        31.0
+      ],
+      [
+        69.02,
+        -59.0,
+        30.0
+      ]
+    ],
+    "sigma": 1.223
+  },
+  "quad_aspect": 0.7,
+  "aspect_delta": 0.023,
+  "cover_crop": 0.0225,
+  "matte_coverage": 0.3286,
+  "group_type": "primary",
+  "orientation": "portrait"
+}

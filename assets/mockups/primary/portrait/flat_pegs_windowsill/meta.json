@@ -1,0 +1,29 @@
+{
+  "scene": "flat_pegs_windowsill",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      195.6,
+      210.8
+    ],
+    [
+      686.9,
+      212.9
+    ],
+    [
+      685.8,
+      907.2
+    ],
+    [
+      196.6,
+      917.4
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "flat",
+  "overfill": 0.0
+}

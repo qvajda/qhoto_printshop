@@ -98,18 +98,30 @@
   "mockup_templates": {
     "primary": {
       "portrait": [
+        "flat_clips_shadowband",
         "flat_clips_windowlight",
-        "flat_leaning_bookstack",
-        "lifestyle_shelf_books"
+        "flat_console_vase",
+        "flat_shelf_books",
+        "lifestyle_console_vase",
+        "lifestyle_floor_leaning",
+        "lifestyle_floor_terracotta",
+        "lifestyle_held_creamtee",
+        "lifestyle_sofa_goldenhour",
+        "lifestyle_stairs_landing"
       ],
       "landscape": []
     },
     "5x7": {
-      "portrait": [],
+      "portrait": [
+        "lifestyle_easel_shelf"
+      ],
       "landscape": []
     },
     "10x24": {
-      "portrait": [],
+      "portrait": [
+        "lifestyle_reading_nook",
+        "lifestyle_stairs_tall"
+      ],
       "landscape": []
     }
   }

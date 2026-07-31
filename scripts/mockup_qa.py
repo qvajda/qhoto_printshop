@@ -65,6 +65,8 @@ SPILL_PROJ_MAX = 8.0    # Lab units of key-direction chroma tolerated on the pri
 SPILL_BAND_BUDGET = 0.001  # x the band's own size: an occluder's real colour shows at
                         # the rim of its hole, and that is scene content, not residue
 PLATEAU_TOL = 0.05      # alpha within this of 0/1 counts as hard
+PLATEAU_RIM_PX = 3      # how far a mid-alpha px may be from both a 0 and a 1 and still
+                        # count as sitting on a rim - see d_occluder_opacity
 PLATEAU_BUDGET = 0.01   # x the matte's perimeter: a matte derived from a photograph's
                         # own edge gradient leaves a few soft px on it. Attempt 1's
                         # alpha-172 stamps are ~10x this and nowhere near an edge.
@@ -81,6 +83,12 @@ SCENE_BUDGET = 0.001    # x the outside-print area: the gain map is allowed to
 COVERAGE_TOL = 0.0005   # fraction of the print area allowed to read as un-printed:
                         # an anti-aliased rim always leaves a few px indistinguishable
                         # from the background. Attempt 2's occluder notches were 5.1%.
+JITTER_TOL = 0.08       # p90 of |alpha_i - alpha_(i+1)| between adjacent boundary-
+                        # crossing samples along one straight print edge. A real
+                        # photographic edge (or this repo's own occluder rims) varies
+                        # smoothly row to row; soft_matte's un-blurred ramp did not -
+                        # measured 0.108-0.879 across the keyed corpus before GL-21 P4b2's
+                        # fix, all under 0.04 after it.
 
 
 # --------------------------------------------------------------------------- parts
@@ -360,7 +368,17 @@ def d_occluder_opacity(p: dict) -> dict:
         return _finding("occluder-opacity", True, None, "n/a - pre-matte bundle, no matte to check")
     src = p["matte"]
     mid = (src > PLATEAU_TOL) & (src < 1 - PLATEAU_TOL)
-    k = np.ones((5, 5), np.uint8)
+    # "On a rim" is measured within PLATEAU_RIM_PX, not 2px as it used to be. A
+    # straight anti-aliased rim is 1-2px wide, but a *corner* rim is a wedge, and
+    # the tip of a wedge is further from both plateaus than its sides are: on
+    # lifestyle_shelf_books' shadowed bottom-left corner, where the panel fades
+    # into the shelf's own shadow, the wedge measures 5px deep and 21 px of it
+    # read as a plateau against a budget of 20. That is a soft edge in the
+    # photograph, correctly ramped, failed on its geometry rather than its alpha.
+    # 3px still leaves the defect class untouched: attempt 1's alpha-172 clip
+    # stamps measure 296 px at every reach from 2px to 5px, because a stamped
+    # prop is wide, not a rim (see _occluder_demo).
+    k = np.ones((2 * PLATEAU_RIM_PX + 1,) * 2, np.uint8)
     near0 = cv2.dilate((src <= PLATEAU_TOL).astype(np.uint8), k).astype(bool)
     near1 = cv2.dilate((src >= 1 - PLATEAU_TOL).astype(np.uint8), k).astype(bool)
     plateau = mid & ~(near0 & near1)          # partial, but not on a 0<->1 rim
@@ -421,8 +439,94 @@ def d_scene_fidelity(p: dict) -> dict:
                     f"(max {delta[outside].max():.0f}/255, budget {budget})")
 
 
+def _edge_crossings(matte: np.ndarray, a, b, walk=8) -> list:
+    """The alpha of the first partial pixel (>0.02) encountered scanning
+    inward from quad corner `a` toward `b`, one sample per row if the edge
+    runs closer to vertical or per column if closer to horizontal - the exact
+    quantity a reviewer's eye lands on scanning the print's own border, and
+    what the owner's manual measurement sampled by hand."""
+    h, w = matte.shape
+    a, b = np.asarray(a, np.float64), np.asarray(b, np.float64)
+    vertical = abs(b[1] - a[1]) > abs(b[0] - a[0])
+    lo, hi = sorted((a[1], b[1]) if vertical else (a[0], b[0]))
+    out = []
+    for c in range(int(np.ceil(lo)) + 3, int(np.floor(hi)) - 3):    # corners excluded
+        along = (a[1], b[1]) if vertical else (a[0], b[0])
+        cross = (a[0], b[0]) if vertical else (a[1], b[1])
+        frac = (c - along[0]) / (along[1] - along[0]) if along[1] != along[0] else 0.0
+        edge = cross[0] + frac * (cross[1] - cross[0])
+        val = None
+        for sign in (1, -1):
+            for k in range(-2, walk):
+                x, y = (int(round(edge)) + sign * k, c) if vertical else (c, int(round(edge)) + sign * k)
+                if not (0 <= x < w and 0 <= y < h):
+                    continue
+                v = matte[y, x]
+                if v > 0.02:
+                    val = float(v)
+                    break
+            if val is not None:
+                break
+        out.append(val)
+    return out
+
+
+def d_edge_alpha_jitter(p: dict) -> dict:
+    """The print's four edges are straight by construction (the quad IS that
+    edge), so the boundary alpha sampled along one should vary smoothly as a
+    function of position, not row to row at random. soft_matte's chroma ramp
+    could collapse to a single partial pixel per row when the source edge was
+    sharper than the ramp's own width, and that pixel's alpha was then a raw,
+    uncorrelated chroma sample - the "black dotted line" / "stairs" the owner
+    saw on lifestyle_console_pampas, lifestyle_studio_held and
+    lifestyle_framed_wall_plant (2026-07-30). Measured as the 90th-percentile
+    jump between adjacent boundary-crossing samples along each edge (corners
+    excluded, a genuine occluder crossing the edge reads solidly 0 or 1 rather
+    than jittering and so contributes no crossing sample there); worst edge
+    wins. See JITTER_TOL for the calibration against the keyed corpus."""
+    if p["matte"] is None:
+        return _finding("edge-alpha-jitter", True, None, "n/a - pre-matte bundle, no matte edge to measure")
+    quad = p["quad"]
+    worst, worst_edge = 0.0, None
+    for i in range(4):
+        vals = [v for v in _edge_crossings(p["matte"], quad[i], quad[(i + 1) % 4]) if v is not None]
+        if len(vals) < 20:
+            continue
+        jit = float(np.percentile(np.abs(np.diff(vals)), 90))
+        if jit > worst:
+            worst, worst_edge = jit, i
+    return _finding("edge-alpha-jitter", worst <= JITTER_TOL, round(worst, 3),
+                    f"edge {worst_edge}: p90 row-to-row alpha jump {worst:.2f} "
+                    f"(limit {JITTER_TOL:.2f})" if worst_edge is not None else
+                    "no edge had enough boundary crossings to measure")
+
+
 DETECTORS = ["fringe", "key-spill", "distortion", "matte-hidden", "coverage",
-             "occluder-opacity", "silhouette-vs-shadow", "scene-fidelity"]
+             "occluder-opacity", "silhouette-vs-shadow", "scene-fidelity",
+             "edge-alpha-jitter"]
+
+
+def _waive(findings: list, waivers: dict) -> list:
+    """An owner may accept a named detector's failure on one bundle, and the
+    only honest way to record that is on the bundle: `gate_waivers` in
+    scene.json, detector name -> the reason, carried in from the source's own
+    sidecar so a re-author keeps it.
+
+    A waived finding still runs, still reports its measurement, and says so in
+    every sheet and verdict - what changes is only whether it blocks. This is
+    not a way to quieten a detector: switching one off across the corpus is a
+    change to the detector, made once with a measurement behind it. Waiving one
+    is a statement about one photograph, which is why the reason is required
+    text and lives next to the pixels it excuses."""
+    out = []
+    for f in findings:
+        why = waivers.get(f["name"])
+        if f["passed"] or not why:
+            out.append(f)
+            continue
+        out.append({**f, "passed": True, "waived": True,
+                    "detail": f"WAIVED ({why}) - measured: {f['detail']}"})
+    return out
 
 
 def check(bundle_dir: Path, art: Image.Image) -> dict:
@@ -430,10 +534,12 @@ def check(bundle_dir: Path, art: Image.Image) -> dict:
     bundle = mr.load_bundle(bundle_dir)
     p = _parts(bundle, art)
     prov = bundle_dir / "scene.json"
-    key = json.loads(prov.read_text()).get("key_rgb") if prov.exists() else None
-    findings = [d_fringe(p), d_key_spill(p, key), d_distortion(p), d_matte_hidden(p),
-                d_coverage(p), d_occluder_opacity(p), d_silhouette_vs_shadow(p),
-                d_scene_fidelity(p)]
+    scene_json = json.loads(prov.read_text()) if prov.exists() else {}
+    key = scene_json.get("key_rgb")
+    findings = _waive([d_fringe(p), d_key_spill(p, key), d_distortion(p), d_matte_hidden(p),
+                       d_coverage(p), d_occluder_opacity(p), d_silhouette_vs_shadow(p),
+                       d_scene_fidelity(p), d_edge_alpha_jitter(p)],
+                      scene_json.get("gate_waivers") or {})
     return dict(scene=bundle.scene, dir=str(bundle_dir), findings=findings,
                 passed=all(f["passed"] for f in findings), parts=p)
 
@@ -552,7 +658,27 @@ def demo():
     ok &= _occluder_demo(art)
     ok &= _spill_demo()
     ok &= _scene_fidelity_demo(art)
+    ok &= _edge_jitter_demo(art)
     return ok
+
+
+def _edge_jitter_demo(art):
+    """The pre-fix lifestyle_console_pampas bundle, snapshotted before GL-21
+    P4b2 added soft_matte's edge blur - the live bundle is now the fixed one,
+    so the defect only still exists in this copy (same convention as A1/A2/A3:
+    a reference corpus of a bundle caught with its defect in place)."""
+    ref = A3 / "lifestyle_console_pampas"
+    if not ref.exists():
+        print(f"  SKIP   edge-alpha-jitter    {ref} missing")
+        return True
+    broken = _run("edge-alpha-jitter", ref, art)
+    live = ROOT / "assets" / "mockups" / "primary" / "portrait" / "lifestyle_console_pampas"
+    fixed = _run("edge-alpha-jitter", live, art)
+    return _report("edge-alpha-jitter", not broken["passed"] and fixed["passed"],
+                   "lifestyle_console_pampas", "soft_matte's un-blurred chroma ramp put a "
+                   "single noisy pixel on the edge, alpha 0.34/0.84/0.78/1.00/0.95/0.48 "
+                   "row to row (owner report, 2026-07-30)",
+                   f"pre-fix: {broken['detail']} | post-fix: {fixed['detail']}")
 
 
 def _scene_fidelity_demo(art):

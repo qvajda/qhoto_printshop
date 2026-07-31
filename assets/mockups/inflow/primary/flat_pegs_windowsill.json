@@ -1,0 +1,27 @@
+{
+  "scene": "flat_pegs_windowsill",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "flat",
+  "model": "black-forest-labs/flux-schnell",
+  "model_notes": "Apache-2.0 weights. Generated before the 2026-07-29 Nano Banana Pro pivot and harvested from that corpus on 2026-07-30: the chroma model changed the key mask, so this image passes a screen that rejected it when it was generated (plan \u00a78). Kept here so the source survives a `git clean` - it lives under the git-ignored outputs/gl6_p4a/.",
+  "generated_via": "scripts/scene_generate.py fire (gl6_p4a), seed 44, Replicate prediction 6q2jc8zvt5rp20cznbd9h7enrw",
+  "generated_at": null,
+  "prompt": "A single unframed sheet of thin matte poster paper clipped to a slim brass rail with two wooden pegs against a warm off-white wall beside a window, daylight raking across it. The paper is 0.2mm thin, its cut edge visible as the edge of a sheet of paper. Not a mounted board, not a canvas, not foam board, no backing panel, no frame, no thick slab. The sheet is one solid panel of vivid emerald green. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "reference_images": [],
+  "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    896,
+    1152
+  ],
+  "notes": "Harvested from outputs/gl6_p4a/clipsheet_v2_emerald_s44.png (docs/2026-07-29-gl6-chroma-model-plan.md \u00a78 re-screen backlog). seed/licence/aspect_ratio/megapixels read from that batch's git-ignored manifest.json, the only place they lived.",
+  "seed": 44,
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1"
+}

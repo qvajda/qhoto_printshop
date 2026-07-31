@@ -1,0 +1,35 @@
+{
+  "completed_at": "2026-07-31T16:09:44.931643Z",
+  "created_at": "2026-07-31T16:09:15.109000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "dxvcbmewcnrmt0czq3qszc5rbr",
+  "input": {
+    "prompt": "Photograph of a cosy between two floors landing of a stairwell, picture taken from standing on the landing itself, a few steps leading upwards are visible. A blank unframed matte print hangs flat on the wall. The print is a tall, narrow column — much taller than it is wide, its height about two and a half times its width, like a door panel or a strip of wallpaper; its proportions match the reference card exactly, same width-to-height ratio, same flat green. It is large in the picture, running most of the height of the frame, hung flat and square to the camera. All four corners of the print stay fully visible with a clear margin of wall around them. The whole blank print is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. A round rug of dark-blue hue is present on the floor of the landing. Nothing green anywhere in the picture. Straight-on frontal view, 35 mm, sharp. The image should evoke a homely feeling while remaining clean and modern.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PXnrUyuwpyG71ALVhLRGlgICY2RLAiSP0ONBfeZMcC3QFdm1/geometry_card_10x24_0.4167.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2283\nGenerated image in 29.50 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 29.806450474000002,
+    "total_time": 29.822643034
+  },
+  "output": "https://replicate.delivery/xezq/aAiIMVh7hJbyKt7uSYD21sFye5VODQe4pN5StdDhmQCIrnetA/tmpzj0ocfl8.png",
+  "started_at": "2026-07-31T16:09:15.125192Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-f6i6vdc55su3ban5j7mw2bvzziaj43v3xy4cuubsmyhsqlbbxrcq",
+    "get": "https://api.replicate.com/v1/predictions/dxvcbmewcnrmt0czq3qszc5rbr",
+    "cancel": "https://api.replicate.com/v1/predictions/dxvcbmewcnrmt0czq3qszc5rbr/cancel",
+    "web": "https://replicate.com/p/dxvcbmewcnrmt0czq3qszc5rbr"
+  },
+  "version": "hidden"
+}

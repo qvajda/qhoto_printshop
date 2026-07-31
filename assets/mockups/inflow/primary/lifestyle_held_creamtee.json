@@ -1,0 +1,61 @@
+{
+  "scene": "lifestyle_held_creamtee",
+  "group_type": "primary",
+  "orientation": "portrait",
+  "tag": "lifestyle",
+  "model": "google/nano-banana-pro",
+  "model_notes": "Gemini 3 Pro Image. Commercial use permitted via API. Outputs carry a SynthID watermark.",
+  "generated_via": "Replicate playground (manual), prediction 3ga9g22cc9rmy0czpawsp7tb34",
+  "generated_at": "2026-07-30",
+  "prompt": "Photograph of a woman standing against a plain, empty wall, holding a blank unframed matte poster up in front of their chest with both hands, taken from close range \u2014 the poster fills most of the frame. Only their fingers, the tops of their shoulders and a little of their upper arms are visible around it; their face is above the top of the frame and out of shot. Their fingers grip the poster along the middle of its left and right edges, well clear of the corners, and clearly overlap the poster where they hold it \u2014 all four corners of the poster stay fully visible with a clear margin of wall around them. The blank poster's proportions match the reference card exactly \u2014 same width-to-height ratio, same flat green; it is a portrait rectangle clearly taller than it is wide, held flat and square to the camera, at a natural size for a person to hold, roughly from their waist to their collarbone. The whole blank poster is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. The background is a single plain wall in a soft neutral warm off-white, completely empty. The woman wears plain neutral clothing, jeans and a t-shirt. Soft even daylight; the poster is lit flatly and evenly, with no shadow, no gradient and no hotspot across it, and nothing casts a shadow onto it. Straight-on frontal view at chest height, 50 mm, sharp. Clean, calm, contemporary.",
+  "reference_images": [
+    "assets/mockups/geometry_cards/geometry_card_primary_0.6869.png"
+  ],
+  "key": "emerald",
+  "key_rgb_requested": [
+    0,
+    177,
+    64
+  ],
+  "canvas": [
+    2400,
+    1792
+  ],
+  "aspect_ratio": "4:3",
+  "notes": "Replacement for the rejected lifestyle_studio_held: same held-poster idea, close crop against a plain empty wall. The painter's-studio dressing was cut because it implied the art was hand-painted, which the listing must not claim. Owner dropped the flat-even-lighting clause (the chroma model handles a lit key) and most negations (Nano Banana infers 'no frame' from 'unframed matte poster'). Two takes: 'person' defaulted to a man (greytee), 'woman' was specified (creamtee).",
+  "replicate_prediction": {
+    "completed_at": "2026-07-30T11:12:24.296223Z",
+    "created_at": "2026-07-30T11:11:56.002000Z",
+    "data_removed": false,
+    "error": null,
+    "id": "3ga9g22cc9rmy0czpawsp7tb34",
+    "input": {
+      "prompt": "Photograph of a woman standing against a plain, empty wall, holding a blank unframed matte poster up in front of their chest with both hands, taken from close range \u2014 the poster fills most of the frame. Only their fingers, the tops of their shoulders and a little of their upper arms are visible around it; their face is above the top of the frame and out of shot. Their fingers grip the poster along the middle of its left and right edges, well clear of the corners, and clearly overlap the poster where they hold it \u2014 all four corners of the poster stay fully visible with a clear margin of wall around them. The blank poster's proportions match the reference card exactly \u2014 same width-to-height ratio, same flat green; it is a portrait rectangle clearly taller than it is wide, held flat and square to the camera, at a natural size for a person to hold, roughly from their waist to their collarbone. The whole blank poster is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. The background is a single plain wall in a soft neutral warm off-white, completely empty. The woman wears plain neutral clothing, jeans and a t-shirt. Soft even daylight; the poster is lit flatly and evenly, with no shadow, no gradient and no hotspot across it, and nothing casts a shadow onto it. Straight-on frontal view at chest height, 50 mm, sharp. Clean, calm, contemporary.",
+      "resolution": "2K",
+      "image_input": [
+        "https://replicate.delivery/pbxt/PX3Jb2OU9WIKPyVEHzZrnhE561pwUWzdYmcIQZTpNdRNYJZP/geometry_card_primary_0.6869.png"
+      ],
+      "aspect_ratio": "4:3",
+      "output_format": "png",
+      "safety_filter_level": "block_only_high",
+      "allow_fallback_model": false
+    },
+    "logs": "No sid\nGenerating image...\nTokens: 2384\nGenerated image in 28.03 seconds",
+    "metrics": {
+      "resolution_target": "2K",
+      "image_output_count": 1,
+      "predict_time": 28.270480024,
+      "total_time": 28.294223422
+    },
+    "output": "https://replicate.delivery/xezq/TTMedd5nmmTfjURbzlR5D8JRXUTXEDfeGWwBFZN6X1Qh544bB/tmpb6j9zvhm.png",
+    "started_at": "2026-07-30T11:11:56.025743Z",
+    "status": "succeeded",
+    "urls": {
+      "stream": "https://stream.replicate.com/v1/files/jbxs-ezjvq5sgt3pmpbzgzehkgkpqumuqakmaddzqupfldq2haauyh5uq",
+      "get": "https://api.replicate.com/v1/predictions/3ga9g22cc9rmy0czpawsp7tb34",
+      "cancel": "https://api.replicate.com/v1/predictions/3ga9g22cc9rmy0czpawsp7tb34/cancel",
+      "web": "https://replicate.com/p/3ga9g22cc9rmy0czpawsp7tb34"
+    },
+    "version": "hidden"
+  }
+}
