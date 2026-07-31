@@ -10,7 +10,12 @@ first failure that makes a later stage meaningless.
     scene_intake.py assets/mockups/inflow/primary/lifestyle_bench_fern.png
                     [--dry-run] [--group primary|5x7|10x24] [--orientation O]
                     [--model MODEL_ID] [--key emerald|magenta] [--name SCENE]
-                    [--tag flat|lifestyle]
+                    [--tag flat|lifestyle] [--force]
+
+--force authors past a *non-aspect* screen failure and past a geometry card that
+names another group (a miss can land inside a different group's printed range).
+`aspect` itself is never forceable: it is the one thing about the pixels that no
+authoring changes. The gate still decides, and the waived check is still printed.
 
 --dry-run authors into outputs/scene_intake/<scene>/bundle/ instead of
 assets/mockups/ - same extract(), same gate, nothing written under assets/.
@@ -116,7 +121,7 @@ def _geometry_card_group(image_input) -> str | None:
 
 def _handle_replicate_export(raw: dict, image_path: Path, group_type: str,
                              model_override: str, key_override: str,
-                             name_override: str, dry_run: bool):
+                             name_override: str, dry_run: bool, force: bool = False):
     """Stage 0, Replicate prediction shape: the owner's real hand-run artefact
     downloaded straight from the playground - id/status/input/urls/metrics at
     the top level, no model name anywhere and no `scene`/`tag`/`key_rgb` of
@@ -149,12 +154,22 @@ def _handle_replicate_export(raw: dict, image_path: Path, group_type: str,
             return None
         key_name = key_override
     else:
-        if card_group != group_type:
+        if card_group != group_type and not force:
             _fail("0 sidecar", f"the attached geometry card is for group '{card_group}' but "
                   f"this image is in the '{group_type}' inflow folder - the scene was "
                   "generated at the wrong proportions and no amount of authoring fixes "
-                  f"that; regenerate against geometry_card_{group_type}_*.png.")
+                  f"that; regenerate against geometry_card_{group_type}_*.png. "
+                  "If the miss happens to land inside *this* group's printed range, "
+                  "--force harvests it here and lets the screen decide.")
             return None
+        if card_group != group_type:
+            # A model that misses its card can still land squarely inside another
+            # group's printed range - the 10x24 stairwell scene that rendered 0.7123
+            # is a primary scene, not a wasted generation (§4's harvest, same logic).
+            # The card only ever *suggested* the group; the screen's aspect check
+            # measures the rectangle that actually rendered and still has to pass.
+            print(f"WARN  stage 0 sidecar: geometry card is '{card_group}' but authoring as "
+                  f"'{group_type}' (--force). The screen's aspect check decides, not the card.")
         key_name = "emerald"      # the card's own paint colour, not a guess (pivot doc §3.1)
     key_rgb = scene_generate.KEYS[key_name]["rgb"]
 
@@ -219,7 +234,7 @@ def _labelled_pair(bare: np.ndarray, comp: np.ndarray, out_path: Path) -> Path:
 
 def run(image_path: Path, dry_run: bool, group_override: str, orientation_override: str,
         model_override: str = None, key_override: str = None, name_override: str = None,
-        tag_override: str = None) -> int:
+        tag_override: str = None, force: bool = False) -> int:
     sidecar_path = image_path.with_suffix(".json")
     if not sidecar_path.exists():
         return _fail("0 sidecar", f"no {sidecar_path.name} beside {image_path.name}. "
@@ -231,7 +246,7 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
 
     if _is_replicate_export(raw):
         result = _handle_replicate_export(raw, image_path, group_type, model_override,
-                                          key_override, name_override, dry_run)
+                                          key_override, name_override, dry_run, force)
         if result is None:
             return 1
         provenance, scene, tag, image_path = result
@@ -250,17 +265,31 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
     _check_source_size(image_path)
 
     screen_result = ss.screen(image_path, key_rgb, group_type)
+    # The screen is a ranker; only `aspect` is a fact about the pixels that no
+    # authoring can change, and only `aspect` is unforceable. Every other check is
+    # stricter than the nine-detector gate that actually decides: plan §3.4's open
+    # question 2 recorded `lifestyle_shelf_books` gating 8/8 while failing the
+    # screen's `frontal` at 0.087, and said to make non-aspect failures overridable
+    # rather than loosen the screen if it bit again. It bit twice more on 2026-07-31
+    # (a reading nook at frontal 0.081, a sofa scene at area 0.074).
     if not screen_result["passed"]:
-        print(f"FAIL  stage 2 screen: {screen_result['fail']} {screen_result['metrics']}")
+        forcible = "aspect" not in screen_result["fail"] and force
+        head = "WARN " if forcible else "FAIL "
+        print(f"{head} stage 2 screen: {screen_result['fail']} {screen_result['metrics']}")
         if "aspect" in screen_result["fail"]:
             print(f"  aspect cannot be fixed by authoring - regenerate this scene with "
                   f"assets/mockups/geometry_cards/geometry_card_{group_type}_*.png as a "
                   f"reference image. No bundle was written; re-authoring this PNG would "
                   f"only reach C3's cover-crop guard and be refused there too.")
-        else:
-            print("  no bundle was written.")
-        return 1
-    print(f"pass  stage 2 screen: {screen_result['metrics']}")
+            return 1
+        if not forcible:
+            print("  no bundle was written. Re-run with --force to author it anyway and let "
+                  "the gate decide - the screen is a ranker, the gate is the gate.")
+            return 1
+        print("  forced past a non-aspect screen failure; the gate below is what decides. "
+              "The failed check is still reported in the verdict block.")
+    else:
+        print(f"pass  stage 2 screen: {screen_result['metrics']}")
 
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
     contam = ss.key_contamination(rgb, ss.key_model(rgb, key_rgb))
@@ -312,8 +341,10 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
     for f in gate["findings"]:
         print(f"  {'ok  ' if f['passed'] else 'FAIL'} gate   {f['name']:20} {f['detail']}")
 
-    passed = screen_result["passed"] and gate["passed"]
-    print(f"{'=' * 70}\n{'PASS' if passed else 'FAIL'} overall - bundle at {bundle_dir}")
+    passed = (screen_result["passed"] or force) and gate["passed"]
+    print(f"{'=' * 70}\n{'PASS' if passed else 'FAIL'} overall"
+          f"{' (screen forced)' if passed and not screen_result['passed'] else ''}"
+          f" - bundle at {bundle_dir}")
     if not passed:
         print("bundle kept on disk for inspection; fix the failing detector(s) above, "
               "or re-author, before this scene goes to the owner.")
@@ -333,8 +364,9 @@ def main(argv):
     key_override = argv[argv.index("--key") + 1] if "--key" in argv else None
     name_override = argv[argv.index("--name") + 1] if "--name" in argv else None
     tag_override = argv[argv.index("--tag") + 1] if "--tag" in argv else None
+    force = "--force" in argv
     return run(image_path, dry_run, group_override, orientation_override,
-              model_override, key_override, name_override, tag_override)
+              model_override, key_override, name_override, tag_override, force)
 
 
 if __name__ == "__main__":

@@ -64,13 +64,13 @@ INTAKE_TMP = ROOT / "outputs" / "_test_scene_intake"
 
 
 def _make_scene(tmp_path, group_dirname="primary", stem="lifestyle_test",
-                 aspect=0.6869, sidecar=True, **sidecar_overrides):
+                 aspect=0.6869, sidecar=True, area_frac=0.15, **sidecar_overrides):
     """A source image + sidecar under tmp_path/<group_dirname>/, mirroring
     assets/mockups/inflow/<group>/ layout so group resolves from the folder name."""
     d = tmp_path / group_dirname
     d.mkdir(parents=True, exist_ok=True)
     img = d / f"{stem}.png"
-    _panel_image(img, aspect=aspect)
+    _panel_image(img, aspect=aspect, area_frac=area_frac)
     if sidecar:
         _sidecar(d / f"{stem}.json", **sidecar_overrides)
     return img
@@ -271,6 +271,42 @@ def test_replicate_export_card_group_mismatch_refuses(tmp_path):
     rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run", "--name", "lifestyle_repl_mismatch"])
     assert rc != 0
     assert not (ROOT / "outputs" / "scene_intake" / "lifestyle_repl_mismatch").exists()
+
+
+def test_force_harvests_a_card_group_miss_into_the_group_it_actually_fits(tmp_path):
+    # The real case (2026-07-31): a stairwell scene generated against the 10x24
+    # card rendered 0.7123 - a wasted 10x24 and a perfectly good primary. --force
+    # lets the screen's aspect check, not the card, decide where it belongs.
+    img = _make_replicate_scene(tmp_path, group_dirname="primary", aspect=0.7000,
+                                sidecar_overrides={"input": {
+                                    "prompt": "a stairwell", "image_input": [
+                                        "https://replicate.delivery/x/geometry_card_10x24_0.4167.png"]}})
+    assert scene_intake.main(["scene_intake.py", str(img), "--dry-run",
+                              "--name", "lifestyle_repl_harvest"]) != 0
+    rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run", "--force",
+                            "--name", "lifestyle_repl_harvest"])
+    assert rc == 0
+    sj = next((ROOT / "outputs" / "scene_intake" / "lifestyle_repl_harvest").rglob("scene.json"))
+    assert json.loads(sj.read_text())["group_type"] == "primary"
+
+
+def test_force_never_waives_aspect(tmp_path):
+    # A primary panel on a 10x24 target is the one failure authoring can't fix;
+    # --force must not talk the tool into a bundle C3's cover-crop guard refuses.
+    img = _make_scene(tmp_path, group_dirname="10x24", aspect=0.6869)
+    rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run", "--force"])
+    assert rc != 0
+    assert not (ROOT / "outputs" / "scene_intake" / img.stem).exists()
+
+
+def test_force_authors_past_a_non_aspect_screen_failure(tmp_path):
+    # area 0.074 against the screen's 0.10 floor - a ranking preference (don't fill
+    # the gallery with postage stamps), not a fact about the print. Plan §3.4.
+    img = _make_scene(tmp_path, stem="lifestyle_small_area", area_frac=0.074)
+    assert scene_intake.main(["scene_intake.py", str(img), "--dry-run"]) != 0
+    rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run", "--force"])
+    assert rc == 0
+    assert next((ROOT / "outputs" / "scene_intake" / img.stem).rglob("scene.json"))
 
 
 def test_replicate_export_missing_card_without_key_refuses(tmp_path):
