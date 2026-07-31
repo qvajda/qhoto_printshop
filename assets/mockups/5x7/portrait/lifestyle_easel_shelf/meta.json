@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_easel_shelf",
+  "group_type": "5x7",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      897.0,
+      408.1
+    ],
+    [
+      1555.4,
+      409.2
+    ],
+    [
+      1566.6,
+      1328.0
+    ],
+    [
+      885.9,
+      1328.0
+    ]
+  ],
+  "size": [
+    2400,
+    1792
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

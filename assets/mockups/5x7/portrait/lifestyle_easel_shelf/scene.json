@@ -1,0 +1,81 @@
+{
+  "completed_at": "2026-07-30T21:50:46.856358Z",
+  "created_at": "2026-07-30T21:50:17.628000Z",
+  "data_removed": false,
+  "error": null,
+  "id": "26fkczxw3hrmt0czpm0sfk17er",
+  "input": {
+    "prompt": "Photograph of a small blank unframed matte print standing on a little wooden easel, the easel set on a shelf. The easel's front lip crosses the middle of the print's bottom edge and clearly overlaps in front of it, well clear of the corners; all four corners of the print stay fully visible with a clear margin around them. The blank print's proportions match the reference card exactly \u00e2\u20ac\u201d same width-to-height ratio, same flat green; it is a small portrait rectangle slightly taller than it is wide, standing upright and square to the camera. The whole blank print is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. A few other decoration objects share the shelf, set to the sides and not in front of the print \u00e2\u20ac\u201d a small ceramic vessel, a set of three thick candles of various heights, and a small statue of an elephant. The wall behind is a deep dark grey, plain. Nothing green anywhere in the picture \u00e2\u20ac\u201d no plants, no foliage. Warm side light with soft shadows on the wall. Straight-on frontal view at shelf height, 50 mm, sharp. The image should evoke a homely feeling, quiet and considered.",
+    "resolution": "2K",
+    "image_input": [
+      "https://replicate.delivery/pbxt/PXX4C3D5GWlpAZ91idq2w86dGVRRBZQ3edOGJR3VCaN4Zxc9/geometry_card_5x7_0.7143.png"
+    ],
+    "aspect_ratio": "4:3",
+    "output_format": "png",
+    "safety_filter_level": "block_only_high",
+    "allow_fallback_model": false
+  },
+  "logs": "No sid\nGenerating image...\nTokens: 2272\nGenerated image in 28.85 seconds",
+  "metrics": {
+    "resolution_target": "2K",
+    "image_output_count": 1,
+    "predict_time": 29.202747096,
+    "total_time": 29.228358516
+  },
+  "output": "https://replicate.delivery/xezq/TF88uYrbFQpSCpFk3cG6VNbl8RtFwhGTli6MT1hghKsN5lvF/tmpu5m3_npr.png",
+  "started_at": "2026-07-30T21:50:17.653611Z",
+  "status": "succeeded",
+  "urls": {
+    "stream": "https://stream.replicate.com/v1/files/jbxs-25tcg7bijnbjm5ydkxetcryeygokvrnp4flqfrzz5rxz5ubnyuca",
+    "get": "https://api.replicate.com/v1/predictions/26fkczxw3hrmt0czpm0sfk17er",
+    "cancel": "https://api.replicate.com/v1/predictions/26fkczxw3hrmt0czpm0sfk17er/cancel",
+    "web": "https://replicate.com/p/26fkczxw3hrmt0czpm0sfk17er"
+  },
+  "version": "hidden",
+  "prompt": "Photograph of a small blank unframed matte print standing on a little wooden easel, the easel set on a shelf. The easel's front lip crosses the middle of the print's bottom edge and clearly overlaps in front of it, well clear of the corners; all four corners of the print stay fully visible with a clear margin around them. The blank print's proportions match the reference card exactly \u00e2\u20ac\u201d same width-to-height ratio, same flat green; it is a small portrait rectangle slightly taller than it is wide, standing upright and square to the camera. The whole blank print is mono-color of bright green. The bright green should not be reflected to any nearby surfaces. A few other decoration objects share the shelf, set to the sides and not in front of the print \u00e2\u20ac\u201d a small ceramic vessel, a set of three thick candles of various heights, and a small statue of an elephant. The wall behind is a deep dark grey, plain. Nothing green anywhere in the picture \u00e2\u20ac\u201d no plants, no foliage. Warm side light with soft shadows on the wall. Straight-on frontal view at shelf height, 50 mm, sharp. The image should evoke a homely feeling, quiet and considered.",
+  "generated_at": "2026-07-30T21:50:46.856358Z",
+  "generated_via": "Replicate (manual), prediction 26fkczxw3hrmt0czpm0sfk17er, https://replicate.com/p/26fkczxw3hrmt0czpm0sfk17er",
+  "prediction_id": "26fkczxw3hrmt0czpm0sfk17er",
+  "model": "google/nano-banana-pro",
+  "model_source": "the prediction export does not name the model; defaulted, not read",
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "scene": "lifestyle_easel_shelf",
+  "source_image": "assets\\mockups\\inflow\\5x7\\lifestyle_easel_shelf.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    70.0,
+    168.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        57.65,
+        -55.0,
+        37.0
+      ],
+      [
+        59.61,
+        -57.0,
+        40.0
+      ],
+      [
+        60.0,
+        -58.0,
+        40.0
+      ]
+    ],
+    "sigma": 0.0
+  },
+  "quad_aspect": 0.7282,
+  "aspect_delta": 0.0642,
+  "cover_crop": 0.0604,
+  "matte_coverage": 0.1424,
+  "group_type": "5x7",
+  "orientation": "portrait"
+}
