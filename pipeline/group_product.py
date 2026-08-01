@@ -28,6 +28,15 @@ class PrintResolutionError(Exception):
     pass
 
 
+class SharedProductVariantError(Exception):
+    """Raised when the candidate's product would have to be deleted and recreated to
+    satisfy a size set, but it already carries another group's variants. Under v4.12
+    the product/listing belongs to the candidate, so deleting it to re-create with a
+    different size set would destroy sizes another group already published. Growing a
+    shared product is GL-22 session 2's job (create-once-when-all-groups-are-decided);
+    until then this fails loud rather than routing around it."""
+
+
 MIN_PRINT_DPI = 150
 
 # Physical print dimensions, used here for the pre-create DPI guard only. Gelato
@@ -162,16 +171,41 @@ def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: s
         sleep_fn(_jittered(poll_interval))
 
 
+def _find_product_row(conn, candidate_id: int, group_id: int, statuses: tuple):
+    """v4.12: the Gelato product / Etsy listing belongs to the CANDIDATE, not to one
+    aspect-ratio group, so the reuse key is candidate_id. Pre-migration rows (GL-9 era,
+    candidate_id NULL) are still resolved by their original group_id - they predate the
+    new shape and must keep reusing their real, already-published Gelato product rather
+    than being duplicated by a candidate-keyed miss. New-shape rows win the tie."""
+    placeholders = ", ".join("?" * len(statuses))
+    return conn.execute(
+        f"SELECT id, gelato_product_id, status, candidate_id FROM group_products "
+        f"WHERE (candidate_id = ? OR (candidate_id IS NULL AND group_id = ?)) "
+        f"AND status IN ({placeholders}) "
+        f"ORDER BY candidate_id IS NULL, id LIMIT 1",
+        (candidate_id, group_id, *statuses),
+    ).fetchone()
+
+
+def _group_id_for_type(conn, candidate_id: int, group_type: str, fallback: int) -> int:
+    row = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = ?", (candidate_id, group_type)
+    ).fetchone()
+    return row["id"] if row is not None else fallback
+
+
 def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
                                    title: str, orientation: str = "portrait", *, store_id: str = None,
                                    api_key: str = None, poll_interval: float = 10.0,
                                    poll_timeout: float = 300.0, now=None) -> dict:
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    candidate_id = candidate["id"]
+    # v4.12: a size's artwork is resolved per its OWN group, not once for the whole call -
+    # Q1 proved one create-from-template carries a different fileUrl per variant even when
+    # they share an image_placeholder_name. Pure config lookup, so it's computed up front.
+    size_group_types = {size: config.get_group_type_for_size(static_config, size) for size in sizes}
 
-    live_row = conn.execute(
-        "SELECT id, gelato_product_id FROM group_products WHERE group_id = ? AND status IN ('created', 'published')",
-        (group_id,),
-    ).fetchone()
+    live_row = _find_product_row(conn, candidate_id, group_id, ("created", "published"))
     if live_row is not None:
         existing_sizes = {
             row["size"] for row in conn.execute(
@@ -184,6 +218,24 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         # 4-size fan-out on approval) - the existing Gelato product no longer matches, so it's
         # stale in the same sense as a mockup_failed/publish_failed row: delete it and fall
         # through to a fresh create with the newly requested variant set.
+        #
+        # v4.12 guard: that delete is only safe while every variant on the product belongs to
+        # the calling group (the primary_mockup 8x12 -> 4-size case, which is the only trigger
+        # that exists today). Once a second group's sizes are on the shared product, deleting
+        # it would destroy sizes another group already published - the shared-product delete
+        # v4.12 forbids. Fail loud; growing a shared product is session 2's create-once path.
+        foreign_variants = conn.execute(
+            "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_product_id = ? "
+            "AND group_id IS NOT NULL AND group_id != ?",
+            (live_row["id"], group_id),
+        ).fetchone()["n"]
+        if foreign_variants:
+            raise SharedProductVariantError(
+                f"Candidate {candidate_id}'s Gelato product (group_products id {live_row['id']}) "
+                f"carries {foreign_variants} variant(s) belonging to another group; refusing to "
+                f"delete and recreate it for group {group_id}'s sizes {sorted(sizes)}. Growing a "
+                f"shared product is GL-22 session 2 (create-once-when-all-groups-are-decided)."
+            )
         stale_row = live_row
         if stale_row["gelato_product_id"]:
             gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
@@ -203,11 +255,7 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
     # real Gelato product every retry, which the idempotency constraint forbids. Genuinely
     # stale rows (publish_failed, or a mockup_failed create that never returned a product id)
     # are still deleted + recreated.
-    stale_row = conn.execute(
-        "SELECT id, gelato_product_id, status FROM group_products WHERE group_id = ? "
-        "AND status IN ('mockup_failed', 'publish_failed')",
-        (group_id,),
-    ).fetchone()
+    stale_row = _find_product_row(conn, candidate_id, group_id, ("mockup_failed", "publish_failed"))
     reuse_group_product_id = None
     reuse_gelato_product_id = None
     if stale_row is not None:
@@ -245,9 +293,9 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         template_id = templates[0]["template_id"]
 
         cursor = conn.execute(
-            "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
-            "VALUES (?, ?, 'pending', ?, ?)",
-            (group_id, template_id, timestamp, timestamp),
+            "INSERT INTO group_products (candidate_id, group_id, gelato_template_id, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'pending', ?, ?)",
+            (candidate_id, group_id, template_id, timestamp, timestamp),
         )
         conn.commit()
         group_product_id = cursor.lastrowid
@@ -255,18 +303,30 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         for size, template in zip(sizes, templates):
             conn.execute(
                 "INSERT INTO group_product_variants "
-                "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (group_product_id, size, orientation, template["template_variant_id"],
+                "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (group_product_id, _group_id_for_type(conn, candidate_id, size_group_types[size], group_id),
+                 size, orientation, template["template_variant_id"],
                  static_config["prices_eur"][size], timestamp),
             )
         conn.commit()
 
     try:
-        group_type = config.get_group_type_for_size(static_config, sizes[0])
-        # Built once per call (not per branch below) - see _group_print_crop's
-        # docstring for why a second call would be a wasted duplicate R2 PUT.
-        crop_result = _group_print_crop(candidate, group_type) if group_type in _PRINT_CROP_GROUP_TYPES else None
+        # The gallery below belongs to the group that called us, whatever mix of sizes
+        # the product itself carries - read it from the groups row rather than inferring
+        # it from sizes[0], which stops being the same thing once a product is shared.
+        group_type = conn.execute(
+            "SELECT group_type FROM groups WHERE id = ?", (group_id,)
+        ).fetchone()["group_type"]
+        # One crop per distinct group_type, built once per call (not per size, not per
+        # branch below) - see _group_print_crop's docstring for why a second call with
+        # identical bytes would be a wasted duplicate R2 PUT.
+        crops = {
+            gt: _group_print_crop(candidate, gt)
+            for gt in dict.fromkeys(list(size_group_types.values()) + [group_type])
+            if gt in _PRINT_CROP_GROUP_TYPES
+        }
+        crop_result = crops.get(group_type)
 
         if reuse_group_product_id is None:
             # Non-primary groups (5x7/10x24) are a genuinely different aspect ratio
@@ -275,16 +335,22 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
             # matters for a real (non-dry-run) create: dry-run never reads image_url
             # (create_product_from_template's dry_run branch returns before the
             # variant loop).
-            image_url = candidate["base_image_url"]
-            if crop_result is not None and config.is_live_mode("GELATO"):
-                image_url = crop_result["durable_url"]
+            #
+            # v4.12: resolved per size's own group, not once for the call - a shared
+            # product's 5x7 variant carries the 5x7 crop while its 8x12 variant carries
+            # the master, in the same create call (GL-22a Q1).
+            def _image_url_for(size):
+                crop = crops.get(size_group_types[size])
+                if crop is not None and config.is_live_mode("GELATO"):
+                    return crop["durable_url"]
+                return candidate["base_image_url"]
 
             response = gelato_client.create_product_from_template(
                 template_id,
                 [
                     {"template_variant_id": t["template_variant_id"], "image_placeholder_name": t["image_placeholder_name"],
-                     "image_url": image_url}
-                    for t in templates
+                     "image_url": _image_url_for(size)}
+                    for size, t in zip(sizes, templates)
                 ],
                 title, store_id=store_id, api_key=api_key,
             )
@@ -355,9 +421,9 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
     conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
     for order, image in enumerate(images):
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, '', ?, ?)",
-            (group_product_id, image["fileUrl"], order, image["image_type"]),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, '', ?, ?)",
+            (group_product_id, group_id, image["fileUrl"], order, image["image_type"]),
         )
 
     conn.execute(

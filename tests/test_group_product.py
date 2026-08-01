@@ -767,3 +767,163 @@ def test_scale8_master_clears_150_dpi_at_every_offered_size():
     for size, (short_in, long_in) in group_product._SIZE_INCHES.items():
         dpi = min(px_short / short_in, px_long / long_in)
         assert dpi >= group_product.MIN_PRINT_DPI, f"{size} only {dpi:.0f} DPI"
+
+
+# --- GL-22 v4.12: the product belongs to the candidate, not to one group ---
+
+def test_create_or_reuse_group_product_reuses_one_product_across_two_groups(stub_mockup_bundles, tmp_path):
+    # v4.12 reuse key is candidate_id: a second group of the SAME candidate must resolve
+    # the candidate's existing product instead of creating a second Gelato product.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    other_group_id = _insert_group(conn, candidate_id, group_type="5x7")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+        first = group_product.create_or_reuse_group_product(
+            conn, primary_group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
+        )
+        second = group_product.create_or_reuse_group_product(
+            conn, other_group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:11:00",
+        )
+
+    assert mock_create.call_count == 1
+    assert first["group_product_id"] == second["group_product_id"]
+    gp_row = conn.execute(
+        "SELECT candidate_id FROM group_products WHERE id = ?", (first["group_product_id"],)
+    ).fetchone()
+    assert gp_row["candidate_id"] == candidate_id
+
+
+def test_create_or_reuse_group_product_refuses_to_delete_a_product_another_group_depends_on(
+    stub_mockup_bundles, tmp_path
+):
+    # The sizes-changed branch deletes + recreates the Gelato product. That is only safe
+    # while every variant belongs to the calling group (primary_mockup's 8x12 -> 4-size
+    # fan-out). Once another group's sizes are on the shared product, deleting it would
+    # destroy a size another group already published - v4.12 forbids that delete.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    secondary_group_id = _insert_group(conn, candidate_id, group_type="5x7")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+        first = group_product.create_or_reuse_group_product(
+            conn, primary_group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
+        )
+
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        with pytest.raises(group_product.SharedProductVariantError):
+            group_product.create_or_reuse_group_product(
+                conn, secondary_group_id, ["5x7"], candidate, static_config, "Title",
+                now="2026-07-16T09:11:00",
+            )
+
+    mock_delete.assert_not_called()
+    mock_create.assert_not_called()
+    row = conn.execute("SELECT status FROM group_products WHERE id = ?", (first["group_product_id"],)).fetchone()
+    assert row["status"] == "created"
+
+
+def test_create_or_reuse_group_product_resolves_a_pre_migration_row_by_group_id(stub_mockup_bundles, tmp_path):
+    # GL-9-era rows predate the migration and carry candidate_id NULL. They must still
+    # resolve - by group_id, as they always did - so their real, already-published Gelato
+    # product is reused rather than duplicated by a candidate-keyed miss.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    group_id = _insert_group(conn, candidate_id, group_type="primary")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+
+    cursor = conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'legacy-prod-1', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    legacy_id = cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'tv', 24.0, ?)",
+        (legacy_id, timestamp),
+    )
+    conn.commit()
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.gelato_client.delete_product") as mock_delete:
+        result = group_product.create_or_reuse_group_product(
+            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:11:00",
+        )
+
+    mock_create.assert_not_called()
+    mock_delete.assert_not_called()
+    assert result["group_product_id"] == legacy_id
+    assert result["gelato_product_id"] == "legacy-prod-1"
+    assert conn.execute(
+        "SELECT candidate_id FROM group_products WHERE id = ?", (legacy_id,)
+    ).fetchone()["candidate_id"] is None
+
+
+def test_real_create_sends_a_different_image_url_per_variants_own_group(tmp_path):
+    # GL-22a Q1: two variants sharing one image_placeholder_name carry independently
+    # submitted fileUrls in ONE create-from-template call. The 5x7 variant must get the
+    # 5x7 cover-crop while the 8x12 variant keeps the master.
+    from PIL import Image
+    master_path = tmp_path / "master.png"
+    # Clears 150 DPI at both 8x12 (1600/8=200, 2339/12=195) and 5x7.
+    Image.new("RGB", (1600, 2339), (200, 180, 150)).save(master_path, format="PNG")
+
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(
+        conn, base_image_url="https://replicate.delivery/master.png",
+        base_image_local_path=str(master_path),
+    )
+    group_id = _insert_group(conn, candidate_id, group_type="primary")
+    _insert_group(conn, candidate_id, group_type="5x7")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    r2_env = {
+        "R2_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "key", "R2_SECRET_ACCESS_KEY": "secret",
+        "R2_BUCKET": "bucket", "R2_ENDPOINT": "https://acct.r2.cloudflarestorage.com",
+        "R2_PUBLIC_BASE_URL": "https://cdn.example.com",
+    }
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch.dict("os.environ", r2_env), \
+         patch("pipeline.group_product.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll, \
+         patch("pipeline.artwork_store.http.put_bytes"), \
+         patch("pipeline.config.get_mockup_templates", return_value=[]):
+        mock_create.return_value = {"id": "gelato-prod-1"}
+        mock_poll.return_value = {"isReadyToPublish": True, "productImages": [{"fileUrl": "x", "isPrimary": True}]}
+        result = group_product.create_or_reuse_group_product(
+            conn, group_id, ["8x12", "5x7"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
+        )
+
+    assert mock_create.call_count == 1
+    variants_arg = mock_create.call_args[0][1]
+    assert [v["image_url"] for v in variants_arg] == [
+        candidate["base_image_url"],
+        f"https://cdn.example.com/base/{candidate_id}_5x7_crop.png",
+    ]
+    # ...and each variant records the group that contributed it.
+    variant_rows = conn.execute(
+        "SELECT size, group_id FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
+        (result["group_product_id"],),
+    ).fetchall()
+    group_types = {
+        row["size"]: conn.execute(
+            "SELECT group_type FROM groups WHERE id = ?", (row["group_id"],)
+        ).fetchone()["group_type"]
+        for row in variant_rows
+    }
+    assert group_types == {"8x12": "primary", "5x7": "5x7"}
