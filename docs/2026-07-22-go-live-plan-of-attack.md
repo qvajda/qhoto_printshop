@@ -943,6 +943,21 @@ splitting would have meant merging D/E through the same files twice.
   idempotent re-patch depends on (currently only exercised against a stub); the
   20-image cap against a real Etsy rejection; and the stall rule, which cannot
   fire at all until GL-7 runs the gate on a cadence.
-- **Not done in this session:** the two owner-approved destructive actions
-  (deleting the two GL-22a research drafts in Shop Manager, and dropping
-  `stash@{0}`/`stash@{1}`). Both still pending — see the next session's opener.
+- **Both approved destructive actions done.** The two GL-22a research drafts
+  are deleted — `4547726856` and `4547717123`, both `state: draft` on the
+  `GET` before, both `404` on the `GET` after (`delete_gl22a_research_drafts.py`,
+  kept as the hand-run record). First real use of session 1's `delete_listing`.
+  **The pre-delete guard fired first, and was right to:** the findings-doc
+  ledger records both as still titled `GL-22a Q1 research probe - DELETE ME`,
+  but the live `GET` returned `GL22A-PATCH-MARKER Dense Wildflower Meadow
+  Print` and `GL22A-Q3-CLEAN-PATCH-MARKER Wildflower Print`. That is the
+  ledger being stale, not the wrong listings — Q3's `update_listing` test
+  renamed them after the ledger's last read, and the findings doc records the
+  second of those titles on `4547717123` itself as "our patch". Guard relaxed
+  to the `GL22A-` marker prefix (narrow enough that nothing but this research
+  session could have written it) with that reasoning in the script, then
+  re-run. Worth carrying: a "confirm via GET before deleting" step is only
+  useful if a mismatch actually stops you, and this one did.
+  `stash@{0}`/`stash@{1}` dropped (`5f6d1c1`, `39f8300` — SHAs recorded before
+  dropping, so both stay reachable via reflog); `stash@{2}`
+  (`125331f`, feat/gl21-matte-compositor) untouched, as instructed.
