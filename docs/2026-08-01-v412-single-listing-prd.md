@@ -1,10 +1,166 @@
 # PRD — v4.12: one Etsy listing per artwork (GL-22)
 
-Status: **awaiting owner sign-off — no implementation until approved.**
+Status: **decisions signed off 2026-08-01 — cleared to build in two sessions.**
 Research gate: `docs/2026-08-01-gl22a-findings.md` (four measured answers,
 live-call ledger, impact map, GL-22b/c arithmetic — read that first, this
 PRD assumes it). Supersedes SPEC v4.11 sections 3 and 4. Plan of record:
 `docs/2026-07-22-go-live-plan-of-attack.md`, GL-22/22a/22b/22c/22d.
+Build kickoffs: session 1 ✅ `docs/2026-08-01-gl22-session1-kickoff.md`
+(landed `6df9ba5`, `ed660c1`, `b0560df`, `4c878b3`); session 2
+`docs/2026-08-02-gl22-session2-kickoff.md`.
+
+## Session 1 outcome — one PRD assumption was wrong
+
+Session 1 delivered its three workstreams, and found that **the function
+this PRD scoped as "a small change at the caller" is welded to something
+else**. Recorded here because it re-shapes session 2, not because it changes
+any decision:
+
+- **`create_or_reuse_group_product` does two jobs**: it creates the Gelato
+  product *and* renders the local compositor mockups the review gallery is
+  made of (`group_product.py:411–415`). Under `[D1]` those two have
+  incompatible timings — review mockups must exist *before* any decision,
+  the Gelato product can only be created *after* all of them. **The weld has
+  to be cut**; no ordering satisfies both jobs while they share a function.
+  Session 2 splits it into `render_group_mockups` and
+  `create_candidate_gelato_product`.
+- **The secondary path is deliberately broken between the two sessions.**
+  With the reuse key on `candidate_id`, `group_mockup` for 5x7/10x24
+  resolves the candidate's primary product, mismatches sizes and hits
+  session 1's new `SharedProductVariantError`. Dry-run-only ground, nothing
+  live runs — but real, not latent, and it is session 2's first task.
+- **The shared-product collision resolved as this PRD's plan predicted.**
+  The sizes-changed delete now fires only when every variant belongs to the
+  calling group; otherwise `SharedProductVariantError`. A review pass found
+  one hole — pre-migration variants carry `group_id NULL`, so a legacy
+  product reads as unshared however many sizes it backs, and candidate 39's
+  id-10 row (live listing `4542159277`) would have cleared the check.
+  Unreachable under current callers; closed anyway by refusing the recreate
+  on any `published` row.
+- **The "gallery assembly is the sharpest risk" call was right, and is now
+  concrete rather than hypothetical.** `group_product.py:433` and
+  `critic_pass.py:446` both run `DELETE FROM product_images WHERE
+  group_product_id = ?`; under a candidate-keyed product, 5x7 rendering its
+  mockups deletes the primary's gallery. Seven call sites read
+  `product_images` by that key.
+- **Owner decision, 2026-08-01: `group_id` scopes, the FK stays.**
+  `product_images` keeps both `group_product_id` and `group_id`; deletes
+  gain `AND group_id = ?`. Making `group_product_id` nullable was rejected —
+  it forces a SQLite table rebuild and breaks the additive-migration
+  guarantee this PRD's rollback story rests on. Renaming `group_products`
+  (now a misnomer: it is the candidate's *listing record*, with
+  `gelato_product_id` as one nullable column) was also rejected as a
+  repo-wide diff landing on top of the riskiest change. **SPEC v4.12 should
+  state the naming instead.**
+- **A process failure worth carrying forward.** A subagent ran `git stash`
+  to "compare against a clean checkout" and wiped the working tree —
+  its own work, the parallel agent's, and the owner's in-flight edits.
+  Recovered in full. **Standing rule: subagent briefs need a command
+  denylist, not just a file allowlist** — the destructive command took no
+  file arguments, so the allowlist could not catch it. Session 2's kickoff
+  carries the denylist (§4).
+
+## Owner decisions — signed off 2026-08-01
+
+Three decisions were open when this PRD was written. All three are now
+closed. Nothing else in the PRD was re-opened by them; the deltas each one
+causes are folded into Scope and Plan below and marked `[D1]`/`[D2]`/`[D3]`.
+
+- **[D1] Publish timing = GL-22c option (b), create-once-when-all-groups-are-
+  decided.** The listing is created when all three groups have reached a
+  terminal decision, and carries **only the sizes that were validated** —
+  a rejected or abandoned group contributes no variant and no gallery image.
+  This was already the PRD's assumed shape (options a and c were killed by
+  Q2/Q4); the sign-off makes it the decision rather than the last one
+  standing.
+- **[D2] Stall rule = a long timeout, no reminder** (GL-22c shape i, revised
+  by the owner 2026-08-01 after an initial "48 h nudge → 96 h skip"
+  decision). If a secondary group sits `pending_review` past **14 days**,
+  the candidate stops waiting: that group is marked `stalled_skipped` and
+  the listing publishes with whatever *was* decided. **The reminder ping is
+  deferred to post-go-live** (GL-31). See the Stall rule section below.
+- **[D3] Shipping profile = `Gelato: Free shipping` (`288734253315`),
+  €0 to every destination, resolved once per candidate.** Retail prices are
+  **unchanged** — see the margin check below for why no re-pricing is needed.
+
+### The margin check behind [D3]
+
+The owner's framing was "free shipping shown to customers, costs covered
+within the listed price". That is correct in effect but worth stating
+precisely, because it implies a re-pricing that is **not** required:
+Gelato's per-item shipping (€5.10–€5.86) is billed to the seller regardless
+of which Etsy profile the listing carries, and it is **already inside** the
+cost figures the current retail prices were set against. Recomputed from
+`docs/Premium Matte Paper Poster_BE_2026-07-05.csv` at Etsy's 9.5 % + €0.25:
+
+| Size | Gelato total cost | Retail | Net | Margin | Margin if Offsite Ads fires (15 %) |
+|---|---|---|---|---|---|
+| 5x7 | €12.88 | €19 | €4.06 | 21.4 % | 16.4 % |
+| 8x12 | €13.64 | €24 | €7.83 | 32.6 % | 27.6 % |
+| A3 | €17.92 | €35 | €13.50 | 38.6 % | 33.6 % |
+| A2 (portrait) | €20.21 | €39 | €14.84 | 38.0 % | 33.0 % |
+| A2 (landscape) | €19.60 | €39 | €15.45 | 39.6 % | 34.6 % |
+| 10x24 | €20.57 | €45 | €19.91 | 44.2 % | 39.2 % |
+| A1 | €23.45 | €49 | €20.64 | 42.1 % | 37.1 % |
+
+Every size clears cost with no price change, and the spread reproduces SPEC
+v4.11 section 4's stated ~21–44 %. What free shipping actually forfeits is
+the shipping **surcharge** the Small/Large profiles collected on top of item
+price from default-region and US buyers — revenue the margin table never
+counted (EU buyers see €5.86–€7.04 either way, so the change is close to
+neutral for the likely-majority segment). The thinnest case, a 5x7 sold
+through Offsite Ads, still nets 16.4 %; flagged as the floor, not as a
+blocker.
+
+### The stall rule [D2] — small, because the reminder is deferred
+
+Dropping the nudge removes the reason this needed a stage of its own. With
+nothing to *send*, the rule is a **predicate, not a process**: the publish
+gate already asks "have all three groups reached a terminal decision?" and
+now also accepts "…or has an undecided group aged past the window?". Two
+additions, both small:
+
+1. **`stalled_skipped`** added to the `groups.status` CHECK constraint, and
+   set on a group the gate ages out. `groups.updated_at` already carries the
+   timestamp the window is measured from — **no new column**.
+2. **`GROUP_REVIEW_STALL_DAYS = 14`**, a named constant in `pipeline/config`
+   (not a literal inside the gate), so the window is tunable without a code
+   change.
+
+**No `stall_sweep` stage, no `reminder_sent_at`.** Both were consequences of
+the nudge and both are struck. The `Runtime is discrete scheduled functions`
+list in `CLAUDE.md` therefore needs **no** new stage name.
+
+**The GL-7 dependency survives, in weaker form.** There is no scheduler
+today — `run_m1_live_test.py` is the only entrypoint — so the gate is only
+evaluated when something runs it. Until GL-7's twice-daily batch exists, the
+*effective* behaviour is wait-indefinitely. That is harmless while every run
+is hand-triggered and the owner is present by definition, but it means
+**"the stall rule fires" is a GL-7 DoD item, not a GL-22 one**. Recorded
+here so nobody later reads "14-day timeout" in the spec and assumes it is
+live.
+
+**Why 14 days, and what it costs.** A `stalled_skipped` group is
+**revisitable in principle only** — Q2 proved there is no API path to add a
+variant to a published product, so recovering a skipped size means
+re-publishing the candidate's listing from scratch. The window is therefore
+a real forfeit, and that argues for erring long: the cost of waiting too
+long is a design sitting unpublished, which is recoverable by tapping a
+button; the cost of aging out too early is a size permanently missing from a
+live listing, which is not. 14 days is two full weeks of the owner seeing
+the same pending digest entry — not 14 days of pipeline latency, since all
+three entries go out in the same evening run. It is one constant; argue with
+the number, not the mechanism.
+
+### [D1] also closes GL-29's open ordering question
+
+The go-live plan flagged that GL-29 (draft→active activation behind a flag)
+had a real ordering decision "under publish-primary-patch-later". Under [D1]
+that decision disappears: the listing is created once with every validated
+size and its full gallery already assembled, so **activation is
+unambiguously the last step of the publish path** and nothing is added to a
+buyer-visible listing afterwards. GL-29 needs no ordering logic beyond
+"call it last".
 
 ## Problem
 
@@ -56,8 +212,15 @@ shape underneath.
   `cleanup.py`'s two Gelato-product-deleting queries, and (no change needed,
   confirmed) `publish_group.py`'s reject branch — all stop deleting a shared
   product on a single group's rejection.
-- Shipping profile: resolved once per candidate instead of once per group
-  (GL-22b decides which profile).
+- Shipping profile: resolved once per candidate instead of once per group —
+  **`288734253315` "Gelato: Free shipping"** per `[D3]`. `static_config`'s
+  `etsy_shipping_profile_id` collapses from a per-group-type dict back to a
+  single value; `pipeline/config.get_shipping_profile_id()` loses its
+  group argument (`get_group_type_for_size()` stays — it has other callers).
+- **`[D2]` The stall rule**: `stalled_skipped` in the `groups.status` CHECK,
+  a `GROUP_REVIEW_STALL_DAYS = 14` constant, and one extra clause in the
+  publish gate's all-groups-decided predicate. No new stage, no new column.
+  Built in session 2; only *fires* once GL-7 runs the gate on a cadence.
 - `group_mockup.py`, `group_critic_pass.py`, `digest.py`/`group_digest.py`
   wording and data-shape changes as needed (exact extent flagged as open in
   the findings doc's impact map — not fully traced this pass).
@@ -106,15 +269,25 @@ shape underneath.
   listing rather than up to three).
 - Etsy's 20-photo cap is a hard ceiling the build must assert against, not
   assume compliance with.
-- No implementation ships before the two CLAUDE.md rewrites below are
-  reviewed and the owner has picked a GL-22b shipping-profile option and
-  signed off on GL-22c's stall-rule shape (b-i vs b-ii, see Plan below).
+- No implementation ships before the CLAUDE.md rewrites below are reviewed.
+  ✅ GL-22b and GL-22c are decided (`[D1]`/`[D2]`/`[D3]` above).
 
 ## Plan
 
-1. **Owner sign-off on this PRD**, including the GL-22b shipping profile
-   pick and the GL-22c stall-rule shape (both prepared with arithmetic in
-   the findings doc, not decided here).
+Split into **two coding sessions**, at the boundary between the create path
+and gallery assembly — the gallery is where the sharpest correctness risk
+lives (one group's rebuild wiping another's images) and it deserves its own
+session and its own PR rather than riding along behind a schema migration.
+
+**Session 1 — steps 2–4** (`docs/2026-08-01-gl22-session1-kickoff.md`):
+`etsy_client` fixes, the additive schema migration, the candidate-keyed
+create path. Self-contained, dry-run-only, no gallery behaviour touched.
+
+**Session 2 — steps 5–10**: gallery assembly, abandon/reject/cleanup, the
+shipping-profile collapse, the stall sweep `[D2]`, the digest/mockup/critic
+pass, tests, SPEC v4.12, CLAUDE.md rewrites.
+
+1. ✅ **Owner sign-off** — done 2026-08-01, including GL-22b and GL-22c.
 2. **Schema migration** (additive): `group_products.candidate_id`,
    `group_product_variants.group_id`, `product_images.group_id`. No
    existing row rewritten; the four GL-9-era rows keep resolving under
@@ -133,7 +306,12 @@ shape underneath.
 6. **Abandon/reject/cleanup rework**: the three call sites named in the
    impact map, each changed to stop deleting a shared product.
 7. **Shipping profile**: one resolution point at candidate-level publish,
-   per GL-22b's picked profile.
+   hardcoded to `288734253315` per `[D3]`; `static_config`'s per-group-type
+   dict collapses to a single value.
+7b. **`[D2]` Stall rule**: `stalled_skipped` in the `groups.status` CHECK,
+   `GROUP_REVIEW_STALL_DAYS = 14` in `pipeline/config`, and the extra clause
+   in the publish gate. Measured off `groups.updated_at`. Dormant until GL-7
+   evaluates the gate on a cadence.
 8. **Digest/mockup/critic wording + data-shape pass**: `group_mockup.py`,
    `group_critic_pass.py`, `digest.py`/`group_digest.py` — extent to be
    confirmed at implementation time per the impact map's flag.
@@ -261,36 +439,42 @@ that one group … its Gelato product(s) via DELETE …`) **with:**
 
 **3. Replace the shipping-profile paragraph's "per aspect-ratio group, not
 per size" framing** (the `etsy_shipping_profile_id` bullet under Static
-config values) **with** (exact replacement value depends on the GL-22b
-decision — placeholder shown for the recommended option, `Free shipping`;
-swap in Large/Small/re-price text if the owner picks differently):
+config values) **with** (value now fixed by `[D3]`, no longer a placeholder):
 
 > - Etsy shipping_profile_id: **resolved once per candidate, not per group
->   (v4.12) — recommended: `288734253315` ("Gelato: Free shipping", €0 to
+>   (v4.12) — `288734253315` ("Gelato: Free shipping", €0 to
 >   every destination, confirmed live 2026-08-01 via `GET
->   /v3/application/shops/{shop_id}/shipping-profiles`).** One listing gets
+>   /v3/application/shops/{shop_id}/shipping-profiles`; owner decision
+>   2026-08-01).** One listing gets
 >   exactly one Etsy shipping profile; under v4.12 that's resolved once for
 >   the whole candidate rather than once per aspect-ratio group. The
 >   previous per-group Small/Large split (5x7 → Small `287910553824`,
 >   primary + 10x24 → Large `287910565714`) no longer applies once sizes
->   share a listing. See `docs/2026-08-01-gl22a-findings.md` GL-22b for the
->   margin arithmetic behind this pick.
+>   share a listing. **Retail prices are unchanged** — Gelato's per-item
+>   shipping (€5.10–€5.86) is billed to the seller whichever profile is
+>   set, and is already inside the cost basis those prices were built on;
+>   all six sizes clear cost at 21–44 % with €0 shown at checkout. See
+>   `docs/2026-08-01-gl22a-findings.md` GL-22b and this PRD's margin table.
+
+**4. No fourth change needed.** An earlier draft of `[D2]` would have added a
+`stall-sweep` stage to the `Runtime is discrete scheduled functions` bullet's
+stage list. With the reminder deferred, the stall rule is a predicate inside
+the existing publish gate, not a stage — that bullet is untouched.
 
 ## Open questions
 
-- **`patch_etsy_listing`'s image upload loop** — full re-upload or delta on
-  each call? Not resolved in this research pass (flagged in the impact
-  map); must be answered before the gallery-assembly step is implemented,
-  since it decides whether appending 5x7/10x24 images later is cheap or
-  re-uploads the primary gallery every time.
-- **GL-22c stall rule, shape (i) vs (ii)** — auto-publish-primary-only after
-  a timeout and treat un-decided secondary groups as revisitable, or no
-  timeout and let the whole listing wait indefinitely on a slow secondary
-  decision? Needs explicit owner sign-off, not a default.
-- **GL-22b final pick** — this PRD recommends `Free shipping`
-  (`288734253315`) with the arithmetic in the findings doc, but it's a real
-  revenue trade-off on default-region/US orders, not a strictly-better
-  option; needs the owner's sign-off, not an assumed default.
+Resolved since the first draft: GL-22b (→ `[D3]`), GL-22c shape (→ `[D1]`),
+GL-22c stall rule (→ `[D2]`), the image-upload loop and the
+`group_mockup`/`group_critic_pass`/`digest` extent (both below). Still open:
+
+- ✅ **`patch_etsy_listing`'s image upload loop — answered 2026-08-01.**
+  `group_product.py:482–494` uploads **every** image row unconditionally on
+  every call: a full re-upload, no delta, no dedup. Under `[D1]` it is
+  called once per candidate with the full assembled gallery, so the
+  append-across-two-reviews concern this question was asked about
+  **dissolves**. What replaces it: **retry safety** — a second call after a
+  partial failure duplicates the whole gallery on the listing. Session 2
+  must make it idempotent and test that.
 - **`group_mockup.py`/`group_critic_pass.py`/`digest.py` exact diff size** —
   named as touched in the impact map but not fully traced this pass; budget
   in this session went to the live-call questions per the brief's stated
@@ -302,7 +486,17 @@ swap in Large/Small/re-price text if the owner picks differently):
   its own authorisation and live-call budget, not spent in this session.
   Treat "Gelato might re-push after a dashboard-driven edit" as an open
   risk in the PRD's plan, not a closed one.
+- **The 14-day stall window `[D2]`** — picked as a deliberately long first
+  cut, not measured against owner behaviour (there is no behaviour to
+  measure yet: the pipeline has never run unattended). One named constant;
+  revisit after GL-7's soak gives a real sense of decision latency.
+- **The deferred reminder (GL-31)** — deferring it is right for go-live, but
+  it means the *only* signal that a group is aging out is the owner
+  remembering an untapped digest entry. Worth revisiting early post-launch
+  rather than letting it sit at the bottom of the queue, precisely because a
+  timed-out size cannot be added back.
 
 ---
 
-**Awaiting owner sign-off — no implementation until approved.**
+**Decisions signed off 2026-08-01. Session 1 ✅ landed; session 2 is cleared
+to start — `docs/2026-08-02-gl22-session2-kickoff.md`.**

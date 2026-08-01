@@ -30,8 +30,8 @@ DEFAULT_REDIRECT_URI = "https://www.example.com/oauth/redirect"
 
 # SPEC_v4.4: shop-section (shops_w) + listing patch (listings_w) both needed;
 # _r counterparts needed to read what we're patching; transactions_r for
-# order data.
-SCOPES = "listings_r listings_w shops_r shops_w transactions_r"
+# order data. listings_d added for GL-22a group-abandon delete path.
+SCOPES = "listings_r listings_w listings_d shops_r shops_w transactions_r"
 
 
 def _b64url(raw: bytes) -> str:

@@ -141,10 +141,19 @@ pipeline stage — don't guess at behavior that's already specified.
   4. A design can end up selling at 4, 5, or 6 sizes depending on whether
      the 5x7/10x24 groups each pass their own review — this is expected,
      not a bug.
-- Data storage is SQLite, not a flat file — one row per aspect-ratio group
-  per candidate, not one row per candidate; under v4.11 each group has ONE
-  Gelato product + ONE Etsy listing (sizes are variants), plus its own
-  decision and critic-pass history.
+- Data storage is SQLite, not a flat file. One `groups` row per aspect-ratio
+  group per candidate, each carrying its own decision and critic-pass
+  history — **that part is unchanged.** What changed in v4.12: the
+  **product/listing unit is the candidate, not the group** — ONE Gelato
+  product + ONE Etsy listing per candidate, with the validated sizes as
+  variants. `group_products` is therefore a **misnomer**: it is the
+  candidate's *listing record*, and `gelato_product_id` is one nullable
+  column on it, NULL for the whole multi-day review window until the single
+  create at publish. **Anything that sweeps `pending` rows with no product
+  id must know that** — under v4.12 that is the normal state, not a stranded
+  one. `group_product_variants` and `product_images` each carry a `group_id`
+  recording which group produced them; every delete against them must scope
+  by it, or one group's rebuild wipes another's reviewed gallery.
 - Static config (Gelato template IDs, Etsy taxonomy_id, shipping_profile_id,
   production_partner_ids, who_made value, Telegram admin/allowlist user ID)
   is resolved once and hardcoded/read from config — never discovered
