@@ -263,13 +263,13 @@ def test_persist_mockup_render_uploads_to_r2_and_returns_durable_url(tmp_path, m
     raw = b"rendered mockup composite bytes"
 
     with patch("pipeline.artwork_store.http.put_bytes") as mock_put:
-        result = artwork_store.persist_mockup_render(7, 0, raw)
+        result = artwork_store.persist_mockup_render(7, 1, 0, raw)
 
     mock_put.assert_called_once()
     put_url = mock_put.call_args[0][0]
-    assert put_url == "https://test-account.r2.cloudflarestorage.com/test-bucket/base/7_mockup_0.png"
-    assert result["durable_url"] == "https://cdn.example.com/base/7_mockup_0.png"
-    assert (tmp_path / "7_mockup_0.png").read_bytes() == raw
+    assert put_url == "https://test-account.r2.cloudflarestorage.com/test-bucket/base/7_1_mockup_0.png"
+    assert result["durable_url"] == "https://cdn.example.com/base/7_1_mockup_0.png"
+    assert (tmp_path / "7_1_mockup_0.png").read_bytes() == raw
 
 
 def test_persist_mockup_render_stays_local_only_when_r2_absent(tmp_path, monkeypatch):
@@ -278,10 +278,10 @@ def test_persist_mockup_render_stays_local_only_when_r2_absent(tmp_path, monkeyp
         monkeypatch.delenv(key, raising=False)
 
     with patch("pipeline.artwork_store.http.put_bytes") as mock_put:
-        result = artwork_store.persist_mockup_render(7, 2, b"scene bytes")
+        result = artwork_store.persist_mockup_render(7, 1, 2, b"scene bytes")
 
     mock_put.assert_not_called()
-    assert result["durable_url"] == str(tmp_path / "7_mockup_2.png")
+    assert result["durable_url"] == str(tmp_path / "7_1_mockup_2.png")
 
 
 def test_persist_mockup_render_idempotent_on_same_bytes_overwrites_on_different(tmp_path, monkeypatch):
@@ -289,19 +289,19 @@ def test_persist_mockup_render_idempotent_on_same_bytes_overwrites_on_different(
     for key in artwork_store.R2_ENV_VARS:
         monkeypatch.delenv(key, raising=False)
 
-    first = artwork_store.persist_mockup_render(3, 1, b"scene one")
-    mtime_after_first = (tmp_path / "3_mockup_1.png").stat().st_mtime_ns
+    first = artwork_store.persist_mockup_render(3, 1, 1, b"scene one")
+    mtime_after_first = (tmp_path / "3_1_mockup_1.png").stat().st_mtime_ns
 
     # Same bytes, same slot - file left untouched (idempotent).
-    same = artwork_store.persist_mockup_render(3, 1, b"scene one")
+    same = artwork_store.persist_mockup_render(3, 1, 1, b"scene one")
     assert same["sha256"] == first["sha256"]
-    assert (tmp_path / "3_mockup_1.png").stat().st_mtime_ns == mtime_after_first
+    assert (tmp_path / "3_1_mockup_1.png").stat().st_mtime_ns == mtime_after_first
 
     # A retry re-render with different bytes for the same slot overwrites, not
-    # accumulates - this is the whole point of keying by group_product_id+index.
-    different = artwork_store.persist_mockup_render(3, 1, b"scene one RETRIED")
+    # accumulates - this is the whole point of keying by group_product_id+group_id+index.
+    different = artwork_store.persist_mockup_render(3, 1, 1, b"scene one RETRIED")
     assert different["sha256"] != first["sha256"]
-    assert (tmp_path / "3_mockup_1.png").read_bytes() == b"scene one RETRIED"
+    assert (tmp_path / "3_1_mockup_1.png").read_bytes() == b"scene one RETRIED"
 
 
 # --- persist_base_artwork with R2 NOT configured (Task 1 behavior unchanged) ---

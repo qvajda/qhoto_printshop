@@ -7,14 +7,25 @@ import pipeline.publish_primary_group as publish_primary_group
 
 
 def get_live_group_product(conn, group_id: int) -> dict:
-    row = conn.execute(
-        "SELECT * FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
-        "ORDER BY id LIMIT 1",
-        (group_id,),
-    ).fetchone()
+    """v4.12: resolved through the group's CANDIDATE - the listing record is the
+    candidate's, shared by every group, and carries no Gelato product until publish."""
+    group_row = conn.execute("SELECT candidate_id FROM groups WHERE id = ?", (group_id,)).fetchone()
+    row = None if group_row is None else group_product.live_product_row(
+        conn, group_row["candidate_id"], group_id
+    )
     if row is None:
         raise ValueError(f"No live group_product for group {group_id}")
     return dict(row)
+
+
+def _discard_group_contribution(conn, candidate_id, group_id, *, store_id=None, gelato_api_key=None):
+    """Drop this group's variants and gallery images from the candidate's listing record.
+    Deletes nothing shared: no Gelato product, no Etsy listing, no group_products row."""
+    live_row = group_product.live_product_row(conn, candidate_id, group_id)
+    if live_row is not None:
+        critic_pass.discard_superseded_attempt(
+            conn, live_row["id"], group_id, store_id=store_id, api_key=gelato_api_key,
+        )
 
 
 def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *,
@@ -26,80 +37,46 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
     if action == "approve":
         publish_primary_group.record_decision(conn, group_id, "approved", decision_notes, now=now)
         static_config = static_config if static_config is not None else config.load_static_config()
-
-        group_product_row = get_live_group_product(conn, group_id)
-        group_row = conn.execute(
-            "SELECT group_type FROM groups WHERE id = ?", (group_id,)
-        ).fetchone()
-        group_type = group_row["group_type"]
-        listing_text = dict(
-            conn.execute(
-                "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
-            ).fetchone()
+        # v4.12 [D1]: a secondary approval doesn't publish anything by itself - it just
+        # settles one more group. The candidate's single listing is created once, when
+        # the gate below finds every group decided.
+        result = publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=static_config, store_id=store_id,
+            gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            dry_run=dry_run, now=now,
         )
-
-        def attempt():
-            return group_product.patch_etsy_listing(
-                conn, group_product_row["id"], group_type, listing_text, static_config,
-                shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
-                etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
-            )
-
-        # Retry the patch once (mirrors publish_primary_group) - a transient Gelato
-        # sync/Etsy hiccup shouldn't dead-end the group at publish_failed on one miss.
-        try:
-            try:
-                etsy_listing_id = attempt()
-            except Exception:
-                etsy_listing_id = attempt()
-        except Exception:
-            conn.execute(
-                "UPDATE groups SET status = 'publish_failed', updated_at = ? WHERE id = ?",
-                (timestamp, group_id),
-            )
-            conn.commit()
-            raise
-
-        conn.execute(
-            "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",
-            (timestamp, group_id),
-        )
-        conn.commit()
-        return {"action": "approve", "etsy_listing_id": etsy_listing_id}
+        return {"action": "approve", **result}
 
     if action == "reject":
         publish_primary_group.record_decision(conn, group_id, "rejected", decision_notes, now=now)
-
-        live_row = conn.execute(
-            "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
-            "ORDER BY id LIMIT 1",
-            (group_id,),
-        ).fetchone()
-        if live_row is not None:
-            critic_pass.discard_superseded_attempt(
-                conn, live_row["id"], store_id=store_id, api_key=gelato_api_key,
-            )
-
+        # Rejecting a secondary group deletes NOTHING shared (CLAUDE.md v4.12): its own
+        # sizes and images leave the candidate's listing build, the product/listing and
+        # every other group's rows are untouched.
+        _discard_group_contribution(
+            conn, candidate_id, group_id, store_id=store_id, gelato_api_key=gelato_api_key,
+        )
         conn.execute(
             "UPDATE groups SET status = 'rejected', updated_at = ? WHERE id = ?",
             (timestamp, group_id),
         )
         conn.commit()
-        return {"action": "reject"}
+        # The rejection may have been the last undecided group - the candidate then
+        # publishes with the sizes that did pass.
+        static_config = static_config if static_config is not None else config.load_static_config()
+        result = publish_primary_group.publish_primary_group(
+            conn, candidate_id, static_config=static_config, store_id=store_id,
+            gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+            dry_run=dry_run, now=now,
+        )
+        return {"action": "reject", **result}
 
     if action == "edit":
         publish_primary_group.record_decision(conn, group_id, "edited", decision_notes, now=now)
-
-        live_row = conn.execute(
-            "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
-            "ORDER BY id LIMIT 1",
-            (group_id,),
-        ).fetchone()
-        if live_row is not None:
-            critic_pass.discard_superseded_attempt(
-                conn, live_row["id"], store_id=store_id, api_key=gelato_api_key,
-            )
-
+        _discard_group_contribution(
+            conn, candidate_id, group_id, store_id=store_id, gelato_api_key=gelato_api_key,
+        )
         conn.execute("DELETE FROM critic_pass_attempts WHERE group_id = ?", (group_id,))
         conn.execute("DELETE FROM group_messages WHERE group_id = ?", (group_id,))
         conn.commit()

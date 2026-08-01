@@ -230,3 +230,23 @@ def test_mockup_bundle_dir_resolves_placeholder_path_that_does_not_exist():
     assert result.exists() is False
     with pytest.raises(MockupRenderError):
         load_bundle(result)
+
+
+# --- v4.12 [D3]: one shipping profile per candidate, not per aspect-ratio group ---
+
+def test_get_shipping_profile_id_returns_the_single_free_shipping_profile():
+    # One listing per artwork means one Etsy shipping profile per listing, so the
+    # per-group-type Small/Large split is gone. "Gelato: Free shipping", EUR0 to every
+    # destination - retail prices unchanged, the per-item cost was always the seller's.
+    assert config.get_shipping_profile_id(config.load_static_config()) == "288734253315"
+
+
+def test_get_shipping_profile_id_raises_when_unset():
+    with pytest.raises(config.MissingConfigError, match="etsy_shipping_profile_id"):
+        config.get_shipping_profile_id({"etsy_shipping_profile_id": ""})
+
+
+def test_group_review_stall_days_is_a_named_constant():
+    # [D2] The stall window is tunable without a code change, and is deliberately long:
+    # a size aged out of a published listing can never be added back (GL-22a Q2).
+    assert config.GROUP_REVIEW_STALL_DAYS == 14

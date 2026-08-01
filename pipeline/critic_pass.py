@@ -8,8 +8,8 @@ from PIL import Image, ImageFilter, ImageStat
 import pipeline.anthropic_client as anthropic_client
 import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
-import pipeline.gelato_client as gelato_client
 import pipeline.generate as generate
+import pipeline.group_product as group_product
 import pipeline.http as http
 import pipeline.primary_mockup as primary_mockup
 import pipeline.replicate_client as replicate_client
@@ -382,17 +382,18 @@ def get_primary_group_state(conn, candidate_id: int) -> dict:
         raise ValueError(f"No primary group for candidate {candidate_id}")
     group_id = group_row["id"]
 
-    group_product_row = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND status = 'created'",
-        (group_id,),
-    ).fetchone()
+    # v4.12: the listing record belongs to the candidate (and is 'pending' - no Gelato
+    # product exists - for the whole review window), but the gallery under review is
+    # this group's alone.
+    group_product_row = group_product.live_product_row(conn, candidate_id, group_id)
     if group_product_row is None:
         raise ValueError(f"No live group_products row for candidate {candidate_id}'s primary group")
     group_product_id = group_product_row["id"]
 
     image_rows = conn.execute(
-        "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
-        (group_product_id,),
+        "SELECT image_url FROM product_images WHERE group_product_id = ? AND group_id = ? "
+        "ORDER BY gallery_order",
+        (group_product_id, group_id),
     ).fetchall()
     image_urls = [row["image_url"] for row in image_rows]
 
@@ -434,17 +435,28 @@ def record_critic_attempt(conn, group_id: int, attempt_number: int, result: dict
     return cursor.lastrowid
 
 
-def discard_superseded_attempt(conn, group_product_id: int, *, store_id: str = None, api_key: str = None) -> None:
+def discard_superseded_attempt(conn, group_product_id: int, group_id: int, *,
+                                store_id: str = None, api_key: str = None) -> None:
+    """Throws away ONE group's gallery images from the candidate's listing record, so the
+    next attempt renders into a clean slot. The group's variant rows stay: a retry
+    re-renders the same sizes at the same prices, only the artwork changes, and an
+    excluded group's sizes are dropped later by create_candidate_gelato_product anyway.
+
+    v4.12: it deletes nothing shared and nothing external. The Gelato product and the
+    Etsy listing belong to the CANDIDATE, not to this group; other groups (already
+    reviewed, or still pending) depend on them surviving, and Q2 proved a deleted
+    product cannot be grown back. So the group_products row stays, the Gelato product
+    is never deleted, and every delete below is scoped by group_id. Abandoning a group
+    means marking it and excluding it - see group_product.included_group_ids."""
     row = conn.execute(
         "SELECT gelato_product_id FROM group_products WHERE id = ?", (group_product_id,)
     ).fetchone()
     if row is None:
         raise ValueError(f"No group_products row with id {group_product_id}")
-    if row["gelato_product_id"]:
-        gelato_client.delete_product(row["gelato_product_id"], store_id=store_id, api_key=api_key)
-    conn.execute("DELETE FROM group_product_variants WHERE group_product_id = ?", (group_product_id,))
-    conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
-    conn.execute("DELETE FROM group_products WHERE id = ?", (group_product_id,))
+    conn.execute(
+        "DELETE FROM product_images WHERE group_product_id = ? AND group_id = ?",
+        (group_product_id, group_id),
+    )
     conn.commit()
 
 
@@ -507,7 +519,8 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
             return {"candidate_id": candidate_id, "passed": True, "attempts": attempt_number}
 
         discard_superseded_attempt(
-            conn, state["group_product_id"], store_id=store_id, api_key=gelato_api_key
+            conn, state["group_product_id"], state["group_id"],
+            store_id=store_id, api_key=gelato_api_key,
         )
 
         if attempt_number >= 3:

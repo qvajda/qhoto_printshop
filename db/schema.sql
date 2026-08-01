@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS groups (
   decision_notes TEXT,
   decided_at TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending_generation','pending_review','approved_published','rejected','failed_abandoned','publish_failed'
+    'pending_generation','pending_review','approved_published','rejected','failed_abandoned',
+    'publish_failed','stalled_skipped'
   )),
   failed_reason TEXT,
   created_at TEXT NOT NULL,
@@ -114,7 +115,8 @@ CREATE TABLE IF NOT EXISTS product_images (
   image_url TEXT NOT NULL,
   alt_text TEXT NOT NULL,
   gallery_order INTEGER NOT NULL,
-  image_type TEXT NOT NULL CHECK(image_type IN ('flat_mockup','lifestyle'))
+  image_type TEXT NOT NULL CHECK(image_type IN ('flat_mockup','lifestyle')),
+  etsy_listing_image_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS group_messages (

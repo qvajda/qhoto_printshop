@@ -83,7 +83,10 @@ def test_get_or_create_primary_group_returns_existing_row(tmp_path):
 # tests/test_group_product.py, not re-tested here.
 
 
-def test_create_primary_mockup_creates_group_product_with_8x12_variant(stub_mockup_bundles, tmp_path):
+def test_create_primary_mockup_creates_group_product_with_all_primary_sizes(stub_mockup_bundles, tmp_path):
+    # v4.12: the primary group records its FULL size set (8x12/A3/A2/A1) at render
+    # time, not just 8x12 - there is no later Gelato-product fan-out to grow it, so the
+    # variant rows must already carry every primary size here.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     static_config = config.load_static_config()
@@ -95,43 +98,54 @@ def test_create_primary_mockup_creates_group_product_with_8x12_variant(stub_mock
     gp_row = conn.execute(
         "SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)
     ).fetchone()
-    assert gp_row["status"] == "created"
-    variant_row = conn.execute(
-        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ?",
+    # No Gelato product is ever created by the render path - the row stays 'pending'
+    # (no gelato_product_id) all through the review window.
+    assert gp_row["status"] == "pending"
+    assert gp_row["gelato_product_id"] is None
+    variant_rows = conn.execute(
+        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
         (result["group_product_id"],),
-    ).fetchone()
-    assert variant_row["size"] == "8x12"
-    assert variant_row["price_eur"] == static_config["prices_eur"]["8x12"]
+    ).fetchall()
+    sizes = {row["size"]: row["price_eur"] for row in variant_rows}
+    assert sizes == {
+        size: static_config["prices_eur"][size]
+        for size in static_config["aspect_ratio_groups"]["primary"]
+    }
     conn.close()
 
 
-def test_create_primary_mockup_delegates_to_create_or_reuse_group_product(tmp_path):
+def test_create_primary_mockup_delegates_to_render_group_mockups(tmp_path):
+    # create_or_reuse_group_product is gone (split into render_group_mockups +
+    # create_candidate_gelato_product). create_primary_mockup only calls the render
+    # half, with the full primary size set, and forwards no Gelato poll args - there
+    # is no Gelato call at mockup time under v4.12.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, niche="monstera line art")
     static_config = config.load_static_config()
 
     with patch(
-        "pipeline.primary_mockup.group_product.create_or_reuse_group_product"
-    ) as mock_create:
-        mock_create.return_value = {"group_product_id": 42, "gelato_product_id": "gelato-prod-1"}
+        "pipeline.primary_mockup.group_product.render_group_mockups"
+    ) as mock_render:
+        mock_render.return_value = {"group_product_id": 42, "image_count": 4}
         result = primary_mockup.create_primary_mockup(
             conn, candidate_id, static_config=static_config, store_id="store1", api_key="key1",
             poll_interval=1, poll_timeout=5, now=datetime(2026, 7, 16, 12, 0, 0),
         )
 
-    assert mock_create.call_count == 1
-    args, kwargs = mock_create.call_args
-    conn_arg, group_id_arg, sizes_arg, candidate_arg, static_config_arg, title_arg = args
-    assert sizes_arg == ["8x12"]
+    assert mock_render.call_count == 1
+    args, kwargs = mock_render.call_args
+    conn_arg, group_id_arg, sizes_arg, candidate_arg, static_config_arg = args
+    assert sizes_arg == static_config["aspect_ratio_groups"]["primary"]
     assert candidate_arg["niche"] == "monstera line art"
-    assert title_arg == primary_mockup.build_mockup_title(candidate_arg)
-    assert kwargs["store_id"] == "store1"
-    assert kwargs["api_key"] == "key1"
-    assert kwargs["poll_interval"] == 1
-    assert kwargs["poll_timeout"] == 5
+    assert kwargs["now"] == datetime(2026, 7, 16, 12, 0, 0)
+    # No Gelato poll args are forwarded - render_group_mockups makes no Gelato call.
+    assert "store_id" not in kwargs
+    assert "api_key" not in kwargs
+    assert "poll_interval" not in kwargs
+    assert "poll_timeout" not in kwargs
 
     assert result["group_product_id"] == 42
-    assert result["gelato_product_id"] == "gelato-prod-1"
+    assert "gelato_product_id" not in result
 
     group_row = conn.execute("SELECT * FROM groups WHERE id = ?", (result["group_id"],)).fetchone()
     assert group_row["status"] == "pending_review"
@@ -144,7 +158,7 @@ def test_create_primary_mockup_propagates_delegate_failure(tmp_path):
     static_config = config.load_static_config()
 
     with patch(
-        "pipeline.primary_mockup.group_product.create_or_reuse_group_product",
+        "pipeline.primary_mockup.group_product.render_group_mockups",
         side_effect=RuntimeError("Gelato 500"),
     ):
         try:
@@ -171,9 +185,9 @@ def test_run_primary_mockup_cycle_processes_ready_candidates_and_skips_others(tm
     static_config = config.load_static_config()
 
     with patch(
-        "pipeline.primary_mockup.group_product.create_or_reuse_group_product"
-    ) as mock_create:
-        mock_create.return_value = {"group_product_id": 1, "gelato_product_id": "gelato-prod-x"}
+        "pipeline.primary_mockup.group_product.render_group_mockups"
+    ) as mock_render:
+        mock_render.return_value = {"group_product_id": 1, "image_count": 4}
         processed_ids = primary_mockup.run_primary_mockup_cycle(
             conn, static_config=static_config, store_id="store1", api_key="key1",
             now=datetime(2026, 7, 16, 12, 0, 0),
@@ -190,7 +204,7 @@ def test_run_primary_mockup_cycle_skips_candidates_already_mocked_up(stub_mockup
     )
     static_config = config.load_static_config()
 
-    # Exercise the real create_or_reuse_group_product (dry-run, since GELATO_LIVE_MODE is unset)
+    # Exercise the real render_group_mockups (it makes no Gelato call at all under v4.12)
     # so the group_products row it inserts is what makes the cycle's exclusion query work -
     # fully mocking that function away (as elsewhere in this file) would skip the DB write the
     # idempotency check here actually depends on.
@@ -216,14 +230,14 @@ def test_run_primary_mockup_cycle_isolates_per_candidate_failures(tmp_path):
                                        base_image_url="https://replicate.delivery/ok.png")
     static_config = config.load_static_config()
 
-    def fake_create_or_reuse(conn, group_id, sizes, candidate, static_config, title, **kwargs):
+    def fake_render(conn, group_id, sizes, candidate, static_config, **kwargs):
         if candidate["base_image_url"] == "https://replicate.delivery/fail.png":
             raise RuntimeError("Gelato throttled")
-        return {"group_product_id": 1, "gelato_product_id": "gelato-prod-ok"}
+        return {"group_product_id": 1, "image_count": 4}
 
     with patch(
-        "pipeline.primary_mockup.group_product.create_or_reuse_group_product",
-        side_effect=fake_create_or_reuse,
+        "pipeline.primary_mockup.group_product.render_group_mockups",
+        side_effect=fake_render,
     ):
         processed_ids = primary_mockup.run_primary_mockup_cycle(
             conn, static_config=static_config, store_id="store1", api_key="key1",
@@ -252,9 +266,9 @@ def test_run_primary_mockup_cycle_retries_candidate_with_mockup_failed_product(t
     static_config = config.load_static_config()
 
     with patch(
-        "pipeline.primary_mockup.group_product.create_or_reuse_group_product"
-    ) as mock_create:
-        mock_create.return_value = {"group_product_id": 99, "gelato_product_id": "gelato-prod-retry"}
+        "pipeline.primary_mockup.group_product.render_group_mockups"
+    ) as mock_render:
+        mock_render.return_value = {"group_product_id": 99, "image_count": 4}
         processed_ids = primary_mockup.run_primary_mockup_cycle(
             conn, static_config=static_config, now=datetime(2026, 7, 16, 12, 0, 0),
         )

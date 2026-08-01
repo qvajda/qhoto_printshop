@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pipeline.critic_pass as critic_pass
 import pipeline.config as config
 import pipeline.group_mockup as group_mockup
+import pipeline.group_product as group_product
 
 
 def get_group_critic_state(conn, candidate_id: int, group_type: str) -> dict:
@@ -14,10 +15,9 @@ def get_group_critic_state(conn, candidate_id: int, group_type: str) -> dict:
         raise ValueError(f"No {group_type} group for candidate {candidate_id}")
     group_id = group_row["id"]
 
-    group_product_row = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND status = 'created'",
-        (group_id,),
-    ).fetchone()
+    # v4.12: the listing record is the candidate's; the gallery under review is this
+    # group's alone (see critic_pass.get_primary_group_state).
+    group_product_row = group_product.live_product_row(conn, candidate_id, group_id)
     if group_product_row is None:
         raise ValueError(
             f"No live group_products row for candidate {candidate_id}'s {group_type} group"
@@ -25,8 +25,9 @@ def get_group_critic_state(conn, candidate_id: int, group_type: str) -> dict:
     group_product_id = group_product_row["id"]
 
     image_rows = conn.execute(
-        "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
-        (group_product_id,),
+        "SELECT image_url FROM product_images WHERE group_product_id = ? AND group_id = ? "
+        "ORDER BY gallery_order",
+        (group_product_id, group_id),
     ).fetchall()
     image_urls = [row["image_url"] for row in image_rows]
 
@@ -92,7 +93,8 @@ def run_group_critic_pass(conn, candidate_id: int, group_type: str, *, static_co
             return {"group_id": group_id, "passed": True, "attempts": attempt_number}
 
         critic_pass.discard_superseded_attempt(
-            conn, state["group_product_id"], store_id=store_id, api_key=gelato_api_key
+            conn, state["group_product_id"], state["group_id"],
+            store_id=store_id, api_key=gelato_api_key,
         )
 
         if attempt_number >= 3:
@@ -114,10 +116,9 @@ def run_group_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_a
         """
         SELECT DISTINCT g.candidate_id, g.group_type
         FROM groups g
-        JOIN group_products gp ON gp.group_id = g.id
         WHERE g.group_type IN ('5x7', '10x24')
           AND g.status = 'pending_review'
-          AND gp.status = 'created'
+          AND EXISTS (SELECT 1 FROM product_images pi WHERE pi.group_id = g.id)
           AND g.id NOT IN (SELECT group_id FROM critic_pass_attempts WHERE passed = 1)
         ORDER BY g.candidate_id, g.group_type
         """

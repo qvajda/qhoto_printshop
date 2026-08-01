@@ -98,9 +98,12 @@ def test_stranded_pending_group_product_reclaimed_then_create_or_reuse_succeeds_
     )
     group_id = _insert_group(conn, candidate_id)
 
-    # Simulate the exact crash window: create_or_reuse_group_product's INSERT +
-    # commit landed, then the process died before the Gelato call. No human
-    # fixes this row - the next cron cycle's cleanup pass must reclaim it.
+    # Simulate the exact crash window: render_group_mockups' INSERT + commit landed,
+    # then the process died before it wrote any variant or image row. No human fixes
+    # this row - the next cron cycle's cleanup pass must reclaim it. (v4.12: 'pending'
+    # with no gelato_product_id is the NORMAL state of a live listing record for days,
+    # so "no variants and no images" is what distinguishes a stranded row from one
+    # sitting mid-review.)
     stranded_id = conn.execute(
         "INSERT INTO group_products (group_id, gelato_template_id, status, created_at, updated_at) "
         "VALUES (?, 'tpl_x', 'pending', '2026-07-16T09:00:00', '2026-07-16T09:00:00')",
@@ -120,13 +123,12 @@ def test_stranded_pending_group_product_reclaimed_then_create_or_reuse_succeeds_
     # live row, no leaked duplicate from the crashed attempt.
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
     with patch("pipeline.group_product.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-resumed", "_dry_run": True, "previewUrl": None, "productImages": []}
-        result = group_product.create_or_reuse_group_product(
+        result = group_product.render_group_mockups(
             conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, config.load_static_config(),
-            "Monstera Line Art", now="2026-07-16T09:20:00",
+            now="2026-07-16T09:20:00",
         )
 
-    assert mock_create.call_count == 1
+    mock_create.assert_not_called()  # v4.12: the render half never calls Gelato
     live_rows = conn.execute(
         "SELECT id FROM group_products WHERE group_id = ? AND status IN ('pending', 'created', 'published')",
         (group_id,),

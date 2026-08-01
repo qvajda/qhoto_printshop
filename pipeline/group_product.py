@@ -29,12 +29,31 @@ class PrintResolutionError(Exception):
 
 
 class SharedProductVariantError(Exception):
-    """Raised when the candidate's product would have to be deleted and recreated to
-    satisfy a size set, but it already carries another group's variants. Under v4.12
-    the product/listing belongs to the candidate, so deleting it to re-create with a
-    different size set would destroy sizes another group already published. Growing a
-    shared product is GL-22 session 2's job (create-once-when-all-groups-are-decided);
-    until then this fails loud rather than routing around it."""
+    """Raised when the candidate's already-created Gelato product does not carry the
+    size set the caller is asking for. Under v4.12 the product/listing belongs to the
+    candidate and is created ONCE with every validated size (D1); GL-22a Q2 proved
+    there is no API path to add a variant afterwards, and deleting + recreating would
+    destroy sizes another group already published. So a mismatch here is a bug or a
+    hand-edited DB, not something to route around - it fails loud."""
+
+
+class GalleryTooLargeError(Exception):
+    """Etsy caps a listing at 20 photos. Asserted, never assumed (PRD scope) - today's
+    worst case is 10 primary + 1 5x7 + 2 10x24 = 13, but the scene library grows."""
+
+
+ETSY_MAX_LISTING_IMAGES = 20
+
+# Gallery rank order across the candidate's groups: primary's mockups first, then the
+# secondary crops in size order. One listing, one gallery (v4.12).
+_GROUP_RANK_SQL = "CASE g.group_type WHEN 'primary' THEN 0 WHEN '5x7' THEN 1 ELSE 2 END"
+
+# A group whose review did not pass contributes no variant and no gallery image to the
+# candidate's listing ([D1]); it is excluded, never deleted (CLAUDE.md, v4.12).
+_INCLUDED_GROUP_SQL = (
+    "g.decision IN ('approved','edited') "
+    "AND g.status NOT IN ('rejected','failed_abandoned','stalled_skipped')"
+)
 
 
 MIN_PRINT_DPI = 150
@@ -171,7 +190,7 @@ def resolve_etsy_listing_id(product_id: str, *, store_id: str = None, api_key: s
         sleep_fn(_jittered(poll_interval))
 
 
-def _find_product_row(conn, candidate_id: int, group_id: int, statuses: tuple):
+def _find_product_row(conn, candidate_id: int, group_id: int = None, statuses: tuple = ()):
     """v4.12: the Gelato product / Etsy listing belongs to the CANDIDATE, not to one
     aspect-ratio group, so the reuse key is candidate_id. Pre-migration rows (GL-9 era,
     candidate_id NULL) are still resolved by their original group_id - they predate the
@@ -187,237 +206,154 @@ def _find_product_row(conn, candidate_id: int, group_id: int, statuses: tuple):
     ).fetchone()
 
 
-def _group_id_for_type(conn, candidate_id: int, group_type: str, fallback: int) -> int:
-    row = conn.execute(
-        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = ?", (candidate_id, group_type)
-    ).fetchone()
-    return row["id"] if row is not None else fallback
+_ACTIVE_STATUSES = ("pending", "created", "published", "mockup_failed", "publish_failed")
 
 
-def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
-                                   title: str, orientation: str = "portrait", *, store_id: str = None,
-                                   api_key: str = None, poll_interval: float = 10.0,
-                                   poll_timeout: float = 300.0, now=None) -> dict:
+def live_product_row(conn, candidate_id: int, group_id: int = None):
+    """The candidate's listing record, or None. v4.12: `group_products` is no longer
+    "the Gelato product row" - it is the CANDIDATE's LISTING RECORD, of which
+    gelato_product_id is one nullable column (NULL for the whole review window, filled
+    in once at publish by create_candidate_gelato_product). There is at most one active
+    row per candidate; every stage that used to find one by group_id + status='created'
+    goes through here instead."""
+    return _find_product_row(conn, candidate_id, group_id, _ACTIVE_STATUSES)
+
+
+def included_group_ids(conn, candidate_id: int) -> list:
+    """The groups whose review passed, in gallery rank order - the single definition of
+    "what goes on this candidate's listing". A rejected / abandoned / stalled group is
+    excluded here and deleted nowhere (CLAUDE.md v4.12)."""
+    return [
+        row["id"] for row in conn.execute(
+            f"SELECT g.id FROM groups g WHERE g.candidate_id = ? AND {_INCLUDED_GROUP_SQL} "
+            f"ORDER BY {_GROUP_RANK_SQL}",
+            (candidate_id,),
+        ).fetchall()
+    ]
+
+
+def _ensure_product_row(conn, candidate_id: int, group_id: int, template_id: str, timestamp: str) -> int:
+    row = live_product_row(conn, candidate_id, group_id)
+    if row is not None:
+        return row["id"]
+    cursor = conn.execute(
+        "INSERT INTO group_products (candidate_id, group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (?, ?, ?, 'pending', ?, ?)",
+        (candidate_id, group_id, template_id, timestamp, timestamp),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def _render_scenes(candidate: dict, group_type: str, orientation: str, static_config: dict,
+                    group_product_id: int, group_id: int) -> list:
+    """The self-hosted mockup gallery (GL-5 task 3). The storefront gallery is rendered
+    locally, never sourced from Gelato's product images - no fallback to a Gelato/base
+    image if this fails; any failure here is a real mockup_failed."""
+    scene_ids = config.get_mockup_templates(static_config, group_type, orientation)
+    if not scene_ids:
+        # No bundles authored yet for this group_type/orientation - a valid, expected
+        # zero-image gallery, not an error (Task 2's contract).
+        return []
+
+    if group_type == "primary":
+        # Primary is close enough to the master's own ratio that CLAUDE.md already
+        # treats it as "a small crop, not a re-composition" - render straight from the
+        # archived master, no crop step.
+        render_source_path = candidate.get("base_image_local_path")
+        if not render_source_path or not Path(render_source_path).exists():
+            raise PrintResolutionError(
+                f"Cannot render mockups: base_image_local_path missing or unreadable "
+                f"({render_source_path!r}). The master must be archived locally before "
+                f"mockups can be composited."
+            )
+    else:
+        render_source_path = _group_print_crop(candidate, group_type)["local_path"]
+
+    art = Image.open(render_source_path).convert("RGB")
+    images = []
+    for index, scene_id in enumerate(scene_ids):
+        bundle = mockup_render.load_bundle(config.mockup_bundle_dir(group_type, orientation, scene_id))
+        rendered = mockup_render.render_scene(art, bundle)
+        buf = io.BytesIO()
+        rendered.save(buf, format="PNG")
+        persisted = artwork_store.persist_mockup_render(group_product_id, group_id, index, buf.getvalue())
+        image_type = "flat_mockup" if bundle.tag == "flat" else "lifestyle"
+        images.append({"fileUrl": persisted["durable_url"], "image_type": image_type})
+    return images
+
+
+def render_group_mockups(conn, group_id: int, sizes: list, candidate: dict, static_config: dict,
+                          orientation: str = "portrait", *, now=None) -> dict:
+    """v4.12: the RENDER half of the old create_or_reuse_group_product. Produces one
+    aspect-ratio group's review gallery and records that group's variant rows. It makes
+    no Gelato call at all - the candidate's Gelato product is created once, at publish,
+    by create_candidate_gelato_product.
+
+    The two jobs had to be split because their timings are incompatible: the review
+    mockups must exist BEFORE any group is decided (they are what the owner reviews),
+    and the Gelato product can only be created AFTER every group is decided, with all
+    validated sizes in one call ([D1], forced by GL-22a Q2 - no API path adds a variant
+    post-create). Every write here is scoped to `group_id`, so one group's re-render
+    never touches another group's reviewed gallery."""
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     candidate_id = candidate["id"]
-    # v4.12: a size's artwork is resolved per its OWN group, not once for the whole call -
-    # Q1 proved one create-from-template carries a different fileUrl per variant even when
-    # they share an image_placeholder_name. Pure config lookup, so it's computed up front.
-    size_group_types = {size: config.get_group_type_for_size(static_config, size) for size in sizes}
+    group_type = conn.execute(
+        "SELECT group_type FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()["group_type"]
 
-    live_row = _find_product_row(conn, candidate_id, group_id, ("created", "published"))
-    if live_row is not None:
-        existing_sizes = {
-            row["size"] for row in conn.execute(
-                "SELECT size FROM group_product_variants WHERE group_product_id = ?", (live_row["id"],)
-            ).fetchall()
-        }
-        if existing_sizes == set(sizes):
-            return {"group_product_id": live_row["id"], "gelato_product_id": live_row["gelato_product_id"]}
-        # Requested sizes changed (e.g. primary_mockup.py's 8x12-only row now needs the full
-        # 4-size fan-out on approval) - the existing Gelato product no longer matches, so it's
-        # stale in the same sense as a mockup_failed/publish_failed row: delete it and fall
-        # through to a fresh create with the newly requested variant set.
-        #
-        # v4.12 guard: that delete is only safe while every variant on the product belongs to
-        # the calling group (the primary_mockup 8x12 -> 4-size case, which is the only trigger
-        # that exists today). Once a second group's sizes are on the shared product, deleting
-        # it would destroy sizes another group already published - the shared-product delete
-        # v4.12 forbids. Fail loud; growing a shared product is session 2's create-once path.
-        foreign_variants = conn.execute(
-            "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_product_id = ? "
-            "AND group_id IS NOT NULL AND group_id != ?",
-            (live_row["id"], group_id),
-        ).fetchone()["n"]
-        if foreign_variants:
-            raise SharedProductVariantError(
-                f"Candidate {candidate_id}'s Gelato product (group_products id {live_row['id']}) "
-                f"carries {foreign_variants} variant(s) belonging to another group; refusing to "
-                f"delete and recreate it for group {group_id}'s sizes {sorted(sizes)}. Growing a "
-                f"shared product is GL-22 session 2 (create-once-when-all-groups-are-decided)."
-            )
-        # The foreign-variant check above can't see a pre-migration row: GL-9-era variants
-        # carry group_id NULL, so a legacy product reads as unshared no matter what it
-        # actually backs. A 'published' row has a live Etsy listing behind it either way -
-        # the only trigger that reaches here today is primary_mockup's 'created' 8x12 row
-        # growing to the 4-size fan-out, so refusing on 'published' costs nothing and closes
-        # the hole for legacy and v4.12 rows alike.
-        if live_row["status"] == "published":
-            raise SharedProductVariantError(
-                f"Candidate {candidate_id}'s Gelato product (group_products id {live_row['id']}) "
-                f"is already published; refusing to delete and recreate it for group {group_id}'s "
-                f"sizes {sorted(sizes)}. A published product has a live Etsy listing behind it."
-            )
-        stale_row = live_row
-        if stale_row["gelato_product_id"]:
-            gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
+    # DPI guard before any DB write. It guards that the master is large enough to PRINT
+    # each size - a print concern, not a Gelato one - so under v4.12 it belongs on the
+    # render path: a too-small master now fails before the owner spends a review on it
+    # rather than after. Still gated on GELATO live mode (dry-run/test masters are
+    # synthetic and have no local archive) and still ahead of every write, so the
+    # "fails fast without orphaning a row" property it was written for is unchanged.
+    if config.is_live_mode("GELATO"):
+        _assert_print_dpi(sizes, candidate.get("base_image_local_path"))
+
+    templates = [config.get_template_variant(static_config, size, orientation) for size in sizes]
+    group_product_id = _ensure_product_row(
+        conn, candidate_id, group_id, templates[0]["template_id"], timestamp
+    )
+
+    # Once the candidate's Gelato product exists, its variant set is frozen: GL-22a Q2
+    # proved there is no API path to add one, and the product must not be deleted and
+    # recreated because other groups' sizes are already on it. So a group arriving with
+    # sizes AFTER the create fails loud here rather than quietly recording a variant row
+    # for a size the product will never carry. (A group that already has variant rows is
+    # just re-rendering - that is fine and changes nothing Gelato-side.)
+    existing_row = conn.execute(
+        "SELECT gelato_product_id FROM group_products WHERE id = ?", (group_product_id,)
+    ).fetchone()
+    if existing_row["gelato_product_id"] and not conn.execute(
+        "SELECT 1 FROM group_product_variants WHERE group_product_id = ? AND group_id = ? LIMIT 1",
+        (group_product_id, group_id),
+    ).fetchone():
+        raise SharedProductVariantError(
+            f"Candidate {candidate_id}'s Gelato product "
+            f"{existing_row['gelato_product_id']} already exists; refusing to add group "
+            f"{group_id}'s sizes {sorted(sizes)} to it. A variant cannot be added to an "
+            f"existing product (GL-22a Q2)."
+        )
+
+    conn.execute(
+        "DELETE FROM group_product_variants WHERE group_product_id = ? AND group_id = ?",
+        (group_product_id, group_id),
+    )
+    for size, template in zip(sizes, templates):
         conn.execute(
-            "DELETE FROM group_product_variants WHERE group_product_id = ?", (stale_row["id"],),
+            "INSERT INTO group_product_variants "
+            "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (group_product_id, group_id, size, orientation, template["template_variant_id"],
+             static_config["prices_eur"][size], timestamp),
         )
-        conn.execute(
-            "UPDATE group_products SET status = 'deleted', updated_at = ? WHERE id = ?",
-            (timestamp, stale_row["id"]),
-        )
-        conn.commit()
-
-    # A mockup_failed row whose Gelato product was actually created (gelato_product_id is
-    # set) is NOT stale: the create succeeded and only the readiness poll timed out (Gelato
-    # image rehosting can lag past the poll window - seconds to >5 min). Reuse that product
-    # and just re-poll; deleting + recreating would restart the same slow clock and churn a
-    # real Gelato product every retry, which the idempotency constraint forbids. Genuinely
-    # stale rows (publish_failed, or a mockup_failed create that never returned a product id)
-    # are still deleted + recreated.
-    stale_row = _find_product_row(conn, candidate_id, group_id, ("mockup_failed", "publish_failed"))
-    reuse_group_product_id = None
-    reuse_gelato_product_id = None
-    if stale_row is not None:
-        if stale_row["status"] == "mockup_failed" and stale_row["gelato_product_id"]:
-            reuse_group_product_id = stale_row["id"]
-            reuse_gelato_product_id = stale_row["gelato_product_id"]
-            conn.execute(
-                "UPDATE group_products SET status = 'pending', updated_at = ? WHERE id = ?",
-                (timestamp, reuse_group_product_id),
-            )
-            conn.commit()
-        else:
-            if stale_row["gelato_product_id"]:
-                gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
-            conn.execute(
-                "DELETE FROM group_product_variants WHERE group_product_id = ?", (stale_row["id"],),
-            )
-            conn.execute(
-                "UPDATE group_products SET status = 'deleted', updated_at = ? WHERE id = ?",
-                (timestamp, stale_row["id"]),
-            )
-            conn.commit()
-
-    if reuse_group_product_id is not None:
-        group_product_id = reuse_group_product_id
-        gelato_product_id = reuse_gelato_product_id
-    else:
-        # DPI guard fires only on real creates (dry-run/test masters are synthetic and
-        # have no local archive). Placed before any DB write so a too-small master fails
-        # fast without orphaning a group_products row.
-        if config.is_live_mode("GELATO"):
-            _assert_print_dpi(sizes, candidate.get("base_image_local_path"))
-
-        templates = [config.get_template_variant(static_config, size, orientation) for size in sizes]
-        template_id = templates[0]["template_id"]
-
-        cursor = conn.execute(
-            "INSERT INTO group_products (candidate_id, group_id, gelato_template_id, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, 'pending', ?, ?)",
-            (candidate_id, group_id, template_id, timestamp, timestamp),
-        )
-        conn.commit()
-        group_product_id = cursor.lastrowid
-
-        for size, template in zip(sizes, templates):
-            conn.execute(
-                "INSERT INTO group_product_variants "
-                "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (group_product_id, _group_id_for_type(conn, candidate_id, size_group_types[size], group_id),
-                 size, orientation, template["template_variant_id"],
-                 static_config["prices_eur"][size], timestamp),
-            )
-        conn.commit()
+    conn.commit()
 
     try:
-        # The gallery below belongs to the group that called us, whatever mix of sizes
-        # the product itself carries - read it from the groups row rather than inferring
-        # it from sizes[0], which stops being the same thing once a product is shared.
-        group_type = conn.execute(
-            "SELECT group_type FROM groups WHERE id = ?", (group_id,)
-        ).fetchone()["group_type"]
-        # One crop per distinct group_type, built once per call (not per size, not per
-        # branch below) - see _group_print_crop's docstring for why a second call with
-        # identical bytes would be a wasted duplicate R2 PUT.
-        crops = {
-            gt: _group_print_crop(candidate, gt)
-            for gt in dict.fromkeys(list(size_group_types.values()) + [group_type])
-            if gt in _PRINT_CROP_GROUP_TYPES
-        }
-        crop_result = crops.get(group_type)
-
-        if reuse_group_product_id is None:
-            # Non-primary groups (5x7/10x24) are a genuinely different aspect ratio
-            # from the master - Gelato's own template fits/letterboxes rather than
-            # fills, so a real cover-crop must be hosted before it's submitted. Only
-            # matters for a real (non-dry-run) create: dry-run never reads image_url
-            # (create_product_from_template's dry_run branch returns before the
-            # variant loop).
-            #
-            # v4.12: resolved per size's own group, not once for the call - a shared
-            # product's 5x7 variant carries the 5x7 crop while its 8x12 variant carries
-            # the master, in the same create call (GL-22a Q1).
-            def _image_url_for(size):
-                crop = crops.get(size_group_types[size])
-                if crop is not None and config.is_live_mode("GELATO"):
-                    return crop["durable_url"]
-                return candidate["base_image_url"]
-
-            response = gelato_client.create_product_from_template(
-                template_id,
-                [
-                    {"template_variant_id": t["template_variant_id"], "image_placeholder_name": t["image_placeholder_name"],
-                     "image_url": _image_url_for(size)}
-                    for size, t in zip(sizes, templates)
-                ],
-                title, store_id=store_id, api_key=api_key,
-            )
-            gelato_product_id = response["id"]
-            conn.execute(
-                "UPDATE group_products SET gelato_product_id = ?, updated_at = ? WHERE id = ?",
-                (gelato_product_id, timestamp, group_product_id),
-            )
-            conn.commit()
-            is_dry_run = bool(response.get("_dry_run"))
-        else:
-            is_dry_run = False
-
-        if not is_dry_run:
-            # Gelato's own gallery is never consumed for the storefront (below) - this
-            # poll still matters because it's the only signal that Gelato's own print
-            # asset actually rehosted and the product is ready to publish/fulfil.
-            poll_until_ready(
-                gelato_product_id, store_id=store_id, api_key=api_key,
-                poll_interval=poll_interval, timeout=poll_timeout,
-            )
-
-        # --- self-hosted mockup gallery (GL-5 task 3) ---
-        # The storefront gallery is rendered locally, never sourced from Gelato's
-        # product images - no fallback to a Gelato/base image if this fails; any
-        # failure here is a real mockup_failed, same as a DPI or Gelato-create error.
-        scene_ids = config.get_mockup_templates(static_config, group_type, orientation)
-        images = []
-        if scene_ids:
-            if group_type == "primary":
-                # Primary is close enough to the master's own ratio that CLAUDE.md
-                # already treats it as "a small crop, not a re-composition" - render
-                # straight from the archived master, no crop step.
-                render_source_path = candidate.get("base_image_local_path")
-                if not render_source_path or not Path(render_source_path).exists():
-                    raise PrintResolutionError(
-                        f"Cannot render mockups: base_image_local_path missing or "
-                        f"unreadable ({render_source_path!r}). The master must be "
-                        f"archived locally before mockups can be composited."
-                    )
-            else:
-                render_source_path = crop_result["local_path"]
-
-            art = Image.open(render_source_path).convert("RGB")
-            for index, scene_id in enumerate(scene_ids):
-                bundle = mockup_render.load_bundle(config.mockup_bundle_dir(group_type, orientation, scene_id))
-                rendered = mockup_render.render_scene(art, bundle)
-                buf = io.BytesIO()
-                rendered.save(buf, format="PNG")
-                persisted = artwork_store.persist_mockup_render(group_product_id, index, buf.getvalue())
-                image_type = "flat_mockup" if bundle.tag == "flat" else "lifestyle"
-                images.append({"fileUrl": persisted["durable_url"], "image_type": image_type})
-        # else: no bundles authored yet for this group_type/orientation (5x7, 10x24,
-        # primary/landscape today) - a valid, expected zero-image gallery, not an
-        # error (Task 2's contract; see docs/superpowers/sdd/gl5-task-3-brief.md).
+        images = _render_scenes(
+            candidate, group_type, orientation, static_config, group_product_id, group_id
+        )
     except Exception:
         conn.execute(
             "UPDATE group_products SET status = 'mockup_failed', updated_at = ? WHERE id = ?",
@@ -426,16 +362,142 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
         conn.commit()
         raise
 
-    # Idempotent on reuse: a re-polled (previously timed-out) product, or a retried
-    # render, may already have a partial gallery from an earlier attempt - clear it
-    # before reinserting. scene_ids order is already render/rank order (flat scenes
-    # first per Task 2's config), so gallery_order is just the loop index.
-    conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (group_product_id,))
+    # Idempotent on retry: a re-render may find a partial gallery from an earlier
+    # attempt. The `AND group_id = ?` is the whole point of GL-22 session 2 - without
+    # it, 5x7 rendering its mockups would silently wipe the primary group's already-
+    # reviewed gallery off the shared listing record. scene_ids order is already
+    # render/rank order, so gallery_order is just the loop index.
+    conn.execute(
+        "DELETE FROM product_images WHERE group_product_id = ? AND group_id = ?",
+        (group_product_id, group_id),
+    )
     for order, image in enumerate(images):
         conn.execute(
             "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
             "VALUES (?, ?, ?, '', ?, ?)",
             (group_product_id, group_id, image["fileUrl"], order, image["image_type"]),
+        )
+    # 'pending' is exactly right for a row that exists with no Gelato product yet; a
+    # previously mockup_failed row is healthy again now its render succeeded. A row
+    # already 'created'/'published' keeps its status - its Gelato product still exists.
+    conn.execute(
+        "UPDATE group_products SET status = 'pending', updated_at = ? WHERE id = ? "
+        "AND status IN ('pending', 'mockup_failed')",
+        (timestamp, group_product_id),
+    )
+    conn.commit()
+
+    return {"group_product_id": group_product_id, "image_count": len(images)}
+
+
+def create_candidate_gelato_product(conn, candidate_id: int, candidate: dict, static_config: dict,
+                                     title: str, *, store_id: str = None, api_key: str = None,
+                                     poll_interval: float = 10.0, poll_timeout: float = 300.0,
+                                     now=None) -> dict:
+    """v4.12 [D1]: the GELATO half of the old create_or_reuse_group_product. ONE
+    create-from-template call per candidate, made at publish time once every group has
+    reached a terminal decision, carrying every validated size as a variant with its own
+    group's fileUrl (GL-22a Q1 proved two variants sharing an image_placeholder_name
+    accept independently-submitted fileUrls in a single call)."""
+    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    product_row = live_product_row(conn, candidate_id)
+    if product_row is None:
+        raise ValueError(f"No group_products (listing record) row for candidate {candidate_id}")
+    group_product_id = product_row["id"]
+
+    group_ids = included_group_ids(conn, candidate_id)
+    if not group_ids:
+        raise ValueError(f"Candidate {candidate_id} has no group whose review passed - nothing to publish")
+    placeholders = ", ".join("?" * len(group_ids))
+    variant_rows = conn.execute(
+        f"SELECT v.size, v.orientation, v.gelato_template_variant_id, g.group_type "
+        f"FROM group_product_variants v JOIN groups g ON g.id = v.group_id "
+        f"WHERE v.group_product_id = ? AND v.group_id IN ({placeholders}) "
+        f"ORDER BY {_GROUP_RANK_SQL}, v.id",
+        (group_product_id, *group_ids),
+    ).fetchall()
+    if not variant_rows:
+        raise ValueError(f"Candidate {candidate_id}'s included groups carry no sizes to publish")
+
+    # An excluded group's variant rows come off the listing record here, so what the
+    # table holds is exactly what the Gelato product carries - which is what makes the
+    # reuse check below exact rather than approximate. Scoped by group_id: it drops that
+    # group's own rows and nothing else, and its gallery images stay put (the gallery
+    # filters on the group's decision, it doesn't delete).
+    conn.execute(
+        f"DELETE FROM group_product_variants WHERE group_product_id = ? "
+        f"AND group_id NOT IN ({placeholders})",
+        (group_product_id, *group_ids),
+    )
+    conn.commit()
+
+    if product_row["gelato_product_id"]:
+        # Idempotency, a hard constraint (the first live run duplicated products: create
+        # succeeded, the readiness poll timed out, the retry re-created). A product id on
+        # the row means the create already succeeded, whatever happened afterwards -
+        # never create a second one. There is no delete-and-recreate fallback under
+        # create-once: Q2 proved a product's variant set cannot be changed, and the
+        # product is the candidate's, so deleting it would destroy other groups' sizes.
+        existing = {row["size"] for row in conn.execute(
+            "SELECT size FROM group_product_variants WHERE group_product_id = ?", (group_product_id,)
+        ).fetchall()}
+        wanted = {row["size"] for row in variant_rows}
+        if not wanted <= existing:
+            raise SharedProductVariantError(
+                f"Candidate {candidate_id}'s Gelato product {product_row['gelato_product_id']} "
+                f"carries sizes {sorted(existing)}, but the validated groups need "
+                f"{sorted(wanted)}. A variant cannot be added to an existing product "
+                f"(GL-22a Q2) and the product must not be deleted - it is the candidate's."
+            )
+        gelato_product_id = product_row["gelato_product_id"]
+        is_dry_run = False
+    else:
+        template_id = config.get_template_variant(
+            static_config, variant_rows[0]["size"], variant_rows[0]["orientation"]
+        )["template_id"]
+        # One crop per distinct non-primary group_type, built once per call - see
+        # _group_print_crop's docstring for why a second call with identical bytes would
+        # be a wasted duplicate R2 PUT. (The render path builds its own crop earlier, in
+        # a different run; that is a separate phase, not a duplicate within one call.)
+        crops = {
+            gt: _group_print_crop(candidate, gt)
+            for gt in dict.fromkeys(row["group_type"] for row in variant_rows)
+            if gt in _PRINT_CROP_GROUP_TYPES
+        }
+
+        def _image_url_for(row):
+            crop = crops.get(row["group_type"])
+            if crop is not None and config.is_live_mode("GELATO"):
+                return crop["durable_url"]
+            return candidate["base_image_url"]
+
+        response = gelato_client.create_product_from_template(
+            template_id,
+            [
+                {"template_variant_id": row["gelato_template_variant_id"],
+                 "image_placeholder_name": config.get_template_variant(
+                     static_config, row["size"], row["orientation"])["image_placeholder_name"],
+                 "image_url": _image_url_for(row)}
+                for row in variant_rows
+            ],
+            title, store_id=store_id, api_key=api_key,
+        )
+        gelato_product_id = response["id"]
+        conn.execute(
+            "UPDATE group_products SET gelato_product_id = ?, gelato_template_id = ?, updated_at = ? WHERE id = ?",
+            (gelato_product_id, template_id, timestamp, group_product_id),
+        )
+        conn.commit()
+        is_dry_run = bool(response.get("_dry_run"))
+
+    if not is_dry_run:
+        # Gelato's own gallery is never consumed for the storefront - this poll still
+        # matters because it's the only signal that Gelato's print asset actually
+        # rehosted and the product is ready to publish/fulfil.
+        poll_until_ready(
+            gelato_product_id, store_id=store_id, api_key=api_key,
+            poll_interval=poll_interval, timeout=poll_timeout,
         )
 
     conn.execute(
@@ -447,9 +509,13 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
     return {"group_product_id": group_product_id, "gelato_product_id": gelato_product_id}
 
 
-def patch_etsy_listing(conn, group_product_id: int, group_type: str, listing_text: dict, static_config: dict, *,
+
+def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_config: dict, *,
                         shop_id: str = None, etsy_api_key: str = None, etsy_api_secret: str = None,
                         etsy_access_token: str = None, dry_run: bool = None, now=None) -> str:
+    """v4.12: patches the CANDIDATE's one listing. The gallery is assembled across every
+    group whose review passed, in rank order; a rejected/abandoned/stalled group
+    contributes nothing and loses nothing."""
     if dry_run is None:
         dry_run = not config.is_live_mode("ETSY")
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
@@ -480,20 +546,38 @@ def patch_etsy_listing(conn, group_product_id: int, group_type: str, listing_tex
         conn.commit()
 
     image_rows = conn.execute(
-        "SELECT image_url FROM product_images WHERE group_product_id = ? ORDER BY gallery_order",
+        f"SELECT pi.id, pi.image_url, pi.etsy_listing_image_id "
+        f"FROM product_images pi JOIN groups g ON g.id = pi.group_id "
+        f"WHERE pi.group_product_id = ? AND {_INCLUDED_GROUP_SQL} "
+        f"ORDER BY {_GROUP_RANK_SQL}, pi.gallery_order",
         (group_product_id,),
     ).fetchall()
+    if len(image_rows) > ETSY_MAX_LISTING_IMAGES:
+        raise GalleryTooLargeError(
+            f"Candidate listing {listing_id} would carry {len(image_rows)} gallery images; "
+            f"Etsy caps a listing at {ETSY_MAX_LISTING_IMAGES}."
+        )
     for row in image_rows:
+        # Idempotent: this loop is a full re-upload with no delta, so a second call after
+        # a partial failure would duplicate the whole gallery on the live listing. Rows
+        # that already uploaded carry Etsy's own listing_image_id and are skipped.
+        if row["etsy_listing_image_id"]:
+            continue
         url = row["image_url"]
         image_bytes = b"" if dry_run else (
             http.fetch_bytes(url) if url.startswith(("http://", "https://")) else Path(url).read_bytes()
         )
-        etsy_client.upload_listing_image(
+        response = etsy_client.upload_listing_image(
             shop_id, listing_id, image_bytes, api_key=etsy_api_key, api_secret=etsy_api_secret,
             access_token=etsy_access_token, dry_run=dry_run,
         )
+        conn.execute(
+            "UPDATE product_images SET etsy_listing_image_id = ? WHERE id = ?",
+            (str(response.get("listing_image_id")), row["id"]),
+        )
+        conn.commit()
 
-    shipping_profile_id = config.get_shipping_profile_id(static_config, group_type)
+    shipping_profile_id = config.get_shipping_profile_id(static_config)
     listing_data = {
         "title": listing_text["title"],
         "description": listing_text["description"],
@@ -512,7 +596,10 @@ def patch_etsy_listing(conn, group_product_id: int, group_type: str, listing_tex
     )
 
     variant_rows = conn.execute(
-        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ?", (group_product_id,)
+        f"SELECT v.size, v.price_eur FROM group_product_variants v "
+        f"JOIN groups g ON g.id = v.group_id "
+        f"WHERE v.group_product_id = ? AND {_INCLUDED_GROUP_SQL}",
+        (group_product_id,),
     ).fetchall()
     size_to_price = {row["size"]: row["price_eur"] for row in variant_rows}
     etsy_client.update_listing_inventory(

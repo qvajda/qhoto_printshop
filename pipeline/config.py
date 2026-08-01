@@ -63,13 +63,23 @@ def get_group_type_for_size(static_config: dict, size: str) -> str:
     raise MissingConfigError(f"No aspect_ratio_group contains size {size!r}")
 
 
-def get_shipping_profile_id(static_config: dict, group_type: str) -> str:
-    profile_id = static_config["etsy_shipping_profile_id"][group_type]
+def get_shipping_profile_id(static_config: dict) -> str:
+    """v4.12 [D3]: one listing per candidate, so one shipping profile per candidate -
+    "Gelato: Free shipping". The old per-aspect-ratio-group Small/Large split stopped
+    applying the moment all six sizes shared a listing (Etsy allows exactly one profile
+    per listing)."""
+    profile_id = static_config["etsy_shipping_profile_id"]
     if not profile_id:
-        raise MissingConfigError(
-            f"etsy_shipping_profile_id for group {group_type!r} is not set"
-        )
+        raise MissingConfigError("etsy_shipping_profile_id is not set")
     return profile_id
+
+
+# [D2] How long a secondary group may sit undecided before the candidate stops waiting
+# and publishes without it (marking that group 'stalled_skipped'). Deliberately long:
+# a size aged out of a published listing cannot be added back (GL-22a Q2), while a
+# design left unpublished is recoverable by tapping a button. Only fires once GL-7
+# evaluates the publish gate on a cadence - test it by lowering this, never by waiting.
+GROUP_REVIEW_STALL_DAYS = 14
 
 
 def get_mockup_templates(static_config: dict, group_type: str, orientation: str) -> list[str]:

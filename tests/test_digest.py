@@ -41,24 +41,24 @@ def _insert_primary_gallery(conn, candidate_id,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tpl_1', 'gelato_prod_1', ?, ?, ?)",
-        (group_id, group_product_status, timestamp, timestamp),
+        "(candidate_id, group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, ?, 'tpl_1', 'gelato_prod_1', ?, ?, ?)",
+        (candidate_id, group_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
     for size, price_eur in sizes_and_prices:
         conn.execute(
             "INSERT INTO group_product_variants "
-            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-            "VALUES (?, ?, 'portrait', 'variant_1', ?, ?)",
-            (group_product_id, size, price_eur, timestamp),
+            "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (?, ?, ?, 'portrait', 'variant_1', ?, ?)",
+            (group_product_id, group_id, size, price_eur, timestamp),
         )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, 'placeholder alt', ?, ?)",
-            (group_product_id, image_url, order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, 'placeholder alt', ?, ?)",
+            (group_product_id, group_id, image_url, order, image_type),
         )
     conn.commit()
     return group_id, group_product_id

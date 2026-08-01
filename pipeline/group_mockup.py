@@ -47,22 +47,23 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
     if group_status_row["status"] in ("failed_abandoned", "rejected"):
         return None
 
-    live_row = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published')",
+    # v4.12: "already done" is a rendered gallery for THIS group, not a live Gelato
+    # product - the product belongs to the candidate and doesn't exist yet at mockup
+    # time, so a group_products lookup by group_id would resolve the primary group's
+    # row (or nothing) and mean nothing about this group.
+    already_rendered = conn.execute(
+        "SELECT 1 FROM product_images pi JOIN group_products gp ON gp.id = pi.group_product_id "
+        "WHERE pi.group_id = ? AND gp.status != 'deleted' LIMIT 1",
         (group_id,),
     ).fetchone()
-    if live_row is not None:
+    if already_rendered is not None:
         return None
 
     sizes = _group_sizes(static_config, group_type)
 
     def attempt():
-        # Gelato pushes this as the Etsy draft title; Etsy hard-caps titles at 140 chars
-        # and rejects the create otherwise. The real title is set later on the listing patch.
-        title = f"{candidate['niche']} - {group_type} mockup"[:140]
-        return group_product.create_or_reuse_group_product(
-            conn, group_id, sizes, candidate, static_config, title,
-            store_id=store_id, api_key=api_key, poll_interval=poll_interval, poll_timeout=poll_timeout, now=now,
+        return group_product.render_group_mockups(
+            conn, group_id, sizes, candidate, static_config, now=now,
         )
 
     try:
@@ -77,8 +78,7 @@ def create_group_mockup(conn, candidate_id: int, group_type: str, *, static_conf
     )
     conn.commit()
 
-    return {"group_id": group_id, "group_product_id": result["group_product_id"],
-            "gelato_product_id": result["gelato_product_id"]}
+    return {"group_id": group_id, "group_product_id": result["group_product_id"]}
 
 
 GROUP_TYPES = ("5x7", "10x24")
@@ -89,12 +89,17 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
                             poll_timeout: float = 300.0, now=None) -> list:
     static_config = static_config if static_config is not None else config.load_static_config()
 
+    # v4.12: keyed on the primary group's DECISION, not on its status. Approving the
+    # primary no longer publishes anything - the candidate's one listing is created once,
+    # after every group is decided ([D1]) - so 'approved_published' never arrives until
+    # after the secondary groups have been rendered and reviewed. Waiting for it would
+    # deadlock the whole flow.
     candidate_ids = [
         row["id"] for row in conn.execute(
             """
             SELECT c.id FROM candidates c
             JOIN groups g ON g.candidate_id = c.id AND g.group_type = 'primary'
-                          AND g.status = 'approved_published'
+                          AND g.decision = 'approved'
             ORDER BY c.id
             """
         ).fetchall()
@@ -124,6 +129,6 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
                 processed.append({
                     "candidate_id": candidate_id,
                     "group_type": group_type,
-                    "gelato_product_id": result["gelato_product_id"],
+                    "group_product_id": result["group_product_id"],
                 })
     return processed

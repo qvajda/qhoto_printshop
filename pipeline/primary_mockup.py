@@ -45,9 +45,14 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
 
     group_id = get_or_create_primary_group(conn, candidate_id, now=now)
 
-    result = group_product.create_or_reuse_group_product(
-        conn, group_id, ["8x12"], candidate, static_config, build_mockup_title(candidate),
-        store_id=store_id, api_key=api_key, poll_interval=poll_interval, poll_timeout=poll_timeout, now=now,
+    # v4.12: the primary group records its FULL size set here, not just 8x12. Under
+    # v4.11 the row started 8x12-only and grew to the 4-size fan-out on approval by
+    # deleting and recreating the Gelato product; there is no Gelato product at render
+    # time any more, so the fan-out is just the variant rows this call writes - and the
+    # digest's price line is honest about what the listing will actually offer.
+    result = group_product.render_group_mockups(
+        conn, group_id, static_config["aspect_ratio_groups"]["primary"], candidate,
+        static_config, now=now,
     )
 
     conn.execute(
@@ -56,8 +61,7 @@ def create_primary_mockup(conn, candidate_id: int, *, static_config: dict = None
     )
     conn.commit()
 
-    return {"group_id": group_id, "group_product_id": result["group_product_id"],
-            "gelato_product_id": result["gelato_product_id"]}
+    return {"group_id": group_id, "group_product_id": result["group_product_id"]}
 
 
 def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str = None,
