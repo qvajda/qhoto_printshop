@@ -927,3 +927,43 @@ def test_real_create_sends_a_different_image_url_per_variants_own_group(tmp_path
         for row in variant_rows
     }
     assert group_types == {"8x12": "primary", "5x7": "5x7"}
+
+
+def test_create_or_reuse_group_product_refuses_to_recreate_a_published_product(stub_mockup_bundles, tmp_path):
+    # A pre-migration row's variants carry group_id NULL, so the foreign-variant check
+    # reads it as unshared however many sizes it really backs. 'published' means a live
+    # Etsy listing exists behind it - never delete and recreate that, legacy or not.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    group_id = _insert_group(conn, candidate_id, group_type="primary")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+    timestamp = "2026-07-16T09:10:00"
+
+    cursor = conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, etsy_listing_id, "
+        "status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'live-prod-1', '4542159277', 'published', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    published_id = cursor.lastrowid
+    conn.execute(
+        "INSERT INTO group_product_variants "
+        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, '8x12', 'portrait', 'tv', 24.0, ?)",
+        (published_id, timestamp),
+    )
+    conn.commit()
+
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        with pytest.raises(group_product.SharedProductVariantError):
+            group_product.create_or_reuse_group_product(
+                conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, static_config, "Title",
+                now="2026-07-16T09:11:00",
+            )
+
+    mock_delete.assert_not_called()
+    mock_create.assert_not_called()
+    row = conn.execute("SELECT status FROM group_products WHERE id = ?", (published_id,)).fetchone()
+    assert row["status"] == "published"

@@ -236,6 +236,18 @@ def create_or_reuse_group_product(conn, group_id: int, sizes: list, candidate: d
                 f"delete and recreate it for group {group_id}'s sizes {sorted(sizes)}. Growing a "
                 f"shared product is GL-22 session 2 (create-once-when-all-groups-are-decided)."
             )
+        # The foreign-variant check above can't see a pre-migration row: GL-9-era variants
+        # carry group_id NULL, so a legacy product reads as unshared no matter what it
+        # actually backs. A 'published' row has a live Etsy listing behind it either way -
+        # the only trigger that reaches here today is primary_mockup's 'created' 8x12 row
+        # growing to the 4-size fan-out, so refusing on 'published' costs nothing and closes
+        # the hole for legacy and v4.12 rows alike.
+        if live_row["status"] == "published":
+            raise SharedProductVariantError(
+                f"Candidate {candidate_id}'s Gelato product (group_products id {live_row['id']}) "
+                f"is already published; refusing to delete and recreate it for group {group_id}'s "
+                f"sizes {sorted(sizes)}. A published product has a live Etsy listing behind it."
+            )
         stale_row = live_row
         if stale_row["gelato_product_id"]:
             gelato_client.delete_product(stale_row["gelato_product_id"], store_id=store_id, api_key=api_key)
