@@ -4,6 +4,14 @@ Not wired to cron yet (that's the next step, after this passes). Run this,
 watch Telegram for the digest, approve/reject, then re-run this script (or
 just the publish stage below) to pick up the decision.
 
+v4.12: a candidate is ONE Etsy listing whose sizes are variants, so approving
+the primary group no longer publishes anything - it settles one group. Nothing
+reaches Gelato or Etsy until all three groups have been decided, at which point
+the last decision creates the single product and patches the single listing.
+Expect to run this at least three times: once to seed/generate/render and send
+the primary digest, once after approving it to render + digest the 5x7/10x24
+groups, and once after those taps to publish.
+
 Usage: python run_m1_live_test.py
 """
 from pathlib import Path
@@ -60,7 +68,7 @@ def main():
     print("== generate ==")
     print(generate.run_generate_cycle(conn, api_token=replicate_api_token))
 
-    print("== primary_mockup ==")
+    print("== primary_mockup (local render only - no Gelato call under v4.12) ==")
     print(primary_mockup.run_primary_mockup_cycle(
         conn, static_config=static_config, store_id=gelato_store_id, api_key=gelato_api_key,
     ))
@@ -82,7 +90,7 @@ def main():
         conn, static_config=static_config, bot_token=telegram_bot_token, chat_id=telegram_admin_chat_id,
     ))
 
-    print("== publish_primary_group (polls Telegram for your decision) ==")
+    print("== publish_primary_group (polls Telegram; publishes only once every group is decided) ==")
     print(publish_primary_group.run_publish_primary_group_cycle(
         conn, admin_chat_id=telegram_admin_chat_id, bot_token=telegram_bot_token, static_config=static_config,
         store_id=gelato_store_id, gelato_api_key=gelato_api_key, shop_id=etsy_shop_id,
@@ -90,7 +98,7 @@ def main():
         replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
     ))
 
-    print("== group_mockup (5x7/10x24 re-crop) ==")
+    print("== group_mockup (5x7/10x24 re-crop, local render only) ==")
     print(group_mockup.run_group_mockup_cycle(
         conn, static_config=static_config, store_id=gelato_store_id, api_key=gelato_api_key,
     ))
@@ -106,7 +114,7 @@ def main():
         conn, static_config=static_config, bot_token=telegram_bot_token, chat_id=telegram_admin_chat_id,
     ))
 
-    print("== publish_primary_group (also polls/dispatches 5x7/10x24 group decisions) ==")
+    print("== publish_primary_group (5x7/10x24 taps; the last one publishes the listing) ==")
     print(publish_primary_group.run_publish_primary_group_cycle(
         conn, admin_chat_id=telegram_admin_chat_id, bot_token=telegram_bot_token, static_config=static_config,
         store_id=gelato_store_id, gelato_api_key=gelato_api_key, shop_id=etsy_shop_id,
