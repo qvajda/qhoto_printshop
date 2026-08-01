@@ -8,7 +8,6 @@ import pipeline.config as config
 import pipeline.db as db
 import pipeline.gelato_client as gelato_client
 import pipeline.group_product as group_product
-import pipeline.mockup_render as mockup_render
 
 
 def test_poll_until_ready_jitters_the_sleep_interval():
@@ -80,184 +79,150 @@ def _make_master(tmp_path, name="master.png", size=(900, 1316)):
     return str(p)
 
 
-def test_create_or_reuse_group_product_creates_one_product_with_all_variants(stub_mockup_bundles, tmp_path):
+DRY = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
+
+LISTING_TEXT = {
+    "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
+    "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
+}
+
+
+def _decide(conn, group_id, decision="approved"):
+    conn.execute("UPDATE groups SET decision = ? WHERE id = ?", (decision, group_id))
+    conn.commit()
+
+
+def _images(conn, group_product_id, group_id=None):
+    sql = "SELECT * FROM product_images WHERE group_product_id = ?"
+    args = [group_product_id]
+    if group_id is not None:
+        sql += " AND group_id = ?"
+        args.append(group_id)
+    return conn.execute(sql + " ORDER BY gallery_order", args).fetchall()
+
+
+# --- v4.12: the render half. No Gelato call, scoped to one group. ---
+
+def test_render_group_mockups_makes_no_gelato_call(stub_mockup_bundles, tmp_path):
+    # The weld cut: rendering the review gallery must not create (or touch) a Gelato
+    # product. The product is the candidate's and is created once, at publish.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     group_id = _insert_group(conn, candidate_id)
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-    static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, static_config,
-            "Monstera Line Art", now="2026-07-16T09:10:00",
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll:
+        result = group_product.render_group_mockups(
+            conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, _static_config(),
+            now="2026-07-16T09:10:00",
         )
 
-    assert mock_create.call_count == 1
-    variants_arg = mock_create.call_args[0][1]
-    assert [v["template_variant_id"] for v in variants_arg] == [
-        static_config["gelato_templates"][f"{s}_portrait"]["template_variant_id"]
-        for s in ("8x12", "A3", "A2", "A1")
-    ]
-    assert result["gelato_product_id"] == "gelato-prod-1"
+    mock_create.assert_not_called()
+    mock_delete.assert_not_called()
+    mock_poll.assert_not_called()
 
-    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
-    assert gp_row["status"] == "created"
+    gp_row = conn.execute(
+        "SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)
+    ).fetchone()
+    assert gp_row["status"] == "pending"
+    assert gp_row["gelato_product_id"] is None
+    assert gp_row["candidate_id"] == candidate_id
+
+    static_config = _static_config()
     variant_rows = conn.execute(
-        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
+        "SELECT size, price_eur, group_id FROM group_product_variants WHERE group_product_id = ?",
         (result["group_product_id"],),
     ).fetchall()
     assert {r["size"]: r["price_eur"] for r in variant_rows} == {
-        "8x12": static_config["prices_eur"]["8x12"], "A1": static_config["prices_eur"]["A1"],
-        "A2": static_config["prices_eur"]["A2"], "A3": static_config["prices_eur"]["A3"],
+        s: static_config["prices_eur"][s] for s in ("8x12", "A3", "A2", "A1")
     }
+    assert {r["group_id"] for r in variant_rows} == {group_id}
 
 
-def test_create_or_reuse_group_product_reuses_existing_created_row(stub_mockup_bundles, tmp_path):
+def test_render_group_mockups_reuses_the_candidates_one_listing_record(tmp_path):
+    # v4.12 reuse key is candidate_id: a second group of the SAME candidate renders into
+    # the candidate's existing listing record, it does not open a second one.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    group_id = _insert_group(conn, candidate_id)
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    secondary_group_id = _insert_group(conn, candidate_id, group_type="5x7")
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
     static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        first = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-        )
-        second = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:11:00",
-        )
+    first = group_product.render_group_mockups(
+        conn, primary_group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
+    )
+    second = group_product.render_group_mockups(
+        conn, secondary_group_id, ["5x7"], candidate, static_config, now="2026-07-16T09:11:00",
+    )
 
-    assert mock_create.call_count == 1
     assert first["group_product_id"] == second["group_product_id"]
+    assert conn.execute("SELECT COUNT(*) AS n FROM group_products").fetchone()["n"] == 1
 
 
-def test_create_or_reuse_group_product_recreates_when_sizes_expand(stub_mockup_bundles, tmp_path):
-    # Regression: primary_mockup.py creates the group_products row with sizes=["8x12"] only.
-    # On approval, publish_primary_group.py calls this again with the full 4-size list for the
-    # same group_id. The old code only checked status (not variant sizes) and returned the
-    # stale 8x12-only row unchanged - A3/A2/A1 would never be created on the real Gelato product.
+def test_rendering_a_secondary_group_leaves_the_primary_gallery_untouched(tmp_path):
+    # THE reason GL-22 session 2 exists. group_product.py's image rebuild used to be
+    # `DELETE FROM product_images WHERE group_product_id = ?`; with one product per
+    # candidate that unscoped delete wipes the primary group's already-reviewed gallery
+    # the moment the 5x7 group renders its own. Nothing downstream would notice until a
+    # buyer saw the listing.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    group_id = _insert_group(conn, candidate_id)
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    secondary_group_id = _insert_group(conn, candidate_id, group_type="5x7")
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
     static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        first = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-        )
+    first = group_product.render_group_mockups(
+        conn, primary_group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
+    )
+    gpid = first["group_product_id"]
+    before = [dict(r) for r in _images(conn, gpid, primary_group_id)]
+    assert before, "the primary group must have rendered a gallery to protect"
 
-    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
-         patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-2", "_dry_run": True, "previewUrl": None, "productImages": []}
-        second = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, static_config, "Title",
-            now="2026-07-16T09:11:00",
-        )
+    group_product.render_group_mockups(
+        conn, secondary_group_id, ["5x7"], candidate, static_config, now="2026-07-16T09:11:00",
+    )
 
-    mock_delete.assert_called_once_with("gelato-prod-1", store_id=None, api_key=None)
-    assert mock_create.call_count == 1
-    variants_arg = mock_create.call_args[0][1]
-    assert len(variants_arg) == 4
-    assert second["group_product_id"] != first["group_product_id"]
-    assert second["gelato_product_id"] == "gelato-prod-2"
-
-    old_row = conn.execute(
-        "SELECT status FROM group_products WHERE id = ?", (first["group_product_id"],)
-    ).fetchone()
-    assert old_row["status"] == "deleted"
+    after = [dict(r) for r in _images(conn, gpid, primary_group_id)]
+    assert after == before
+    # ...and the 5x7 group's own images landed alongside, not on top.
+    assert _images(conn, gpid, secondary_group_id)
 
 
-def test_create_or_reuse_group_product_deletes_orphan_before_retry(stub_mockup_bundles, tmp_path):
+def test_render_group_mockups_rerender_replaces_only_its_own_images(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    group_id = _insert_group(conn, candidate_id)
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    secondary_group_id = _insert_group(conn, candidate_id, group_type="5x7")
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
     static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
 
-    conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'stale-gelato-id', 'publish_failed', ?, ?)",
-        (group_id, timestamp, timestamp),
+    result = group_product.render_group_mockups(
+        conn, primary_group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
     )
-    conn.commit()
-
-    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
-         patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-new", "_dry_run": True, "previewUrl": None, "productImages": []}
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now=timestamp,
-        )
-
-    mock_delete.assert_called_once_with("stale-gelato-id", store_id=None, api_key=None)
-    assert result["gelato_product_id"] == "gelato-prod-new"
-    stale_row = conn.execute(
-        "SELECT status FROM group_products WHERE gelato_product_id = 'stale-gelato-id'"
-    ).fetchone()
-    assert stale_row["status"] == "deleted"
-
-
-def test_create_or_reuse_group_product_reuses_mockup_failed_product_instead_of_recreating(stub_mockup_bundles, tmp_path):
-    # Regression: a mockup_failed row means Gelato created the product (gelato_product_id set)
-    # but the readiness poll timed out on rehost lag. Retrying must REUSE + re-poll that same
-    # product, never delete + recreate it (idempotency; avoids churning real Gelato products).
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    group_id = _insert_group(conn, candidate_id)
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-    static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
-
-    conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'live-prod-1', 'mockup_failed', ?, ?)",
-        (group_id, timestamp, timestamp),
+    gpid = result["group_product_id"]
+    group_product.render_group_mockups(
+        conn, secondary_group_id, ["5x7"], candidate, static_config, now="2026-07-16T09:11:00",
     )
-    conn.commit()
-    failed_id = conn.execute("SELECT id FROM group_products WHERE gelato_product_id = 'live-prod-1'").fetchone()["id"]
+    primary_before = len(_images(conn, gpid, primary_group_id))
+    secondary_before = [dict(r) for r in _images(conn, gpid, secondary_group_id)]
 
-    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
-         patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
-         patch("pipeline.group_product.poll_until_ready") as mock_poll:
-        mock_poll.return_value = {
-            "isReadyToPublish": True,
-            "productImages": [{"fileUrl": f"https://{gelato_client.GELATO_IMAGE_HOST}/a.jpg", "isPrimary": True}],
-        }
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:12:00",
-        )
-
-    mock_delete.assert_not_called()
-    mock_create.assert_not_called()
-    mock_poll.assert_called_once_with(
-        "live-prod-1", store_id=None, api_key=None, poll_interval=10.0, timeout=300.0,
+    # Re-render the primary group (a critic-pass retry). Idempotent for itself, inert
+    # for everyone else.
+    group_product.render_group_mockups(
+        conn, primary_group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:12:00",
     )
-    assert result["group_product_id"] == failed_id
-    assert result["gelato_product_id"] == "live-prod-1"
-    row = conn.execute("SELECT status FROM group_products WHERE id = ?", (failed_id,)).fetchone()
-    assert row["status"] == "created"
+    assert len(_images(conn, gpid, primary_group_id)) == primary_before
+    assert [dict(r) for r in _images(conn, gpid, secondary_group_id)] == secondary_before
 
 
-# --- GL-5 task 3: self-hosted mockup gallery replaces the Gelato-gallery fallback ---
-# The two tests previously here (falls_back_to_base_image_when_gelato_returns_no_images,
-# prefers_primary_group_image_over_dead_base_url) tested the old Gelato-gallery-driven
-# fallback mechanism (_primary_flat_image_url + image_crop.crop_for_group), which this
-# task deletes outright per the hard "no Gelato fallback, ever" constraint - their
-# scenario no longer exists, so they're removed rather than patched.
-
-def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_crop(
-    stub_mockup_bundles, tmp_path
-):
-    # Real (non-mocked) mockup_render output - proves the actual end-to-end
-    # integration. Primary renders straight from base_image_local_path (no crop
-    # step); flat scenes come first (image_type='flat_mockup'), lifestyle after.
-    # Bundles are the aspect-correct stubs; the real ones are exercised by
-    # test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles.
+def test_render_group_mockups_renders_primary_gallery_from_master_no_crop(stub_mockup_bundles, tmp_path):
+    # Primary renders straight from base_image_local_path (no crop step); flat scenes
+    # come first (image_type='flat_mockup'), lifestyle after. Real (non-mocked)
+    # mockup_render output against the aspect-correct stub bundles.
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -265,123 +230,78 @@ def test_create_or_reuse_group_product_renders_primary_gallery_from_master_no_cr
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
     static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-        )
+    result = group_product.render_group_mockups(
+        conn, group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
+    )
 
-    image_rows = conn.execute(
-        "SELECT image_url, image_type, gallery_order FROM product_images WHERE group_product_id = ? "
-        "ORDER BY gallery_order",
-        (result["group_product_id"],),
-    ).fetchall()
+    image_rows = _images(conn, result["group_product_id"])
     scenes = static_config["mockup_templates"]["primary"]["portrait"]
     assert [r["image_type"] for r in image_rows] == [
         "flat_mockup" if s.startswith("flat") else "lifestyle" for s in scenes]
     assert [r["gallery_order"] for r in image_rows] == list(range(len(scenes)))
+    assert {r["group_id"] for r in image_rows} == {group_id}
     # Rendered/persisted URLs only - never the raw master or a Gelato URL.
     for row in image_rows:
         assert row["image_url"] != master_path
         assert "gelato" not in row["image_url"].lower()
         assert Path(row["image_url"]).exists()
 
-    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
-    assert gp_row["status"] == "created"
 
-
-def test_create_or_reuse_group_product_renders_gallery_from_the_real_bundles(tmp_path):
-    # The real assets/mockups/primary/portrait bundles, not the stubs - the one
-    # test that proves the shipped scene library actually composites. It replaces
-    # the GL-21 placeholder that asserted these bundles fail loud: they did, while
-    # they carried attempt-1/2 apertures from 0.561 to 0.693 against a 0.684
-    # master, and GL-6 attempt 3 re-authored them. Expectations are derived from
-    # the config rather than listed: P4 is adding scenes, and a hardcoded list
-    # would have to be edited once per bundle for no added coverage.
+def test_render_group_mockups_renders_gallery_from_the_real_bundles(tmp_path):
+    # The real assets/mockups/primary/portrait bundles, not the stubs - the one test
+    # that proves the shipped scene library actually composites.
     conn = _fresh_conn(tmp_path)
-    master_path = _make_master(tmp_path)
-    candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     group_id = _insert_group(conn, candidate_id, group_type="primary")
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, _static_config(), "Title", now="2026-07-16T09:10:00",
-        )
+    result = group_product.render_group_mockups(
+        conn, group_id, ["8x12"], candidate, _static_config(), now="2026-07-16T09:10:00",
+    )
 
-    rows = conn.execute(
-        "SELECT image_type, gallery_order FROM product_images WHERE group_product_id = ? "
-        "ORDER BY gallery_order", (result["group_product_id"],),
-    ).fetchall()
+    rows = _images(conn, result["group_product_id"])
     scenes = _static_config()["mockup_templates"]["primary"]["portrait"]
     assert scenes, "the primary group must ship at least one real bundle"
     assert [r["image_type"] for r in rows] == [
         "flat_mockup" if s.startswith("flat") else "lifestyle" for s in scenes]
-    row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
-    assert row["status"] == "created"
 
 
-def test_create_or_reuse_group_product_5x7_builds_crop_then_renders_its_gallery(tmp_path):
-    # Was "...then_zero_images_known_gap": no 5x7 bundle existed until 2026-07-31,
-    # so the gallery came back empty and the test pinned that as accepted. The
-    # library now has one, and the same path renders it - which is what closes the
-    # gap this test was named after: a 5x7 listing shipping with no gallery images
-    # at all while nothing failed. Still guarded: the group-specific cover-crop is
-    # built (the non-primary crop-then-render path really runs) and the group lands
-    # on 'created'.
+def test_render_group_mockups_5x7_builds_crop_then_renders_its_gallery(tmp_path):
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path, size=(1600, 3700))  # clears 150 DPI at 5x7
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
     group_id = _insert_group(conn, candidate_id, group_type="5x7")
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-    static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["5x7"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-        )
+    result = group_product.render_group_mockups(
+        conn, group_id, ["5x7"], candidate, _static_config(), now="2026-07-16T09:10:00",
+    )
 
     # The crop was built (proves the crop-then-render path actually ran).
     assert (artwork_store.ARTWORK_CACHE_DIR / f"{candidate_id}_5x7_crop.png").exists()
-
-    image_rows = conn.execute(
-        "SELECT image_url FROM product_images WHERE group_product_id = ?",
-        (result["group_product_id"],),
-    ).fetchall()
-    assert image_rows, "a 5x7 listing would ship with no gallery images at all"
-
-    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
-    assert gp_row["status"] == "created"
+    assert _images(conn, result["group_product_id"]), "a 5x7 group would ship no gallery images"
 
 
-def test_create_or_reuse_group_product_missing_local_master_lands_on_mockup_failed(tmp_path):
+def test_render_group_mockups_missing_local_master_lands_on_mockup_failed(tmp_path):
     # A bad/missing base_image_local_path must not silently skip rendering or fall back
-    # to any Gelato/base image - it must propagate up through the existing except
-    # Exception and land the group on mockup_failed, same as any other render failure.
+    # to any Gelato/base image - it must land the listing record on mockup_failed.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=None)
     group_id = _insert_group(conn, candidate_id, group_type="primary")
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-    static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
-        with pytest.raises(group_product.PrintResolutionError):
-            group_product.create_or_reuse_group_product(
-                conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-            )
+    with pytest.raises(group_product.PrintResolutionError):
+        group_product.render_group_mockups(
+            conn, group_id, ["8x12"], candidate, _static_config(), now="2026-07-16T09:10:00",
+        )
 
     gp_row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
     assert gp_row["status"] == "mockup_failed"
 
 
-def test_create_or_reuse_group_product_never_uses_gelato_preview_or_base_url_as_image(stub_mockup_bundles, tmp_path):
-    # Determinism / no-Gelato-fallback guard: even when the Gelato dry-run response
-    # carries a previewUrl, and the candidate has a (dead) base_image_url, neither ends
-    # up as a product_images.image_url - only our own rendered/persisted URLs do. This
-    # directly guards the hard "no Gelato fallback, ever" constraint.
+def test_render_group_mockups_never_uses_gelato_preview_or_base_url_as_image(stub_mockup_bundles, tmp_path):
+    # No-Gelato-fallback guard: the candidate's (dead) base_image_url must never end up
+    # as a product_images.image_url - only our own rendered/persisted URLs do.
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path)
     candidate_id = _insert_candidate(
@@ -391,259 +311,518 @@ def test_create_or_reuse_group_product_never_uses_gelato_preview_or_base_url_as_
     candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
     static_config = _static_config()
 
-    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
-        mock_create.return_value = {
-            "id": "gelato-prod-1", "_dry_run": True,
-            "previewUrl": "https://gelato-preview.example.com/sneaky.jpg", "productImages": [],
-        }
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, ["8x12"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-        )
+    result = group_product.render_group_mockups(
+        conn, group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
+    )
 
-    image_rows = conn.execute(
-        "SELECT image_url FROM product_images WHERE group_product_id = ?",
-        (result["group_product_id"],),
-    ).fetchall()
+    image_rows = _images(conn, result["group_product_id"])
     assert len(image_rows) == len(static_config["mockup_templates"]["primary"]["portrait"])
     for row in image_rows:
-        assert row["image_url"] != "https://gelato-preview.example.com/sneaky.jpg"
         assert row["image_url"] != "https://replicate.delivery/dead-link.png"
+
+
+def test_render_group_mockups_dpi_guard_fires_before_any_db_write(tmp_path):
+    # B5, moved to the render path (GL-22 s2): a master too small to print must fail
+    # BEFORE the owner spends a review on it, and without orphaning a listing record.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path, size=(900, 1350)))
+    group_id = _insert_group(conn, candidate_id, group_type="primary")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+
+    with patch("pipeline.config.is_live_mode", return_value=True):
+        with pytest.raises(group_product.PrintResolutionError) as exc:
+            group_product.render_group_mockups(
+                conn, group_id, ["8x12", "A3", "A2", "A1"], candidate, _static_config(),
+                now="2026-07-16T09:10:00",
+            )
+
+    assert "A1" in str(exc.value)
+    assert conn.execute("SELECT COUNT(*) AS n FROM group_products").fetchone()["n"] == 0
+
+
+# --- v4.12: the Gelato half. One create per candidate, at publish. ---
+
+def _rendered_candidate(conn, tmp_path, *, size=(900, 1316), secondary="5x7",
+                        secondary_sizes=("5x7",), decide_secondary="approved",
+                        base_image_url="https://replicate.delivery/master.png"):
+    """A candidate whose primary group and one secondary group have both rendered."""
+    candidate_id = _insert_candidate(
+        conn, base_image_url=base_image_url,
+        base_image_local_path=_make_master(tmp_path, size=size),
+    )
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    secondary_group_id = _insert_group(conn, candidate_id, group_type=secondary)
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+    result = group_product.render_group_mockups(
+        conn, primary_group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
+    )
+    group_product.render_group_mockups(
+        conn, secondary_group_id, list(secondary_sizes), candidate, static_config,
+        now="2026-07-16T09:11:00",
+    )
+    _decide(conn, primary_group_id, "approved")
+    if decide_secondary is not None:
+        _decide(conn, secondary_group_id, decide_secondary)
+    return {
+        "candidate_id": candidate_id, "candidate": candidate,
+        "primary_group_id": primary_group_id, "secondary_group_id": secondary_group_id,
+        "group_product_id": result["group_product_id"], "static_config": static_config,
+    }
+
+
+def test_create_candidate_gelato_product_makes_one_call_with_every_validated_size(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path)
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = DRY
+        result = group_product.create_candidate_gelato_product(
+            conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    assert mock_create.call_count == 1
+    variants_arg = mock_create.call_args[0][1]
+    static_config = ctx["static_config"]
+    assert [v["template_variant_id"] for v in variants_arg] == [
+        static_config["gelato_templates"][f"{s}_portrait"]["template_variant_id"]
+        for s in ("8x12", "5x7")
+    ]
+    assert result["group_product_id"] == ctx["group_product_id"]
+    assert result["gelato_product_id"] == "gelato-prod-1"
+    gp_row = conn.execute("SELECT * FROM group_products WHERE id = ?", (result["group_product_id"],)).fetchone()
+    assert gp_row["status"] == "created"
+
+
+def test_create_candidate_gelato_product_excludes_a_rejected_group(tmp_path):
+    # [D1]: a rejected group contributes no variant. It is excluded, not deleted.
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path, decide_secondary="rejected")
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = DRY
+        group_product.create_candidate_gelato_product(
+            conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    variants_arg = mock_create.call_args[0][1]
+    assert len(variants_arg) == 1
+    # The rejected group's size comes off the listing record (so the variant table
+    # mirrors the Gelato product exactly)...
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_id = ?",
+        (ctx["secondary_group_id"],),
+    ).fetchone()["n"] == 0
+    # ...but nothing shared is touched: the product, the listing record and every other
+    # group's rows survive, and so does the rejected group's own reviewed gallery.
+    assert _images(conn, ctx["group_product_id"], ctx["secondary_group_id"])
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_id = ?",
+        (ctx["primary_group_id"],),
+    ).fetchone()["n"] == 1
+
+
+def test_create_candidate_gelato_product_never_creates_a_second_product(tmp_path):
+    # Idempotency, a hard constraint: the first live run duplicated products because a
+    # create succeeded, the readiness poll timed out and the retry re-created. A product
+    # id on the row means the create already succeeded - re-poll, never re-create.
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path)
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready"):
+        mock_create.return_value = {"id": "gelato-prod-1", "previewUrl": None, "productImages": []}
+        first = group_product.create_candidate_gelato_product(
+            conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll:
+        second = group_product.create_candidate_gelato_product(
+            conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:21:00",
+        )
+
+    mock_create.assert_not_called()
+    mock_delete.assert_not_called()
+    mock_poll.assert_called_once_with(
+        "gelato-prod-1", store_id=None, api_key=None, poll_interval=10.0, timeout=300.0,
+    )
+    assert first == second
+
+
+def test_create_candidate_gelato_product_repolls_a_mockup_failed_product(tmp_path):
+    # A row that carries a gelato_product_id but landed on mockup_failed is NOT stale:
+    # the create succeeded and only the readiness poll timed out (Gelato rehosting can
+    # lag past the window). Reuse + re-poll; deleting and recreating would restart the
+    # same slow clock and churn a real Gelato product.
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path)
+    conn.execute(
+        "UPDATE group_products SET gelato_product_id = 'live-prod-1', status = 'mockup_failed' WHERE id = ?",
+        (ctx["group_product_id"],),
+    )
+    conn.commit()
+
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll:
+        result = group_product.create_candidate_gelato_product(
+            conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    mock_delete.assert_not_called()
+    mock_create.assert_not_called()
+    mock_poll.assert_called_once_with(
+        "live-prod-1", store_id=None, api_key=None, poll_interval=10.0, timeout=300.0,
+    )
+    assert result["gelato_product_id"] == "live-prod-1"
+    assert conn.execute(
+        "SELECT status FROM group_products WHERE id = ?", (ctx["group_product_id"],)
+    ).fetchone()["status"] == "created"
+
+
+def test_render_group_mockups_refuses_to_add_a_size_after_the_product_exists(tmp_path):
+    # GL-22a Q2: there is no API path to add a variant to an existing product, and the
+    # product is the candidate's - deleting it to recreate would destroy sizes another
+    # group already published. So a group arriving with sizes AFTER the create fails
+    # loud, rather than recording a variant row for a size the product will never carry.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
+    late_group_id = _insert_group(conn, candidate_id, group_type="5x7")
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    static_config = _static_config()
+
+    result = group_product.render_group_mockups(
+        conn, primary_group_id, ["8x12"], candidate, static_config, now="2026-07-16T09:10:00",
+    )
+    _decide(conn, primary_group_id, "approved")
+    with patch("pipeline.gelato_client.create_product_from_template", return_value=DRY):
+        group_product.create_candidate_gelato_product(
+            conn, candidate_id, candidate, static_config, "Title", now="2026-07-16T09:20:00",
+        )
+
+    with pytest.raises(group_product.SharedProductVariantError):
+        group_product.render_group_mockups(
+            conn, late_group_id, ["5x7"], candidate, static_config, now="2026-07-16T09:21:00",
+        )
+
+    # Nothing was recorded for the late group, and the product is untouched.
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_id = ?", (late_group_id,)
+    ).fetchone()["n"] == 0
+    assert conn.execute(
+        "SELECT status FROM group_products WHERE id = ?", (result["group_product_id"],)
+    ).fetchone()["status"] == "created"
+
+
+def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
+    # End-to-end (real image_crop + artwork_store, only http.put_bytes and the Gelato
+    # call are mocked): the create call must receive the cropped, hosted URL - not
+    # candidate.base_image_url - for a non-primary group type.
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path, secondary="10x24", secondary_sizes=("10x24",))
+
+    r2_env = {
+        "R2_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "key", "R2_SECRET_ACCESS_KEY": "secret",
+        "R2_BUCKET": "bucket", "R2_ENDPOINT": "https://acct.r2.cloudflarestorage.com",
+        "R2_PUBLIC_BASE_URL": "https://cdn.example.com",
+    }
+    candidate_id = ctx["candidate_id"]
+
+    with patch("pipeline.config.is_live_mode", return_value=True), \
+         patch.dict("os.environ", r2_env), \
+         patch("pipeline.group_product.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready") as mock_poll, \
+         patch("pipeline.artwork_store.http.put_bytes") as mock_put:
+        mock_create.return_value = {"id": "gelato-prod-1"}
+        mock_poll.return_value = {"isReadyToPublish": True, "productImages": [{"fileUrl": "x", "isPrimary": True}]}
+        group_product.create_candidate_gelato_product(
+            conn, candidate_id, ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    assert any(f"{candidate_id}_10x24_crop.png" in c.args[0] for c in mock_put.call_args_list)
+    variants_arg = mock_create.call_args[0][1]
+    # GL-22a Q1: two variants sharing one image_placeholder_name carry independently
+    # submitted fileUrls in ONE call - the 8x12 keeps the master, 10x24 gets its crop.
+    assert [v["image_url"] for v in variants_arg] == [
+        ctx["candidate"]["base_image_url"],
+        f"https://cdn.example.com/base/{candidate_id}_10x24_crop.png",
+    ]
+
+
+def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(tmp_path, monkeypatch):
+    # If R2 isn't configured, persist_group_crop's durable_url is a local filesystem
+    # path - the create-path's non-http(s) guard must reject it, not silently fall back
+    # to the uncropped master.
+    for key in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
+                "R2_BUCKET", "R2_ENDPOINT", "R2_PUBLIC_BASE_URL"):
+        monkeypatch.delenv(key, raising=False)
+
+    conn = _fresh_conn(tmp_path)
+    # A durable (non-replicate) master URL, so the create gets past the replicate-URL
+    # guard and actually reaches the 5x7 variant's local-path crop URL - the guard
+    # under test here.
+    ctx = _rendered_candidate(conn, tmp_path, base_image_url="https://cdn.example.com/base/m.png")
+
+    with patch("pipeline.config.is_live_mode", return_value=True):
+        with pytest.raises(gelato_client.GelatoInvalidImageURLError):
+            group_product.create_candidate_gelato_product(
+                conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+                now="2026-07-16T09:20:00",
+            )
+
+
+def test_included_group_ids_is_in_gallery_rank_order_and_skips_the_undecided(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    ten = _insert_group(conn, candidate_id, group_type="10x24")
+    primary = _insert_group(conn, candidate_id, group_type="primary")
+    _insert_group(conn, candidate_id, group_type="5x7")
+    _decide(conn, primary, "approved")
+    _decide(conn, ten, "approved")
+    # 5x7 left undecided.
+    assert group_product.included_group_ids(conn, candidate_id) == [primary, ten]
+
+    conn.execute("UPDATE groups SET status = 'failed_abandoned' WHERE id = ?", (ten,))
+    conn.commit()
+    assert group_product.included_group_ids(conn, candidate_id) == [primary]
+
+
+# --- patch_etsy_listing: one listing, one assembled gallery ---
+
+def _publishable(conn, tmp_path, **kwargs):
+    ctx = _rendered_candidate(conn, tmp_path, **kwargs)
+    conn.execute(
+        "UPDATE group_products SET gelato_product_id = 'gelato-prod-1', status = 'created' WHERE id = ?",
+        (ctx["group_product_id"],),
+    )
+    conn.commit()
+    return ctx
 
 
 def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path):
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_group(conn, candidate_id)
-    static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
-    conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
-    )
-    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    conn.execute(
-        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
-    )
-    conn.commit()
+    ctx = _publishable(conn, tmp_path)
+    static_config = ctx["static_config"]
 
-    listing_text = {
-        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
-        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
-    }
-
-    # Gelato is "live" here (a real product exists to resolve externalId from) even though the
-    # Etsy-side dry_run=True keeps the actual Etsy write calls dry. These are independent gates.
+    # Gelato is "live" here (a real product exists to resolve externalId from) even
+    # though the Etsy-side dry_run=True keeps the actual Etsy write calls dry.
     with patch("pipeline.config.is_live_mode", return_value=True) as mock_live, \
          patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve, \
          patch("pipeline.etsy_client.update_listing") as mock_update, \
-         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory:
+         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory, \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "img-1"}):
         mock_resolve.return_value = "etsy-listing-42"
         listing_id = group_product.patch_etsy_listing(
-            conn, group_product_id, "primary", listing_text, static_config,
-            shop_id="shop1", dry_run=True, now=timestamp,
+            conn, ctx["group_product_id"], LISTING_TEXT, static_config,
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
         )
 
-    mock_live.assert_called_with("GELATO")
+    mock_live.assert_any_call("GELATO")
     mock_resolve.assert_called_once_with("gelato-prod-1", store_id=None, api_key=None)
     assert listing_id == "etsy-listing-42"
-    mock_update.assert_called_once()
     patched_data = mock_update.call_args[0][2]
     assert patched_data["title"] == "Monstera Line Art"
     assert "8x12" not in patched_data["title"]
+    # [D3]: one listing, one shipping profile, resolved once for the whole candidate.
+    assert patched_data["shipping_profile_id"] == "288734253315"
+    # Both groups' sizes are priced on the one listing.
     mock_inventory.assert_called_once_with(
-        "shop1", "etsy-listing-42", {"8x12": 24.0},
+        "shop1", "etsy-listing-42",
+        {"8x12": static_config["prices_eur"]["8x12"], "5x7": static_config["prices_eur"]["5x7"]},
         api_key=None, api_secret=None, access_token=None, dry_run=True,
     )
-    gp_row = conn.execute("SELECT etsy_listing_id, status FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
+    gp_row = conn.execute(
+        "SELECT etsy_listing_id, status FROM group_products WHERE id = ?", (ctx["group_product_id"],)
+    ).fetchone()
     assert gp_row["etsy_listing_id"] == "etsy-listing-42"
     assert gp_row["status"] == "published"
+
+
+def test_patch_etsy_listing_assembles_the_gallery_in_group_rank_order(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+    expected = [
+        row["image_url"] for row in conn.execute(
+            "SELECT pi.image_url FROM product_images pi JOIN groups g ON g.id = pi.group_id "
+            "WHERE pi.group_product_id = ? "
+            "ORDER BY CASE g.group_type WHEN 'primary' THEN 0 ELSE 1 END, pi.gallery_order",
+            (ctx["group_product_id"],),
+        ).fetchall()
+    ]
+    assert len(expected) > 1
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch("pipeline.etsy_client.update_listing"), \
+         patch("pipeline.etsy_client.update_listing_inventory"), \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}) as mock_upload:
+        group_product.patch_etsy_listing(
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+        )
+
+    assert mock_upload.call_count == len(expected)
+    for call in mock_upload.call_args_list:
+        assert call.args[:2] == ("shop1", "DRY_RUN_ETSY_LISTING_ID")
+
+
+def test_patch_etsy_listing_skips_a_rejected_groups_images_and_sizes(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path, decide_secondary="rejected")
+    primary_images = len(_images(conn, ctx["group_product_id"], ctx["primary_group_id"]))
+    assert _images(conn, ctx["group_product_id"], ctx["secondary_group_id"]), \
+        "the rejected group's images must still exist in the DB - they're excluded, not deleted"
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch("pipeline.etsy_client.update_listing"), \
+         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory, \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}) as mock_upload:
+        group_product.patch_etsy_listing(
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+        )
+
+    assert mock_upload.call_count == primary_images
+    assert set(mock_inventory.call_args[0][2]) == {"8x12"}
+
+
+def test_patch_etsy_listing_is_idempotent_and_does_not_duplicate_the_gallery(tmp_path):
+    # The upload loop is a full re-upload with no delta, so a second call after a partial
+    # failure would duplicate every photo on the live listing. Each row records Etsy's
+    # own listing_image_id and is skipped on the next pass.
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+
+    def _patch():
+        with patch("pipeline.config.is_live_mode", return_value=False), \
+             patch("pipeline.etsy_client.update_listing"), \
+             patch("pipeline.etsy_client.update_listing_inventory"), \
+             patch("pipeline.etsy_client.upload_listing_image",
+                   return_value={"listing_image_id": "img-1"}) as mock_upload:
+            group_product.patch_etsy_listing(
+                conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+                shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+            )
+            return mock_upload.call_count
+
+    first = _patch()
+    assert first > 0
+    assert _patch() == 0
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM product_images WHERE group_product_id = ? "
+        "AND etsy_listing_image_id IS NULL AND group_id = ?",
+        (ctx["group_product_id"], ctx["primary_group_id"]),
+    ).fetchone()["n"] == 0
+
+
+def test_patch_etsy_listing_refuses_a_gallery_over_etsys_20_image_cap(tmp_path):
+    # Asserted, never assumed: today's worst case is 13 images, but the scene library
+    # grows and Etsy rejects the 21st photo.
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+    for order in range(group_product.ETSY_MAX_LISTING_IMAGES + 1):
+        conn.execute(
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, '', ?, 'lifestyle')",
+            (ctx["group_product_id"], ctx["primary_group_id"], f"/x/{order}.png", 100 + order),
+        )
+    conn.commit()
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch("pipeline.etsy_client.update_listing") as mock_update, \
+         patch("pipeline.etsy_client.upload_listing_image") as mock_upload:
+        with pytest.raises(group_product.GalleryTooLargeError):
+            group_product.patch_etsy_listing(
+                conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+                shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+            )
+
+    mock_upload.assert_not_called()
+    mock_update.assert_not_called()
 
 
 def test_patch_etsy_listing_never_activates_a_listing(tmp_path):
     # B1 (inverted): drafts stay drafts. patch_etsy_listing must never call
     # update_listing_state, and must never send a 'state' field in update_listing's
-    # payload - either would activate the listing ($0.20 each). group_products.status
-    # 'published' means "patched draft", not "live on Etsy". Guards against a future
-    # "helpful" wiring of the deliberately-unused update_listing_state.
+    # payload - either would activate the listing ($0.20 each).
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_group(conn, candidate_id)
-    static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
-    conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
-    )
-    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    conn.execute(
-        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
-    )
-    conn.commit()
+    ctx = _publishable(conn, tmp_path)
 
-    listing_text = {
-        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
-        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
-    }
-
-    with patch("pipeline.config.is_live_mode", return_value=True), \
-         patch("pipeline.gelato_client.get_etsy_listing_id", return_value="etsy-listing-42"), \
+    with patch("pipeline.config.is_live_mode", return_value=False), \
          patch("pipeline.etsy_client.update_listing_state") as mock_state, \
          patch("pipeline.etsy_client.update_listing") as mock_update, \
-         patch("pipeline.etsy_client.update_listing_inventory"):
+         patch("pipeline.etsy_client.update_listing_inventory"), \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}):
         group_product.patch_etsy_listing(
-            conn, group_product_id, "primary", listing_text, static_config,
-            shop_id="shop1", dry_run=True, now=timestamp,
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
         )
 
     mock_state.assert_not_called()
-    patched_data = mock_update.call_args[0][2]
-    assert "state" not in patched_data
-    conn.close()
+    assert "state" not in mock_update.call_args[0][2]
 
 
 def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
-    # Regression test: patch_etsy_listing's dry_run parameter only gates the Etsy write calls.
-    # Resolving etsy_listing_id is a Gelato-side read (gelato_client.get_product has no dry_run
-    # of its own and always makes a real HTTP call) - it must be gated on Gelato's own liveness,
-    # not on this function's dry_run. Otherwise, in the standard dev state (GELATO_LIVE_MODE
-    # unset, create_or_reuse_group_product returns a fake "DRY_RUN_PRODUCT_ID"), calling this
-    # would crash (missing creds) or hang (up to the 600s poll timeout).
+    # patch_etsy_listing's dry_run parameter only gates the Etsy write calls. Resolving
+    # etsy_listing_id is a Gelato-side read that always makes a real HTTP call, so it
+    # must be gated on Gelato's own liveness - otherwise the standard dev state would
+    # crash (missing creds) or hang.
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_group(conn, candidate_id)
-    static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
+    ctx = _publishable(conn, tmp_path)
     conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'DRY_RUN_PRODUCT_ID', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
-    )
-    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    conn.execute(
-        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
+        "UPDATE group_products SET gelato_product_id = 'DRY_RUN_PRODUCT_ID' WHERE id = ?",
+        (ctx["group_product_id"],),
     )
     conn.commit()
-
-    listing_text = {
-        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
-        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
-    }
 
     with patch("pipeline.config.is_live_mode", return_value=False), \
          patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve, \
          patch("pipeline.etsy_client.update_listing") as mock_update, \
-         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory:
+         patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory, \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}):
         listing_id = group_product.patch_etsy_listing(
-            conn, group_product_id, "primary", listing_text, static_config,
-            shop_id="shop1", dry_run=True, now=timestamp,
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
         )
 
     mock_resolve.assert_not_called()
     assert listing_id == "DRY_RUN_ETSY_LISTING_ID"
     mock_update.assert_called_once()
     mock_inventory.assert_called_once()
-    gp_row = conn.execute("SELECT etsy_listing_id FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
-    assert gp_row["etsy_listing_id"] == "DRY_RUN_ETSY_LISTING_ID"
-
-
-def test_patch_etsy_listing_uploads_gallery_images_in_gallery_order(tmp_path):
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_group(conn, candidate_id)
-    static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
-    conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
-    )
-    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    conn.execute(
-        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)", (group_product_id, timestamp),
-    )
-    # Deliberately inserted out of gallery_order to prove the SELECT's ORDER BY drives
-    # upload order, not insertion order.
-    conn.execute(
-        "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-        "VALUES (?, 'https://cdn.example.com/second.jpg', 'alt', 1, 'lifestyle')", (group_product_id,),
-    )
-    conn.execute(
-        "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-        "VALUES (?, '/local/first.jpg', 'alt', 0, 'flat_mockup')", (group_product_id,),
-    )
-    conn.commit()
-
-    listing_text = {
-        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
-        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
-    }
-
-    with patch("pipeline.config.is_live_mode", return_value=True), \
-         patch("pipeline.gelato_client.get_etsy_listing_id", return_value="etsy-listing-42"), \
-         patch("pipeline.etsy_client.update_listing"), \
-         patch("pipeline.etsy_client.update_listing_inventory"), \
-         patch("pipeline.etsy_client.upload_listing_image") as mock_upload:
-        group_product.patch_etsy_listing(
-            conn, group_product_id, "primary", listing_text, static_config,
-            shop_id="shop1", dry_run=True, now=timestamp,
-        )
-
-    assert mock_upload.call_count == 2
-    first_call, second_call = mock_upload.call_args_list
-    assert first_call.args[:2] == ("shop1", "etsy-listing-42")
-    assert second_call.args[:2] == ("shop1", "etsy-listing-42")
-    assert first_call.kwargs["dry_run"] is True
-    assert second_call.kwargs["dry_run"] is True
 
 
 def test_patch_etsy_listing_uploads_nothing_when_no_gallery_images(tmp_path):
-    # Known Task 3 gap: 5x7/10x24 groups can land with zero product_images rows.
-    # patch_etsy_listing must not error on that - it just uploads nothing and the
-    # rest of the listing/inventory patch still completes.
+    # A group_type with no authored scenes lands with zero product_images rows.
+    # patch_etsy_listing must not error - it uploads nothing and the rest still runs.
     conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(conn)
-    group_id = _insert_group(conn, candidate_id)
-    static_config = _static_config()
-    timestamp = "2026-07-16T09:10:00"
-    conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'gelato-prod-1', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
-    )
-    group_product_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    conn.execute(
-        "INSERT INTO group_product_variants (group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '5x7', 'portrait', 'var1', 19.0, ?)", (group_product_id, timestamp),
-    )
+    ctx = _publishable(conn, tmp_path)
+    conn.execute("DELETE FROM product_images WHERE group_product_id = ?", (ctx["group_product_id"],))
     conn.commit()
 
-    listing_text = {
-        "title": "Monstera Line Art", "description": "desc", "tags": '["a", "b"]',
-        "who_made": "i_did", "taxonomy_id": "1027", "production_partner_ids": "[5717252]",
-    }
-
-    with patch("pipeline.config.is_live_mode", return_value=True), \
-         patch("pipeline.gelato_client.get_etsy_listing_id", return_value="etsy-listing-42"), \
+    with patch("pipeline.config.is_live_mode", return_value=False), \
          patch("pipeline.etsy_client.update_listing") as mock_update, \
          patch("pipeline.etsy_client.update_listing_inventory") as mock_inventory, \
          patch("pipeline.etsy_client.upload_listing_image") as mock_upload:
         listing_id = group_product.patch_etsy_listing(
-            conn, group_product_id, "5x7", listing_text, static_config,
-            shop_id="shop1", dry_run=True, now=timestamp,
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
         )
 
     mock_upload.assert_not_called()
     mock_update.assert_called_once()
     mock_inventory.assert_called_once()
-    assert listing_id == "etsy-listing-42"
-    gp_row = conn.execute("SELECT status FROM group_products WHERE id = ?", (group_product_id,)).fetchone()
-    assert gp_row["status"] == "published"
+    assert listing_id == "DRY_RUN_ETSY_LISTING_ID"
+    assert conn.execute(
+        "SELECT status FROM group_products WHERE id = ?", (ctx["group_product_id"],)
+    ).fetchone()["status"] == "published"
 
 
 # --- B5 pre-create print-DPI guard ---
@@ -683,83 +862,6 @@ def test_assert_print_dpi_raises_when_local_path_missing():
     assert "missing or unreadable" in str(exc.value)
 
 
-# --- GL-14: real print crop reaches Gelato for 5x7/10x24 ---
-
-def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
-    # End-to-end (real image_crop + artwork_store, only http.put_bytes and the
-    # Gelato call are mocked): the create call must receive the cropped, hosted
-    # URL - not candidate.base_image_url - for a non-primary group type.
-    from PIL import Image
-    master_path = tmp_path / "master.png"
-    # Clears 150 DPI at 10x24 (1600/10=160, 3700/24~=154).
-    Image.new("RGB", (1600, 3700), (200, 180, 150)).save(master_path, format="PNG")
-
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(
-        conn, base_image_url="https://replicate.delivery/master.png",
-        base_image_local_path=str(master_path),
-    )
-    group_id = _insert_group(conn, candidate_id, group_type="10x24")
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-    static_config = _static_config()
-
-    r2_env = {
-        "R2_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "key", "R2_SECRET_ACCESS_KEY": "secret",
-        "R2_BUCKET": "bucket", "R2_ENDPOINT": "https://acct.r2.cloudflarestorage.com",
-        "R2_PUBLIC_BASE_URL": "https://cdn.example.com",
-    }
-
-    with patch("pipeline.config.is_live_mode", return_value=True), \
-         patch.dict("os.environ", r2_env), \
-         patch("pipeline.group_product.gelato_client.create_product_from_template") as mock_create, \
-         patch("pipeline.group_product.poll_until_ready") as mock_poll, \
-         patch("pipeline.artwork_store.http.put_bytes") as mock_put:
-        mock_create.return_value = {"id": "gelato-prod-1"}
-        mock_poll.return_value = {"isReadyToPublish": True, "productImages": [{"fileUrl": "x", "isPrimary": True}]}
-        group_product.create_or_reuse_group_product(
-            conn, group_id, ["10x24"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-        )
-
-    # The crop was actually built and uploaded. Not assert_called_once: since
-    # 2026-07-31 the 10x24 group has mockup bundles, so the gallery renders and
-    # uploads too - this asserts the crop specifically, not the call count.
-    assert any(f"{candidate_id}_10x24_crop.png" in c.args[0] for c in mock_put.call_args_list)
-    variants_arg = mock_create.call_args[0][1]
-    assert variants_arg[0]["image_url"] == f"https://cdn.example.com/base/{candidate_id}_10x24_crop.png"
-    assert variants_arg[0]["image_url"] != candidate["base_image_url"]
-
-
-def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(tmp_path, monkeypatch):
-    # If R2 isn't configured, persist_group_crop's durable_url is a local filesystem
-    # path - the create-path's existing non-http(s) guard must reject it, not
-    # silently fall back to the uncropped master (that's the bug this fixes).
-    from PIL import Image
-    for key in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
-                "R2_BUCKET", "R2_ENDPOINT", "R2_PUBLIC_BASE_URL"):
-        monkeypatch.delenv(key, raising=False)
-
-    master_path = tmp_path / "master.png"
-    Image.new("RGB", (900, 1316), (200, 180, 150)).save(master_path, format="PNG")
-
-    conn = _fresh_conn(tmp_path)
-    candidate_id = _insert_candidate(
-        conn, base_image_url="https://replicate.delivery/master.png",
-        base_image_local_path=str(master_path),
-    )
-    group_id = _insert_group(conn, candidate_id, group_type="5x7")
-    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
-    static_config = _static_config()
-
-    with patch("pipeline.config.is_live_mode", return_value=True):
-        with pytest.raises(gelato_client.GelatoInvalidImageURLError):
-            group_product.create_or_reuse_group_product(
-                conn, group_id, ["5x7"], candidate, static_config, "Title", now="2026-07-16T09:10:00",
-            )
-
-    gp_row = conn.execute("SELECT status FROM group_products WHERE group_id = ?", (group_id,)).fetchone()
-    assert gp_row["status"] == "mockup_failed"
-
-
 def test_scale8_master_clears_150_dpi_at_every_offered_size():
     # Documents the B5 fix constants: the scale=8 master (6656x9728) must clear the
     # 150 DPI floor at every size, worst case A1. Pure arithmetic on the size table.
@@ -767,3 +869,26 @@ def test_scale8_master_clears_150_dpi_at_every_offered_size():
     for size, (short_in, long_in) in group_product._SIZE_INCHES.items():
         dpi = min(px_short / short_in, px_long / long_in)
         assert dpi >= group_product.MIN_PRINT_DPI, f"{size} only {dpi:.0f} DPI"
+
+
+def test_live_product_row_resolves_a_pre_migration_row_by_group_id(tmp_path):
+    # GL-9-era rows predate the migration and carry candidate_id NULL. They must still
+    # resolve - by group_id, as they always did - so their real, already-published
+    # Gelato product is reused rather than duplicated by a candidate-keyed miss.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_group(conn, candidate_id, group_type="primary")
+    timestamp = "2026-07-16T09:10:00"
+    cursor = conn.execute(
+        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, 'tmpl', 'legacy-prod-1', 'created', ?, ?)",
+        (group_id, timestamp, timestamp),
+    )
+    conn.commit()
+
+    row = group_product.live_product_row(conn, candidate_id, group_id)
+    assert row is not None
+    assert row["id"] == cursor.lastrowid
+    assert row["candidate_id"] is None
+    # ...but a candidate-keyed lookup with no group context does not resurrect it.
+    assert group_product.live_product_row(conn, candidate_id) is None

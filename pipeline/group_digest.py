@@ -7,20 +7,25 @@ import pipeline.telegram_client as telegram_client
 
 
 def get_review_group(conn, group_id: int) -> dict:
+    # v4.12: the digest entry is still per group, but the variant rows it prices live on
+    # the candidate's shared listing record - so they're read by group_id, not by
+    # group_product_id alone.
     row = conn.execute(
         """
-        SELECT g.candidate_id AS candidate_id, g.group_type AS group_type, gp.id AS group_product_id
-        FROM groups g
-        JOIN group_products gp ON gp.group_id = g.id AND gp.status = 'created'
-        WHERE g.id = ?
+        SELECT g.candidate_id AS candidate_id, g.group_type AS group_type,
+               (SELECT gp.id FROM group_products gp
+                 WHERE gp.candidate_id = g.candidate_id AND gp.status != 'deleted'
+                 ORDER BY gp.id LIMIT 1) AS group_product_id
+        FROM groups g WHERE g.id = ?
         """,
         (group_id,),
     ).fetchone()
-    if row is None:
+    if row is None or row["group_product_id"] is None:
         raise ValueError(f"No live group_product for group {group_id}")
     variant_rows = conn.execute(
-        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
-        (row["group_product_id"],),
+        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? "
+        "AND group_id = ? ORDER BY size",
+        (row["group_product_id"], group_id),
     ).fetchall()
     return {
         "candidate_id": row["candidate_id"],
@@ -34,8 +39,8 @@ def get_group_gallery_urls(conn, group_id: int) -> list:
         """
         SELECT pi.image_url
         FROM product_images pi
-        JOIN group_products gp ON gp.id = pi.group_product_id AND gp.status = 'created'
-        WHERE gp.group_id = ?
+        JOIN group_products gp ON gp.id = pi.group_product_id AND gp.status != 'deleted'
+        WHERE pi.group_id = ?
         ORDER BY pi.gallery_order
         """,
         (group_id,),
@@ -102,8 +107,8 @@ def run_group_digest_cycle(conn, *, static_config: dict = None, bot_token: str =
             """
             SELECT DISTINCT g.id
             FROM groups g
-            JOIN group_products gp ON gp.group_id = g.id AND gp.status = 'created'
             WHERE g.group_type IN ('5x7', '10x24')
+              AND EXISTS (SELECT 1 FROM product_images pi WHERE pi.group_id = g.id)
               AND g.status = 'pending_review'
               AND g.id IN (SELECT group_id FROM critic_pass_attempts WHERE passed = 1)
               AND g.id NOT IN (SELECT group_id FROM group_messages)

@@ -41,23 +41,23 @@ def _insert_group_gallery(conn, candidate_id, group_type, size, *,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tpl_1', 'gelato_prod_1', ?, ?, ?)",
-        (group_id, group_product_status, timestamp, timestamp),
+        "(candidate_id, group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, ?, 'tpl_1', 'gelato_prod_1', ?, ?, ?)",
+        (candidate_id, group_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
     conn.execute(
         "INSERT INTO group_product_variants "
-        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, ?, 'portrait', 'variant_1', ?, ?)",
-        (group_product_id, size, price_eur, timestamp),
+        "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, ?, 'portrait', 'variant_1', ?, ?)",
+        (group_product_id, group_id, size, price_eur, timestamp),
     )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, 'placeholder alt', ?, ?)",
-            (group_product_id, image_url, order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, 'placeholder alt', ?, ?)",
+            (group_product_id, group_id, image_url, order, image_type),
         )
     conn.commit()
     return group_id, group_product_id
@@ -108,8 +108,12 @@ def test_get_review_group_returns_candidate_type_and_variants(tmp_path):
 def test_get_review_group_raises_when_no_live_group_product(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
+    # v4.12: 'deleted' is the state that means "this candidate has no listing record".
+    # 'mockup_failed' no longer does - the record is the candidate's and survives a
+    # failed render, so it stays resolvable (the digest cycle gates on rendered images
+    # instead, which a failed render never produced).
     group_id, _ = _insert_group_gallery(
-        conn, candidate_id, "5x7", "5x7", group_product_status="mockup_failed",
+        conn, candidate_id, "5x7", "5x7", group_product_status="deleted",
     )
 
     with pytest.raises(ValueError, match="group_product"):

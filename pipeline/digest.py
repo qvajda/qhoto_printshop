@@ -6,20 +6,25 @@ import pipeline.telegram_client as telegram_client
 
 
 def get_primary_group(conn, candidate_id: int) -> dict:
+    # v4.12: the listing record is the candidate's and is 'pending' (no Gelato product)
+    # throughout review; the primary group's own variants are read by group_id.
     row = conn.execute(
         """
-        SELECT g.id AS group_id, gp.id AS group_product_id
+        SELECT g.id AS group_id,
+               (SELECT gp.id FROM group_products gp
+                 WHERE gp.candidate_id = g.candidate_id AND gp.status != 'deleted'
+                 ORDER BY gp.id LIMIT 1) AS group_product_id
         FROM groups g
-        JOIN group_products gp ON gp.group_id = g.id AND gp.status = 'created'
         WHERE g.candidate_id = ? AND g.group_type = 'primary'
         """,
         (candidate_id,),
     ).fetchone()
-    if row is None:
+    if row is None or row["group_product_id"] is None:
         raise ValueError(f"No live primary group_product for candidate {candidate_id}")
     variant_rows = conn.execute(
-        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? ORDER BY size",
-        (row["group_product_id"],),
+        "SELECT size, price_eur FROM group_product_variants WHERE group_product_id = ? "
+        "AND group_id = ? ORDER BY size",
+        (row["group_product_id"], row["group_id"]),
     ).fetchall()
     return {
         "group_id": row["group_id"],
@@ -32,8 +37,8 @@ def get_primary_gallery_urls(conn, candidate_id: int) -> list:
         """
         SELECT pi.image_url
         FROM product_images pi
-        JOIN group_products gp ON gp.id = pi.group_product_id AND gp.status = 'created'
-        JOIN groups g ON g.id = gp.group_id
+        JOIN group_products gp ON gp.id = pi.group_product_id AND gp.status != 'deleted'
+        JOIN groups g ON g.id = pi.group_id
         WHERE g.candidate_id = ? AND g.group_type = 'primary'
         ORDER BY pi.gallery_order
         """,

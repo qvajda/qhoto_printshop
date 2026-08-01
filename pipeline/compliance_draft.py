@@ -31,9 +31,9 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
 
 
 def resolve_compliance_metadata(static_config: dict) -> dict:
-    # shipping_profile_id is NOT resolved here: it varies per aspect-ratio group (Etsy allows
-    # only one shipping profile per listing, and a candidate's groups can span both Etsy
-    # shipping tiers), so it's looked up per-size at publish time instead, not stored here.
+    # shipping_profile_id is NOT resolved here: v4.12 [D3] resolves it once per candidate
+    # at publish time (config.get_shipping_profile_id), so there's nothing per-candidate
+    # worth freezing into listing_texts at draft time.
     return {
         "who_made": static_config["etsy_who_made"],
         "production_partner_ids": static_config["etsy_production_partner_ids"],
@@ -60,8 +60,7 @@ def get_primary_gallery(conn, candidate_id: int) -> list:
         """
         SELECT pi.id, pi.gallery_order, pi.image_type
         FROM product_images pi
-        JOIN group_products gp ON gp.id = pi.group_product_id
-        JOIN groups g ON g.id = gp.group_id
+        JOIN groups g ON g.id = pi.group_id
         WHERE g.candidate_id = ? AND g.group_type = 'primary'
         ORDER BY pi.gallery_order
         """,
@@ -194,9 +193,8 @@ def run_compliance_draft_cycle(conn, *, static_config: dict = None,
             """
             SELECT DISTINCT c.id FROM candidates c
             JOIN groups g ON g.candidate_id = c.id AND g.group_type = 'primary'
-            JOIN group_products gp ON gp.group_id = g.id
             WHERE c.status = 'generating'
-              AND gp.status = 'created'
+              AND EXISTS (SELECT 1 FROM product_images pi WHERE pi.group_id = g.id)
               AND c.id NOT IN (SELECT candidate_id FROM listing_texts)
             ORDER BY c.id
             """

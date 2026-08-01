@@ -1,6 +1,64 @@
 # Go-live plan of attack — Etsy AI POD pipeline (2026-07-22)
 
-> **Last updated 2026-07-31 — the mockup milestone is achieved for portrait,
+> **Last updated 2026-08-02 (late) — GL-22 is BUILT. 635/635 green.**
+> Session 2 shipped as one PR, not two: `D` and `E` turned out not to be
+> disjoint from `A` once traced (D's "one call site" *is* `patch_etsy_
+> listing`). SPEC v4.12 written, three CLAUDE.md constraints rewritten, a
+> fourth flagged and now fixed. Both approved deletions done.
+> **The single most important fact right now: none of it is on master.**
+> `docs/gl22a-research-and-prd` is **9 commits ahead**; master's tip is
+> still `ee41fbd`. The runtime deploys from master, so v4.12 is not real
+> until this merges — same class as GL-1 and GL-23, and again the cheapest
+> thing on the critical path. Tracked as **GL-23b**.
+> **Session 2 found three things no impact map caught** (a second silent
+> wipe on the *filesystem* key, a reclaim sweep that would have deleted
+> every live listing record, and a cycle trigger that deadlocked under
+> `[D1]`) — all three by *reading stages*, not by running tests. See
+> Session S. **GL-13's delta grew accordingly.**
+>
+> **2026-08-02 — GL-22 session 1 ✅ landed, session 2 kicked
+> off.** Four commits (`6df9ba5` `ed660c1` `b0560df` `4c878b3`): the two
+> `etsy_client` fixes, the additive schema migration, the candidate-keyed
+> create path, and a review-pass fix for a legacy-row hole. **Two things the
+> session found that reshape session 2:** (1) `create_or_reuse_group_product`
+> is **welded** to the local mockup render, and v4.12 gives those two jobs
+> incompatible timings — so session 2 cuts the weld before anything else;
+> (2) the secondary (5x7/10x24) path is **deliberately broken between the
+> sessions** — dry-run-only ground, but real. **And an incident:** a subagent
+> ran `git stash` and wiped the working tree; recovered in full. Standing
+> rule now: **subagent briefs need a command denylist, not just a file
+> allowlist.** Session 2's kickoff:
+> `docs/2026-08-02-gl22-session2-kickoff.md`.
+>
+> **2026-08-01 (evening) — Track B's gate is closed.**
+> **GL-22a ✅** ran live: four measured answers, two throwaway Gelato products
+> created and deleted. It **struck GL-22d** (a shared `image_placeholder_name`
+> does *not* force a shared image — the owner's template edit was never
+> needed) and **killed two of GL-22c's three options** (no API path adds a
+> variant post-create; pruning a variation orphans the Gelato mapping).
+> **GL-22b ✅ decided: `Gelato: Free shipping` (`288734253315`)**, a profile
+> the original options list didn't know existed — €0 to every destination,
+> **no re-pricing**, all six sizes still clear cost at 21–44 %.
+> **GL-22c ✅ decided: create-once-when-all-groups-are-decided, publishing
+> only validated sizes, with a plain 14-day stall timeout** (the reminder
+> ping is deferred post-go-live as **GL-31**, which shrinks the rule from a
+> new stage to a predicate). The
+> PRD (`docs/2026-08-01-v412-single-listing-prd.md`) is **signed off**, and
+> GL-22 is now a **two-session build**, session 1 kicked off in
+> `docs/2026-08-01-gl22-session1-kickoff.md`. Everything below GL-22 is
+> unchanged.
+>
+> **Earlier 2026-08-01 — Track A is closed.** GL-23 ✅ merged (master
+> carries the wired 10 + 1 + 2 gallery) and GL-19b ✅ passed (13/13 rendered,
+> deterministic, size-checked, owner-approved). Two new owner items:
+> **GL-29** — programmatic draft→active publishing behind an `ETSY_ACTIVATE_
+> LISTINGS` flag, which **GL-11 now waits on**; and **GL-30** — a one-off
+> backup of the mockup corpus to R2 before go-live, with **GL-30b**, the
+> authoring-time sync, deferred after it. Both are endorsed; both are smaller
+> than they look, because `etsy_client.update_listing_state` and
+> `artwork_store`'s R2 uploader already exist.
+>
+> **2026-07-31 — the mockup milestone is achieved for portrait,
 > and a new pre-launch scope item lands on top of it.** GL-21 (compositor) and
 > GL-6 (scene library) are **done for portrait**: 17 primary bundles authored,
 > **10 wired**, plus 1 wired at 5x7 and 2 at 10x24 — the two secondary groups
@@ -172,28 +230,44 @@ attempt 3 / scene library, portrait ✅.
 
 | ID | Type | Item | Input → Output |
 |---|---|---|---|
-| GL-23 | C | **Merge `feat/gl6-p4-scene-library` → master.** 36 commits: chroma model, intake harness, the harvest, 11 landed bundles, the five accepted scenes, 5x7/10x24 wiring, `edge-alpha-jitter` (gate is 9 detectors), `gate_waivers`. 597+ tests green on the branch. The runtime deploys from master; nothing below is real until this lands. **Cheapest item on the critical path — do it first.** | branch → PR → master |
-| GL-19b | T | **Re-run the M1 render harness against the *wired* gallery.** `scripts/gl19_m1_render.py` last ran against 4 bundles, 3 of which are now rejected. The shipping gallery is 10 primary + 1 5x7 + 2 10x24 and has never been rendered end-to-end as a set. Offline render + owner eyeball, then one guarded live upload. | harness run → contact sheet → owner sign-off |
-| GL-22 | R→D→IR→C | **One Etsy listing per artwork (v4.12).** Six sizes as variants of one Gelato product / one Etsy listing; gallery = primary mockups + 5x7 mockups if that crop passed + 10x24 mockups if that one passed. **Gated on GL-22a (research) and GL-22b/c (decisions) before any PRD or code.** Known scope: `group_products` becomes candidate-level (schema migration + backfill), per-variant `fileUrl` at create, one shipping profile, gallery assembly across groups with a ≤20-image assert, critic-pass abandon must stop deleting the shared product, `cleanup.py` / `discard_superseded_attempt` / `publish_group.py` / `run_m1_live_test.py` all touched, plus **SPEC v4.12** and **two CLAUDE.md hard-constraint rewrites**. | GL-22a/b/c → PRD → sign-off → build |
-| GL-22a | R | **Gelato API research gate.** Four questions, each with a measurement: (1) do two variants sharing one `image_placeholder_name` accept different `fileUrl`s in one create — i.e. **is the owner's template edit necessary at all?** (2) is there any API path to **add a variant** to an existing store product, or is it dashboard-only as the support docs suggest? (3) does Gelato **re-push and overwrite** our Etsy patch after a product edit? (4) what happens to the Gelato↔Etsy variant mapping when we remove a variation from the Etsy listing inventory. Answer against the sandbox/dry-run first; one throwaway live product if needed. | 4 measured answers → picks the GL-22 build shape |
-| GL-22b | D | **Shipping profile for a merged listing.** One listing = one profile. Options: Large for everything (5x7 buyer pays €14.55 instead of €12.44 — €2.11 against a €19 entry price), Small for everything (under-charges on A1 — do not), re-price 5x7 to absorb it, or hunt for a better fit among the ~49 Gelato-created profiles. **Owner call, needed before the PRD** — it moves a price. | decision → `static_config` shape |
-| GL-22c | D | **Publish timing.** Owner's preference (2026-07-31): **publish the listing on primary approval, patch 5x7/10x24 variants + their mockups in as each passes.** Depends entirely on GL-22a question (2). **Pre-committed fork — do not re-litigate when reached:** if there is no API path to add a variant post-create, fall back to **create-once-when-all-groups-are-decided** (all three digest entries already go out in the same evening run; the cost is that the listing waits for two more button taps, plus a stall rule for a decision that never arrives). Second fallback, if that is unacceptable: create all six variants up front and remove rejected sizes from the Etsy inventory patch — cleanest publish, but leaves an unmapped Gelato variant, which only matters if it is orderable. | GL-22a → confirmed flow |
-| GL-22d | M | **Gelato template edit** — a second/third image placeholder on the portrait template so 5x7 and 10x24 variants address their own crop. **Do not start until GL-22a question (1) is answered** — it may be unnecessary. If it is needed, re-resolve `image_placeholder_name` per size in `static_config.json` afterwards (config shape already supports it). | GL-22a → edited template + real IDs |
-| GL-7 | C | **Cron orchestrator** — two cadences (hourly Telegram poll, twice-daily batch) wiring the existing 13 stages; one function per stage, not one loop. Unblocked since 2026-07-23. **DoD includes the overnight unattended soak** — GL-16 is proven in unit/scripted-interrupt tests only, and the soak is its production proof. **Now the single biggest remaining build chunk.** | GL-3 decision + kickoff → PR + clean soak |
+| GL-23 | C | **✅ DONE 2026-08-01** — merged; master carries the wired 10 + 1 + 2 gallery. Original scope: **merge `feat/gl6-p4-scene-library` → master.** 36 commits: chroma model, intake harness, the harvest, 11 landed bundles, the five accepted scenes, 5x7/10x24 wiring, `edge-alpha-jitter` (gate is 9 detectors), `gate_waivers`. 597+ tests green on the branch. The runtime deploys from master; nothing below is real until this lands. **Cheapest item on the critical path — do it first.** | branch → PR → master |
+| GL-19b | T | **✅ DONE 2026-08-01** — 13/13 rendered, deterministic, size-checked, owner-reviewed and approved (`93914b2` pre-crops the master to each group's print ratio in the harness). Gallery is clear for the guarded live upload. Original scope: **re-run the M1 render harness against the *wired* gallery.** `scripts/gl19_m1_render.py` last ran against 4 bundles, 3 of which are now rejected. The shipping gallery is 10 primary + 1 5x7 + 2 10x24 and has never been rendered end-to-end as a set. Offline render + owner eyeball, then one guarded live upload. | harness run → contact sheet → owner sign-off |
+| GL-23b | C | **Merge `docs/gl22a-research-and-prd` → master (NEW 2026-08-02).** 9 commits: GL-22a's findings + PRD, both build sessions, SPEC v4.12, the CLAUDE.md rewrites, the destructive-action log. 635/635 green on the branch. **The runtime deploys from master; nothing in v4.12 is real until this lands, and GL-13 cannot start against a branch.** Exactly the GL-1/GL-23 pattern, third time. **Cheapest item on the critical path — do it first.** | branch → PR → master |
+| GL-22 | C | **✅ DONE 2026-08-02 — one Etsy listing per artwork (v4.12), 635/635 green.** Session 1 (`6df9ba5` `ed660c1` `b0560df` `4c878b3`): `etsy_client` fixes, additive schema, candidate-keyed create path. Session 2 (`360a5d9` `b9b69a6` `3c525c0`): the render/Gelato **weld cut**, gallery scoped by `group_id`, `GalleryTooLargeError` at the 20-cap, `patch_etsy_listing` made idempotent via `product_images.etsy_listing_image_id`, reject/abandon deleting nothing, shipping collapsed to `288734253315`, the stall predicate, SPEC v4.12 and three CLAUDE.md rewrites. **Three deviations, stated not smuggled:** the orphan-delete branch was *removed* rather than moved (unreachable under create-once — but a pre-existing gap survives, see GL-32); `migrate_v412_gallery.py` **rebuilds `groups`** because SQLite cannot widen a CHECK in place (the first non-additive migration in this plan — the rollback story in the PRD needs reading with that in mind); and `discard_superseded_attempt` deletes less than specified (images only — dropping variant rows tripped the new post-create guard on re-render). | ✅ merged into GL-23b | Six sizes as variants of one Gelato product / one Etsy listing; gallery = primary mockups + 5x7 mockups if that crop passed + 10x24 mockups if that one passed. PRD: `docs/2026-08-01-v412-single-listing-prd.md`. **Now a two-session build. Session 1** (`docs/2026-08-01-gl22-session1-kickoff.md`): the two `etsy_client` fixes (`update_listing_inventory`'s float-price bug + a new `delete_listing`, which needs a **manual `listings_d` re-auth**), the additive schema migration (`group_products.candidate_id`, `group_product_variants.group_id`, `product_images.group_id`), and the candidate-keyed `create_or_reuse_group_product` with per-group `fileUrl` per variant in one create call. **Session 2:** gallery assembly across groups with a ≤20-image assert and scoped clear/rebuild (the sharpest correctness risk — one group's rebuild must not wipe another's images), abandon/reject/cleanup stopping the shared-product delete, the shipping-profile collapse to one value, the **new stall-sweep stage** (`[D2]`, see GL-22c), the digest/mockup/critic pass, `run_m1_live_test.py` + tests, **SPEC v4.12**, and **three CLAUDE.md rewrites + one addition**. | ✅ PRD → session 1 PR → session 2 PR |
+| GL-22a | R | **✅ DONE 2026-08-01** — findings: `docs/2026-08-01-gl22a-findings.md`. Four measured answers against the live API, two throwaway Gelato products created and deleted per the ledger. **(1) A shared `image_placeholder_name` does NOT force a shared image** — two variants carry independently-submitted `fileUrl`s in one `create-from-template` call → **GL-22d struck**. **(2) No API path adds a variant to an existing store product** — `PUT` silently drops the added variant *and* severs the Etsy sync, `PATCH` is 405, `/variants` is an incompatible custom-priced flow, and a re-`create-from-template` with the same title makes a *second* product → GL-22c option (a) dead. **(3) Q3 is confounded**, not answered — the only edit path tested (`PUT`) breaks the sync by itself; "Gelato may re-push after a dashboard edit" stays an open risk. **(4) Dropping a variation from the Etsy inventory patch orphans the Gelato mapping with no observed self-heal** → GL-22c option (c) dead. Two side-findings: a live `update_listing_inventory` float-price bug, and no `delete_listing` + no `listings_d` scope on the current token. | ✅ 4 answers → picked shape (b), struck GL-22d |
+| GL-22b | D | **✅ DECIDED 2026-08-01 — `Gelato: Free shipping` (`288734253315`), €0 to every destination, one profile for the whole candidate.** The original options list (Large / Small / re-price 5x7) was built on an incomplete profile read; the live `GET .../shipping-profiles` turned up a free-shipping profile that removes the dilemma entirely. **Two corrections it forced:** the €12.44/€14.55 figures in `CLAUDE.md` are the *default/non-EU* rate, not flat global (EU sees €5.86/€7.04); and Gelato's real per-item shipping (€5.10–€5.86) is billed to the seller **regardless of profile** and is already inside the cost basis the retail prices were set against — so **no re-pricing is required**. Verified: 5x7 21.4 %, 8x12 32.6 %, A3 38.6 %, A2 38.0 %, 10x24 44.2 %, A1 42.1 % at 9.5 % + €0.25, reproducing SPEC v4.11 §4's ~21–44 %. Floor case (5x7 through Offsite Ads at 15 %) still nets 16.4 %. **What it forfeits, recorded:** the shipping surcharge on default-region/US orders — revenue the margin table never counted. | ✅ decision → single-value `etsy_shipping_profile_id` |
+| GL-22c | D | **✅ DECIDED 2026-08-01 — option (b), create-once-when-all-groups-are-decided, publishing only validated sizes; stall rule = a plain 14-day timeout.** Options (a) and (c) were killed by GL-22a's Q2/Q4, so (b) was the surviving shape. **Stall rule revised same-day:** an initial "48 h nudge → 96 h skip" was replaced by a long timeout with **no reminder** (owner: defer the ping to post-go-live, → **GL-31**). That revision is what makes it cheap — with nothing to *send*, the rule is a **predicate, not a process**: the publish gate's "have all groups decided?" check gains an "…or has an undecided group aged past 14 days?" clause. Total scope: `stalled_skipped` in the `groups.status` CHECK, `GROUP_REVIEW_STALL_DAYS = 14` in `pipeline/config`, one predicate. **No `stall_sweep` stage, no `reminder_sent_at` column** — both struck with the nudge; the `CLAUDE.md` stage list is untouched. Window measured off the existing `groups.updated_at`. **Still depends on GL-7** in weaker form: the gate only fires when something evaluates it, so until the twice-daily batch exists the effective behaviour is wait-indefinitely — **"the stall rule fires" is a GL-7 DoD item, not a GL-22 one.** **A skipped size is a real forfeit, not a deferral** — Q2 means recovering it needs a from-scratch re-publish, which is the argument for erring long. | ✅ decision → shape (b) + a 14-day predicate |
+| GL-22d | M | **✅ STRUCK 2026-08-01 — never needed.** GL-22a Q1 proved two variants sharing one `image_placeholder_name` accept independently-submitted `fileUrl`s in a single `create-from-template` call, so the portrait template needs no second/third placeholder and `static_config`'s existing per-size `image_placeholder_name` values stand. **Kept as a line, not deleted: this was a manual owner step on the critical path that a €0 measurement removed.** Its landscape twin (named in GL-18) is struck by the same finding. | — |
+| GL-7 | C | **Cron orchestrator** — two cadences (hourly Telegram poll, twice-daily batch) wiring the existing 13 stages; one function per stage, not one loop. Unblocked since 2026-07-23. **DoD includes the overnight unattended soak** — GL-16 is proven in unit/scripted-interrupt tests only, and the soak is its production proof. **DoD gained one item 2026-08-01: prove v4.12's stall predicate actually fires.** GL-22 writes it, but it is dormant until the batch cadence evaluates the publish gate — so "the 14-day timeout works" is provable here and nowhere earlier (test with the constant temporarily lowered, not by waiting 14 days). **Now the single biggest remaining build chunk.** | GL-3 decision + kickoff → PR + clean soak |
 | GL-8 | R | Where the scheduled functions run (Cowork task vs. Claude Code cron vs. Fly/Render/Cloudflare/GitHub Actions), given cost, reliability and the persistent-process ban. Preliminary decision (GL-3): local desktop. Confirm or revise. | briefing → named host |
 | GL-3 | D | Cron deployment target — confirm the local-desktop preliminary against GL-8. **Pre-committed fork:** if the desktop fails the soak on wake/sleep or reliability, move to a cheap always-on host named in advance by GL-8. | GL-8 → confirmed host |
-| GL-13 | T | **Round 2 live re-test — the mockup-dependent slice**, now also the **v4.12 publish slice**: custom gallery uploaded in rank order, critic pass over the custom scenes, `mockup_failed` retry with no Gelato fallback, the placeholder fail-loud guard, the real cover-crop reaching Gelato, and — post-GL-22 — one listing carrying 4/5/6 variants with a gallery that grew across two reviews. **Sequenced after GL-22, not before** (see Part 3). | delta launch guide → pass/fail |
+| GL-13 | T | **Round 2 live re-test — the mockup-dependent slice + the v4.12 publish slice. Now the biggest remaining risk concentration outside GL-7.** Original: custom gallery in rank order, critic pass over custom scenes, `mockup_failed` retry with no Gelato fallback, the placeholder fail-loud guard, the real cover-crop reaching Gelato. **Session 2 handed over six things provable only live** (its own list, verbatim in intent): (1) **4→5→6 variants across one listing's lifecycle with no duplicate product** — the highest-value item, because Q2 proved a title collision silently creates a second product; (2) a **gallery grown across two reviews**, checked against the real listing, not the DB; (3) a **rejected group that deleted nothing**, `GET`-verified before and after; (4) the **real `listing_image_id` shape** the idempotent re-patch depends on — dry-run could only assert the mechanism, not the payload; (5) the **20-cap against a real Etsy rejection**, not just `GalleryTooLargeError`; (6) the **stall rule**, which **cannot fire until GL-7 runs the gate on a cadence** — so it moves to GL-7's DoD, not this one. **Blocked on GL-23b** — cannot run against a branch. | delta launch guide → pass/fail |
 | GL-17 | T | Residual live coverage from GL-9: the human Telegram **Reject** button (never tapped), plus any un-hit interactions. Fold into GL-13. | mini guide → pass/fail |
 | GL-10 | M | Etsy storefront overhaul — banner, sections, About, policies, SEO copy. Owner-driven, one-way-valve safe. | checklist → live storefront |
-| GL-11 | M | **Revert Etsy Developer Mode** — email developer@etsy.com, external approval lead time. Start as soon as a launch date is roughly known; listing visibility observed before this is not representative. | how-to → Dev Mode off |
+| GL-29 | C+T | **Programmatic draft→active publishing, behind an env gate (NEW 2026-08-01, owner).** Today activation is a manual per-listing dashboard action by design. **Half of this already exists:** `etsy_client.update_listing_state` is written, dry-run-aware and unit-tested, carrying a `# DELIBERATELY UNWIRED` comment and a guard test (`test_patch_etsy_listing_never_activates_a_listing`). The work is therefore *the gate and the wiring*, not an integration: a new all-or-nothing flag (`ETSY_ACTIVATE_LISTINGS`, **default false**, resolved like `is_live_mode`), one call site at the end of the publish path, the guard test **rewritten rather than deleted** (it must now assert "never activates *unless the flag is on*"), and loud logging on every activation with the listing ID. **Three constraints the build must respect:** (1) Etsy's API says setting `state=active` publishes the listing and **it can never return to `draft`** — only `active`↔`inactive` — so this is a one-way door per CLAUDE.md §4: record an `activated_at` on the row and ship the `inactive` path in the same PR as the rollback; (2) activation costs **$0.20 per listing** and is charged in Developer Mode too, so each live test burns real money — budget a handful of euros, not a sweep; (3) **ordering vs GL-22** — activation must be the *last* step, after every group's patch has landed, or a buyer-visible listing gains variants and gallery images afterwards. **✅ Resolved 2026-08-01 by GL-22c's decision:** under create-once-when-all-groups-are-decided the listing is created with every validated size and its full gallery already assembled, so activation is unambiguously the last call in the publish path and GL-29 needs no ordering logic beyond "call it last". **Testing in Developer Mode proves the API call, not shopper-facing visibility** — the visual confirmation belongs to the first minutes after GL-11. | flag + wiring + rewritten guard → one live activation → GL-11 |
+| GL-11 | M | **Revert Etsy Developer Mode** — email developer@etsy.com, external approval lead time. Listing visibility observed before this is not representative. **Owner sequencing (2026-08-01): GL-29 lands and is tested first** — the point of reverting is a store that publishes. **Owner decision 2026-08-02: the email waits for GL-13 to pass**, rather than going out immediately. Deliberate trade — it spends lead time that cannot be recovered, in exchange for not opening an external conversation about a shop whose publish path is still unproven. **Consequence to watch: from GL-13's pass, GL-11 becomes the only item on the critical path with a clock you do not control.** If GL-13 slips, this slips with it one-for-one. | GL-13 pass → email → GL-29 → Dev Mode off |
+| GL-30 | C+M | **One-off backup of the mockup corpus to Cloudflare R2 (NEW 2026-08-01, owner).** Every generated scene — accepted, parked and rejected — exists only on the desktop. **Scope it to what git does not already have**, see the note below the table: the git-ignored `outputs/gl6_*` batches (~160 screened images **and their `screen.json` verdicts**), the untracked `inflow/` sources, `lifestyle_small_kitchenshelf`, and anything parked outside the tree. **Reuse `artwork_store._r2_put_object` + `_sigv4_headers`** — the S3-compatible PUT, the SigV4 signing and the all-or-nothing `R2_*` env gate are already written and tested; do not write a second uploader. **Write-once, never overwrite:** date- or content-addressed keys under one prefix, because a sync that can overwrite is a copy, not a backup. **Carry each image's sidecar/`screen.json` with it** — without the verdicts the corpus is 160 anonymous PNGs and the inventory value (the thing the harvest proved was worth more than the mask change) is lost. Parallel to the critical path; must not delay GL-7 or GL-22. | script → uploaded corpus + a manifest of what landed where |
 | GL-12 | M | Apply for Google Trends API alpha access (zero cost, parallel). | how-to → submitted |
+
+**Scoping note for GL-30 — what is actually at risk.** Committed bundles are
+**not** local-only: `origin` on GitHub is already an off-machine copy of every
+tracked bundle, and the repo is public by deliberate decision (qops PRD §10).
+What has no second copy is the material git was told to ignore — the
+`outputs/gl6_*` batches, the untracked inflow sources, and anything parked
+outside the tree. Backing those up is insurance worth buying; re-uploading the
+committed bundles is paying twice for the same copy. If you want one
+consolidated corpus anyway — one place to browse everything ever generated,
+rather than two — that is a fine reason, but take it as a stated choice rather
+than as a data-loss argument.
 
 ### Post-launch, ordered
 
 | # | ID | Type | Item |
 |---|---|---|---|
 | 1 | GL-24 | IR+C | **The `qops` ways-of-working overhaul** — owner-deferred to the **first action after go-live**, deliberately, so it does not delay the pipeline. PRD v2 written and unsigned; `.qops/` issue corpus untracked; its own review found the token-payback claim wrong by ~5×. Re-open the PRD, do not re-derive it. |
-| 2 | GL-18 | C+M | **Landscape enablement.** Two halves: the compositor/config wiring GL-5 left portrait-only, and a landscape scene library. **Owner direction 2026-07-31:** do not re-derive prompts — take the *successful portrait prompts* for validated scenes, adapt them to landscape, and pass the **portrait render as Nano Banana's reference image** so the landscape version is the same room, same light, same props. Needs a landscape geometry card per group and the landscape Gelato template's placeholder edit (GL-22d's twin). |
+| 1b | GL-30b | C | **Authoring-time R2 sync (NEW 2026-08-01, owner — the long-term half of GL-30).** Every candidate lands in R2 as it is screened/authored, with its verdict, so the one-off never has to be repeated. Natural hook: `scripts/scene_intake.py`, which already runs the screen, the gate and prints the verdict block — it just does not persist anything durable. Same write-once key discipline as GL-30. Owner-deferred to post-go-live. |
+| 1c | GL-31 | C | **The stall reminder ping (NEW 2026-08-01, owner — the deferred half of GL-22c's stall rule).** Before a group ages out of review, re-send its digest entry as a nudge so the owner has a chance to act. Deferred so v4.12's stall rule stays a predicate rather than growing a stage. **Worth pulling forward rather than letting it sink:** with no reminder, the only signal a group is aging out is the owner remembering an untapped digest entry, and a size that times out **cannot be added back** (GL-22a Q2 — recovery is a from-scratch re-publish). Scope when it lands: a `groups.reminder_sent_at` column, a send point, and a threshold constant below `GROUP_REVIEW_STALL_DAYS`. |
+| 2 | GL-18 | C+M | **Landscape enablement.** Two halves: the compositor/config wiring GL-5 left portrait-only, and a landscape scene library. **Owner direction 2026-07-31:** do not re-derive prompts — take the *successful portrait prompts* for validated scenes, adapt them to landscape, and pass the **portrait render as Nano Banana's reference image** so the landscape version is the same room, same light, same props. Needs a landscape geometry card per group. **The landscape template's placeholder edit — GL-22d's twin — is struck by GL-22a Q1** (a shared placeholder name does not force a shared image), so this is now one fewer manual Gelato step than the plan assumed. |
 | 3 | GL-25 | C | **Wire Nano Banana Pro into `replicate_client`.** Deferred, not rejected — `_predict(model, input_body, …)` is already model-generic, so the work is a model constant, an input body, **reference-image encoding** (which GL-18 needs anyway), per-scene provenance, and a polling fallback for the 60 s `Prefer: wait` window that cost 11 of 72 images in P4b1. Direct dependency of GL-18. |
 | 4 | GL-26 | IR+C | **Mockup authoring / compositor refinement** so fewer technical defects reach the owner's eye. Named contents: the **grey band on the two held 5x7 portraits** (undiagnosed); `flat_leaning_bookstack`'s "stairs-effect", explicitly *not* explained by `de79795`; §6's **occluded-corner extrapolation** (fit the four edges, intersect them — currently a scene class is unauthorable and the workaround is "no props at corners"); §4.4's `gain_map` reference = a single 99th-percentile hotspot, which reads as a dull print; and `scene_intake`'s hard stop on any screen failure when the screen is stricter than the gate. |
 | 5 | GL-20 | R→C | Gelato "mockups ready" poll relaxation — the self-hosted gallery replaced Gelato's, so the readiness poll may be shortenable. Verify first; latency win only. |
@@ -209,6 +283,7 @@ attempt 3 / scene library, portrait ✅.
 | ID | Type | Item |
 |---|---|---|
 | GL-27 | M+C | **Asset and doc hygiene, in one pass with GL-23.** **Eight committed bundles are not wired** — seven at primary (`flat_leaning_bookstack`, `flat_pegs_windowsill`, `lifestyle_console_pampas`, `lifestyle_framed_wall_plant`, `lifestyle_held_greytee`, `lifestyle_shelf_books`, `lifestyle_studio_held`) and `lifestyle_small_bookstack` at 5x7, which passes 8/8 at aspect 0.7285 and is the strongest 5x7 asset the repo has. Each is either owner-rejected (keep, but say so in the bundle) or an oversight (wire it) — right now "have 17, ship 10" is indistinguishable from a bug. The 5x7 one matters most: the shipping gallery has exactly **one** 5x7 image. `lifestyle_small_kitchenshelf` is untracked and fails `distortion` 2.26 % → regenerate or drop, don't re-author. Untracked inflow sources for 10x24/5x7/primary → commit with sidecars or delete (a bundle must stay a pure function of source + tool). Three inflow sidecars carry **no `key_rgb`**, so a re-`extract` silently switches `d_key_spill` off — normalise them. `lifestyle_sideboard_leaning` sits in inflow with no bundle and no recorded reason. `assets/mockups/manifest.json` is **dead and lying** (nothing reads it; it omits seven bundles) → delete it or make something read it. A `desktop.ini` is tracked-adjacent in `inflow/5x7/`. |
+| GL-32 | C | **The orphan gap session 2 could not close (NEW 2026-08-02).** With create-once, the orphan-delete-before-retry branch became unreachable and was **removed**; idempotency now rests on "never create twice when `gelato_product_id` is set". **That leaves one hole, pre-existing and now the only one:** a crash between the Gelato `POST` returning and the id-recording `UPDATE` committing orphans a real Gelato product **no DB sweep can see** — there is no row pointing at it. Cheap mitigations to weigh (do not build blind): write an intent row *before* the POST and reconcile after, or a periodic list-products-vs-DB reconciliation. **Also folded in:** `discard_superseded_attempt` now deletes images but leaves `group_product_variants` rows behind (dropping them tripped the new post-create guard on re-render) — decide whether that residue is harmless or wants a scoped cleanup. Small, real, and invisible until it bites. |
 | GL-28 | M | **SynthID.** Every Nano Banana output carries an invisible watermark, and the store's photography is now all Nano Banana. Not an Etsy problem — the artwork is disclosed via `who_made: i_did` — but it should be a **recorded, conscious choice** rather than a thing discovered later. |
 
 ---
@@ -228,21 +303,45 @@ a pre-committed fallback** (GL-22c) rather than an open-ended design phase. If
 GL-22a's answers make the change big, take the second fallback shape, not a
 schedule slip.
 
-**Track A — get it on master and prove the gallery (do first, it is small):**
+**Track A — get it on master and prove the gallery — ✅ DONE 2026-08-01:**
 
-1. **GL-23** merge the scene library → master. Blocking everything.
-2. **GL-27** asset hygiene, same pass.
-3. **GL-19b** re-run the M1 harness on the 13-image shipping gallery →
-   owner eyeball → one guarded live upload.
+1. **GL-23** ✅ merged; master carries the wired 10 + 1 + 2 gallery.
+2. **GL-19b** ✅ 13/13 rendered, deterministic, size-checked, owner-approved.
+   The gallery is clear for the guarded live upload — which now happens inside
+   GL-13, not as a separate step.
+3. **GL-27** asset hygiene — still open, still small; the eight
+   authored-but-unwired bundles are the part with a gallery consequence.
 
-**Track B — v4.12 (starts in parallel with A, gated on its own research):**
+**Track B — v4.12 — gate closed 2026-08-01, now a straight build:**
 
-4. **GL-22a** research gate (4 measured answers) — the only item that can start
-   today with zero dependencies.
-5. **GL-22b / GL-22c** owner decisions off the back of it. **GL-22d** template
-   edit *only if* GL-22a says it is needed.
-6. **GL-22** PRD → owner sign-off (CLAUDE.md §2: external system + >1 sitting)
-   → build → SPEC v4.12 + CLAUDE.md constraint rewrites in the same PR.
+4. **GL-22a** ✅ research gate — 4 measured answers, GL-22d struck, two of
+   GL-22c's three options killed.
+5. **GL-22b** ✅ Free shipping, no re-pricing. **GL-22c** ✅ create-once +
+   a 14-day stall timeout (reminder deferred → GL-31). **GL-22d** ✅ struck —
+   never needed.
+6. **GL-22** ✅ **BUILT 2026-08-02**, 635/635 green — but on a branch.
+   **→ GL-23b (merge to master) is now the head of the critical path**, and
+   GL-13 cannot start until it lands. PRD ✅ signed off; built in two
+   sessions:
+   **6a. Session 1** ✅ — `etsy_client` fixes + schema migration +
+   candidate-keyed create path, four commits, dry-run only. The
+   **`listings_d` OAuth re-auth** ✅ is done.
+   **6b. Session 2** — **cut the weld first** (split the Gelato create from
+   the local mockup render; this is also what un-breaks the 5x7/10x24 path
+   session 1 left deliberately broken), then gallery assembly (the sharp
+   risk), abandon/cleanup, shipping collapse, the stall predicate, digest
+   pass, tests, SPEC v4.12 + CLAUDE.md rewrites. **May split into two PRs at
+   the A–C / D–G line** if it runs long — the mechanical half should not sit
+   unmerged behind the gallery rework.
+
+   *Sequencing note:* the **stall predicate is written in 6b but does not
+   fire until GL-7** evaluates the publish gate on a cadence. Until then
+   v4.12 behaves as wait-indefinitely, which is harmless while every run is
+   hand-triggered — but it means "the stall rule fires" is a **GL-7 DoD
+   item**, not a GL-22 one, and GL-13's stall-rule test moves with it.
+
+   *Both sessions run with subagents* — see the kickoff's §5 for the split
+   and which model each leg gets.
 
 **Track C — automation (the long pole, independent of A and B):**
 
@@ -251,23 +350,71 @@ schedule slip.
 8. **GL-7** two-cadence orchestrator → **overnight unattended soak**. Do not
    tick "unattended-safe" on merge alone.
 
-**Track D — manual, parallel, owner-driven:** GL-10 storefront now, GL-12
-Trends application now, **GL-11 Developer-Mode revert as soon as a date is
-roughly known** (external lead time is the only thing here you cannot compress).
+**Track D — manual and parallel, owner-driven:** GL-10 storefront now, GL-12
+Trends application now, **GL-30** the one-off corpus backup (small, independent,
+must not push anything else right). **The GL-11 email now waits for GL-13 to
+pass** (owner, 2026-08-02) — a deliberate spend of uncompressible lead time to
+avoid opening an external conversation about an unproven publish path. From
+GL-13's pass onward it is the only critical-path item on someone else's clock.
 
-**Then:** 9. **GL-13 + GL-17** — one live pass covering the custom gallery, the
-v4.12 single-listing publish, the human Reject button, and the crop-to-Gelato
-confirmation.
+**Then, in order (owner sequencing confirmed 2026-08-02):**
 
-**Go-live gate (2026-07-31):** GL-23 merged **+** GL-19b gallery approved **+**
-GL-22 shipped (or its fallback shape) **+** GL-7 cron running with a clean
-overnight soak **+** GL-10 storefront **+** GL-13/17 clean **+** GL-11 Developer
-Mode reverted. **Longest poles: (1) GL-7 cron + soak; (2) GL-22 → GL-13.**
+8b. **GL-23b** — merge the 9 commits to master. Head of the critical path;
+    GL-13 cannot run against a branch. **The non-additive `groups` rebuild in
+    `migrate_v412_gallery.py` runs as part of this** — back the DB up first.
+
+9. **GL-13 + GL-17 — the chosen next track after the merge.** One live pass
+   covering the custom gallery and its first guarded upload, the v4.12
+   single-listing publish, the human Reject button, the crop-to-Gelato
+   confirmation, and session 2's six live-only handovers. Chosen over
+   starting GL-7 first, on the reasoning that debugging a freshly-rewritten
+   publish path inside an unattended overnight soak is the expensive way to
+   find v4.12's bugs. **GL-8/GL-3 (host decision) can run in parallel** to
+   keep the long pole moving while GL-13 waits on owner availability.
+10. **GL-29** activation behind its flag, proven with one paid live activation
+    (Developer Mode proves the call, not the shopper's view).
+11. **GL-11** Developer Mode off → the visual confirmation GL-29 could not get.
+
+**Go-live gate (2026-08-02):** GL-23 ✅ **+** GL-19b ✅ **+**
+GL-22a ✅ **+** GL-22b ✅ **+** GL-22c ✅ **+** GL-22d ✅ struck **+**
+GL-22 ✅ built **+** **GL-23b merged to master** **+** GL-7 cron running with
+a clean overnight soak **+** GL-10 storefront **+** GL-13/17 clean **+**
+GL-29 activation proven behind its flag **+** GL-30 corpus backed up **+**
+GL-11 Developer Mode reverted.
+**Longest poles: (1) GL-7 cron + soak; (2) GL-22 → GL-13 → GL-29 → GL-11.**
+Note that the last pole is now a *chain* of four, three of which are cheap —
+the expensive one is GL-22, and GL-11's external lead time runs in parallel
+with all of it. **What changed 2026-08-02:** GL-22 is **built** — the
+expensive pole is spent, and what replaces it on the chain is
+**GL-23b → GL-13 → GL-29 → GL-11**, of which only GL-13 is substantial.
+GL-7 remains the long pole and is now unambiguously **the** long pole; it
+picked up one new DoD item (prove the stall predicate fires, by lowering
+the constant). GL-13's delta grew by six live-only items handed over from
+session 2.
 
 ### Tool-fit flags (CLAUDE.md §7)
 
 - **GL-23 merge, GL-19b harness re-run, GL-22 build → Claude Code**, in-repo and
   test-driven. Cowork's role is the owner's contact-sheet review and the PRD.
+- **Within a Claude Code session, split by risk and match the model to the
+  leg** (owner direction, 2026-08-01). Bounded, fully-spec'd, mechanical work
+  — a client bug fix with a known cause, an additive migration, a
+  diff-against-DoD review — runs as **Sonnet** subagents, in parallel where
+  there are no shared files. Work carrying preserved-behaviour constraints or
+  a silent-corruption risk stays on the main thread. The cheap tell: if the
+  kickoff already says exactly what the code must do, it is a subagent's job;
+  if the kickoff says "if these two requirements collide, stop and flag it",
+  it is not.
+- **Every subagent brief carries a command denylist, not just a file
+  allowlist** (learned the hard way, 2026-08-01 — see Session R). No
+  `git stash`, `reset --hard`, `checkout -- .`, `restore`, `clean`, `rebase`,
+  `merge`, `cherry-pick`, history rewrite, `stash drop/clear`, `rm -rf`
+  outside its own scratch dir, or any `*_LIVE_MODE` env var. **Reading git
+  state stays unrestricted.** The allowlist alone is insufficient because
+  the commands that do the damage take no file arguments.
+- **Keep the read-only review subagent.** It cost one Sonnet pass per commit
+  and found a hole against live data (candidate 39's published row) that
+  neither the implementing agent nor the kickoff anticipated.
 - **GL-22a research → Claude Code with the Gelato client**, not Cowork: the
   answers are measurements against a real API, not reading.
 - **Cron runtime is still not a Cowork job.** Scheduled functions need a real
@@ -277,6 +424,13 @@ Mode reverted. **Longest poles: (1) GL-7 cron + soak; (2) GL-22 → GL-13.**
   `assets/mockups/inflow/` — no batch harness, and `scene_generate.py` is
   superseded. This is the correct tool split until GL-25 wires the model.
 - **Post-launch cost/sales view → a Cowork live artifact.**
+- **GL-29 and GL-30 → Claude Code.** GL-29 is a flag, one call site and a
+  rewritten guard test in a repo that already holds the client function;
+  GL-30 is a one-off script reusing the existing R2 uploader. Neither is a
+  Cowork job, and neither is big enough to want a PRD — CLAUDE.md §2's
+  threshold catches GL-29 on "touches an external account", so it gets the
+  short version: state the flag's name, default and call site, get a nod,
+  build it.
 
 ---
 
@@ -517,9 +671,382 @@ two tests had been pinning exactly that state.
 - **`feat/gl6-p4-scene-library` is 36 commits ahead of master** and none of the
   above is deployable until GL-23 merges it. Same class of item as GL-1, and
   the cheapest thing on the critical path.
+**Session P — status update and two new items (Cowork, 2026-08-01).**
+
+- **GL-23 ✅ and GL-19b ✅.** The scene library is on master and the 13-image
+  shipping gallery renders deterministically, size-checked and owner-approved.
+  Track A is closed; the guarded live upload folds into GL-13 rather than
+  standing alone.
+- **GL-29 (activation behind a flag) is half-built already.**
+  `etsy_client.update_listing_state` exists, is dry-run-aware and unit-tested,
+  and carries a `# DELIBERATELY UNWIRED` comment plus a guard test asserting
+  the publish path never activates. That was the right call under the old
+  posture and it is exactly the seam this change needs — so the work is the
+  gate, one call site, and **rewriting** the guard to "never activates unless
+  the flag is on". Deleting that test would throw away the only thing standing
+  between a bug and a buyer-visible listing.
+- **The one-way door, recorded before it is walked through:** Etsy's API
+  allows `draft → active`, and after that only `active ↔ inactive`. A listing
+  can never go back to draft. That makes activation a CLAUDE.md §4 action in
+  its own right — the flag is the control, `inactive` is the rollback, and
+  both ship together.
+- **GL-11 now waits on GL-29**, per owner: prove the publish step before the
+  shop is public. The *email* still starts early — its lead time is external
+  and runs in parallel with everything.
+- **GL-30's scope was narrowed on evidence.** "The mockups only exist locally"
+  is true of the ignored corpus and *not* true of the committed bundles, which
+  are on `origin`. The one-off targets the at-risk set — the `outputs/gl6_*`
+  batches with their `screen.json` verdicts, the untracked inflow sources, the
+  parked candidates — and reuses `artwork_store`'s existing SigV4 R2 uploader
+  rather than growing a second one. Write-once keys, verdicts carried
+  alongside the pixels: the harvest already proved the inventory was worth
+  more than the images.
 - **Post-go-live queue is now ordered, not a bag:** `qops` first (owner's
   explicit call — pipeline feeding the store before any overhaul of how work
   gets done), then landscape enablement (portrait prompts adapted + the
   portrait render as Nano Banana's reference image), which pulls GL-25's
   reference-image encoding in with it, then the compositor/authoring
   refinement that the grey band and the occluded-corner class belong to.
+
+**Session Q — GL-22 gate closed, build cleared (Cowork, 2026-08-01 evening).**
+
+- **Research answered more than it was asked.** GL-22a's four questions were
+  scoped to pick a build shape. They did that, and also **deleted a manual
+  owner step** (GL-22d, and its landscape twin in GL-18) and **found two
+  latent defects** — a live `update_listing_inventory` float-price crash that
+  fires the first time anyone patches a subset of a listing's sizes, and the
+  absence of both `delete_listing` and the `listings_d` scope, discovered
+  because the session could not clean up its own throwaway drafts. Both fold
+  into session 1. This is the case for measuring before building, made
+  concretely: Q1 alone paid for the session.
+- **The decisions narrowed rather than chose.** Q2 and Q4 killed two of
+  GL-22c's three publish shapes outright, so the "decision" was really a
+  confirmation of the only survivor. Worth naming, because the plan of
+  record still framed GL-22c as an open three-way call.
+- **GL-22b's options list was wrong, not just unresolved.** It offered
+  Large / Small / re-price-5x7 and told the session to check for a better
+  fit. There was one — `Gelato: Free shipping` — and finding it dissolved
+  the trade-off rather than resolving it. Two factual corrections came with
+  it: the €12.44/€14.55 figures are the default/non-EU rate, and Gelato's
+  per-item shipping is billed to the seller whichever profile is set. The
+  owner's read — "free shipping shown to customers, cost absorbed in the
+  listed price" — is right, with the correction that **the prices already
+  absorb it**; no re-pricing is required, and all six sizes hold 21–44 %.
+- **The stall rule got costed, then got cheaper.** The first shape — "48 h
+  nudge, 96 h skip" — was a better answer than either option the findings
+  doc offered, and costing it honestly showed it needed a new stage, two
+  schema changes and a hard GL-7 dependency. The owner then **deferred the
+  reminder to post-go-live (GL-31)**, and that one deferral collapsed the
+  rest: with nothing to *send*, the rule stops being a process and becomes a
+  **predicate** on the publish gate — one status value, one constant, one
+  extra clause. No stage, no `reminder_sent_at`, no `CLAUDE.md` stage-list
+  edit. Worth recording as a pattern, not just an outcome: the expensive
+  part of "timeout with a reminder" was never the timeout.
+- **The GL-7 dependency survives the simplification.** The predicate is only
+  evaluated when something runs the gate, so until the twice-daily batch
+  exists v4.12's *effective* behaviour is wait-indefinitely — "the stall
+  rule fires" is a **GL-7 DoD item**, not a GL-22 one, and it is provable
+  there by lowering the constant rather than waiting two weeks. Recorded so
+  it isn't discovered later as a silent no-op.
+- **The window went from 96 h to 14 days on an asymmetry, not a preference.**
+  Waiting too long costs a design sitting unpublished — recoverable with a
+  button tap. Aging out too early costs a size permanently missing from a
+  live listing, and Q2 means it cannot be patched back. Err long.
+- **A skipped size is a forfeit, not a deferral.** Q2's finding (no API path
+  adds a variant post-create) means a group that times out at 96 h cannot be
+  patched back in — recovering it needs a from-scratch re-publish of the
+  candidate's listing. The 96 h number should be read with that in mind; it
+  is a first cut, and GL-7's soak is the first chance to calibrate it.
+- **GL-29's one open question closed for free.** Its "ordering vs GL-22" was
+  only a real decision under publish-primary-patch-later. Under the decided
+  shape, activation is simply the last call.
+- **The build splits at the gallery.** Session 1 (client fixes, schema,
+  create path) is mechanical and dry-run-only. Session 2 carries the one
+  genuinely dangerous change — scoped gallery clear/rebuild, where a wrong
+  scope silently wipes another group's uploaded images — and gets its own
+  session and PR rather than riding behind a migration.
+- **Both sessions run with subagents, model-matched to the leg** (owner
+  direction, 2026-08-01). The split falls out of the same risk gradient that
+  split the sessions: the `etsy_client` fixes and the additive migration are
+  bounded, spec'd and mechanical → **Sonnet** subagents, parallel. The
+  create-path rework and session 2's gallery assembly carry three
+  preserved-behaviour constraints and the silent-wipe risk → **kept on the
+  main thread**. A **Sonnet review subagent** reads each diff against the
+  kickoff's DoD before the commit. Detail in the kickoff's §5.
+
+**Session T — reviewing GL-22 session 1; a weld, a breakage and an incident
+(Cowork, 2026-08-01/02).** *(Planning read of the coding session logged below
+as "Session R — GL-22 session 1 built". Cowork planning entries use T/U;
+Claude Code build entries use R/S.)*
+
+- **Session 1 delivered all three workstreams** — the `update_listing_
+  inventory` float-price fix, `delete_listing`, the additive migration, and
+  the candidate-keyed create path. Four commits, dry-run only, suite green.
+- **The shared-product collision resolved exactly as the kickoff pointed.**
+  The sizes-changed delete now fires only when every variant belongs to the
+  calling group; otherwise `SharedProductVariantError`. **The instruction to
+  stop and flag rather than pick a side did its job** — this was the one
+  place session 1's kickoff refused to pre-decide, and it was also the one
+  place a wrong guess would have deleted a live product.
+- **The review subagent earned its slot.** It found a hole nobody was
+  looking for: pre-migration variants carry `group_id NULL`, so a legacy
+  product reads as *unshared* however many sizes it backs — candidate 39's
+  id-10 row (live listing `4542159277`) would have cleared the new check.
+  Unreachable under current callers, closed anyway by refusing the recreate
+  on any `published` row. A read-only reviewer catching a live-data hole is
+  the argument for keeping that leg.
+- **The PRD was wrong about one thing, and it matters.** "A small change at
+  the caller" underestimated `create_or_reuse_group_product`: the function
+  **also renders the local compositor mockups** the review gallery is made
+  of. Under `[D1]` those two jobs have incompatible timings — mockups before
+  any decision, Gelato product after all of them — so the weld has to be
+  cut. Session 2 now starts there. **Recorded as a planning miss, not a
+  surprise:** the PRD flagged `group_mockup.py`'s extent as untraced and
+  said so; this is what untraced looked like when traced.
+- **The secondary path is deliberately broken between the sessions.**
+  `group_mockup` for 5x7/10x24 resolves the candidate's primary product,
+  mismatches sizes, hits the guard. Dry-run-only ground, nothing live runs —
+  but real, not latent. Left broken on purpose rather than papered over with
+  a fix session 2 would have had to unpick.
+- **The sharpest-risk call was right and is now concrete.**
+  `group_product.py:433` and `critic_pass.py:446` delete `product_images` by
+  `group_product_id`; under one product per candidate, 5x7's render wipes
+  primary's reviewed gallery. Seven readers use that key. **Owner decision:
+  `group_id` scopes, the FK stays** — making `group_product_id` nullable
+  would force a SQLite table rebuild and break the additive-migration
+  guarantee the rollback story rests on.
+- **`group_products` is now a misnomer** — it is the candidate's *listing
+  record*, with `gelato_product_id` as one nullable column. Renaming it was
+  considered and rejected (repo-wide diff on top of the riskiest change);
+  SPEC v4.12 says so in words instead.
+- **A `patch_etsy_listing` question answered by reading, not testing.** The
+  upload loop is a **full re-upload, no delta, no dedup**. Under `[D1]` it
+  runs once, so the append-across-reviews worry dissolves — and is replaced
+  by a retry-safety one: a second call duplicates the whole gallery.
+- **The incident, and the rule it produced.** A subagent ran `git stash` to
+  "compare against a clean checkout" and **wiped the working tree** — its
+  own work, the parallel agent's, and the owner's in-flight edits.
+  Recovered in full from `stash@{0}`/`stash@{1}`. **The file allowlist did
+  not prevent it, because the destructive command took no file arguments.**
+  Standing rule, now in session 2's kickoff §4: **subagent briefs carry a
+  command denylist as well as a file allowlist** — no `git stash`, `reset
+  --hard`, `checkout -- .`, `clean`, `rebase`, history rewrite, bulk delete,
+  or live-mode env var. Reading git state stays unrestricted; reading was
+  never the problem.
+
+**Session U — GL-22 built; three bugs no impact map caught (Cowork,
+2026-08-02).** *(Planning read of "Session S — GL-22 session 2 built" below.)*
+
+- **v4.12 is built and green (635/635)**, shipped as **one PR, not the two
+  §6 offered.** The split line was wrong on inspection: `D` (shipping
+  collapse) and `E` (stall predicate) are not disjoint from `A`, because
+  D's "one call site" *is* `patch_etsy_listing`. **Good deviation** — the
+  kickoff's split was a guess made before the code was traced, and the
+  session corrected it rather than honouring a stale instruction.
+- **Three real bugs, all found by reading stages rather than running
+  tests.** This is the finding, not the bug count:
+  1. **A second silent wipe, on the filesystem — outside the impact map.**
+     `persist_mockup_render` was keyed `group_product_id + index`, so 5x7's
+     scene 0 overwrote primary's scene 0 **on disk**. The impact map traced
+     SQL and stopped there.
+  2. **`reclaim_stranded_pending_group_products` would have deleted every
+     live listing record.** It sweeps `pending` rows with no product id
+     after 10 minutes — which under v4.12 is the *normal* state for the
+     entire multi-day review window. **No test covered it.**
+  3. **`group_mockup`'s cycle trigger would have deadlocked the flow.** It
+     waited for the primary group to reach `approved_published`, which under
+     `[D1]` never arrives until *after* the secondaries are reviewed. Now
+     keys on `decision`.
+  **Lesson for the next impact map:** tracing SQL call sites is not tracing
+  impact. Three classes were missed — **filesystem keys, sweep/reclaim jobs
+  whose "abnormal state" definition the change inverts, and cycle triggers
+  whose preconditions the change reorders.** Any future map over this
+  pipeline should walk those three explicitly.
+- **The first non-additive migration in the plan, stated plainly.**
+  `migrate_v412_gallery.py` **rebuilds `groups`** — SQLite cannot widen a
+  CHECK constraint in place. The PRD's "rollback is stop calling the new
+  path, not a down-migration" was written on an additive assumption that no
+  longer fully holds. Not a problem to fix now; a sentence to read before
+  anyone relies on that rollback story.
+- **The `GET`-before-delete guard did its job by refusing.** On the first
+  run it declined both Etsy deletions: the findings-doc ledger's titles were
+  **stale**, because Q3's own patch test had renamed both drafts. Verified
+  against the same doc, narrowed to the `GL22A-` marker prefix, re-ran, both
+  now 404. **A destructive guard that fires on a false positive is working
+  as designed** — the failure mode worth fearing was the other one. Stash
+  SHAs recorded before dropping (`5f6d1c1`/`39f8300` stay reflog-reachable);
+  `stash@{2}` untouched, as instructed.
+- **A fourth CLAUDE.md constraint was flagged, not edited** — per §5's
+  instruction — and has now been fixed: the `Data storage is SQLite` bullet
+  still described the v4.11 per-group product/listing. Its replacement also
+  records the two things that bit session 2: that a NULL `gelato_product_id`
+  is *normal* for the whole review window, and that every delete against
+  `product_images`/`group_product_variants` must scope by `group_id`.
+- **What is not closed:** the orphan gap (→ **GL-32**). Removing the
+  orphan-delete branch was correct under create-once, but a crash between
+  the Gelato `POST` and the id-recording `UPDATE` still orphans a product no
+  sweep can see. Pre-existing, now the only such path, and worth a cheap
+  reconciliation rather than a clever one.
+
+
+**Session R — GL-22 session 1 built (Claude Code, 2026-08-01).**
+
+Three commits on `docs/gl22a-research-and-prd`: `6df9ba5` (etsy_client),
+`ed660c1` (schema), `b0560df` (create path). 617/617 green, zero live calls.
+
+- **The sizes-changed branch and the shared-product rule do collide, and the
+  collision has a name now.** The kickoff anticipated it in principle
+  ("do not extend it to delete a product that other groups' variants already
+  depend on") without stating what to do instead. Resolved by guarding the
+  delete: it still fires for the case that actually triggers it today
+  (`primary_mockup`'s 8x12-only row expanding to the 4-size fan-out on
+  approval, all variants belonging to the calling group) and raises
+  `SharedProductVariantError` the moment another group's variants are on the
+  product. **Consequence session 2 inherits:** with the reuse key on
+  `candidate_id`, `group_mockup.create_group_mockup` for 5x7/10x24 now resolves
+  the candidate's *primary* product, mismatches on sizes, and hits that guard —
+  the secondary path is intentionally broken between session 1 and session 2.
+  It is dry-run-only ground and no live path runs until session 2 lands, but it
+  is a real behaviour change and not a latent one. Failing loud beat the two
+  alternatives (delete a shared product, or silently hand the 5x7 group a
+  product with none of its sizes on it).
+- **A pre-migration row needs an explicit fallback, not just a NULL gate.**
+  `candidate_id IS NOT NULL` distinguishes new rows from old, but a
+  candidate-keyed lookup that simply *misses* a GL-9 row would create a second
+  Gelato product for candidate 39 — whose id-10 row is a real published Etsy
+  listing (`4542159277`). `_find_product_row` resolves new-shape rows by
+  `candidate_id` and pre-migration rows by their original `group_id`, new shape
+  winning the tie. Migration verified against a copy of the live DB: idempotent
+  on the second run, all five GL-9 rows unchanged with `candidate_id` NULL.
+- **Per-variant image resolution landed as specified** (GL-22a Q1): one
+  `create-from-template` call, the 5x7 variant carrying the 5x7 cover-crop
+  while the 8x12 variant carries the master. Crops are still built once per
+  distinct `group_type` — `persist_group_crop`'s R2 PUT is an unconditional
+  overwrite, so per-size would have meant duplicate network writes.
+- **The gallery `group_type` now comes from the `groups` row, not `sizes[0]`.**
+  Those were the same thing while a product belonged to one group. They stop
+  being the same thing the moment it doesn't.
+- **A subagent ran `git stash` to compare against a clean checkout and wiped
+  the working tree** — its own work, the other subagent's, the main thread's
+  in-flight edits, and the owner's uncommitted doc changes. Fully recovered
+  from `stash@{0}`/`stash@{1}` (both still in the stash list, redundant now).
+  The brief said which files an agent may *touch*; it did not say which
+  commands it may *run*. Next brief adds: no `git stash`/`reset`/`checkout` —
+  a subagent shares the tree with everything else in the session, and "get a
+  clean checkout to compare against" needs a worktree, not the shared tree.
+- **One thing added beyond the kickoff:** `tests/test_migrate_group_products_
+  candidate_id.py`. Every other migration in this repo has a test file; a
+  migration without one breaks the pattern reviewers read by.
+- **Still open for session 2, unchanged:** whether `patch_etsy_listing`'s
+  image upload loop is a full re-upload or a delta. Not touched here.
+  `product_images.group_id` exists and is populated, so the scoped rebuild has
+  what it needs. The unscoped `DELETE FROM product_images` is deliberately
+  left as-is — scoping it is session 2's whole point.
+- **CLAUDE.md's three wrong constraints stay wrong,** per §4 of the kickoff. No
+  fourth was found.
+
+**Session S — GL-22 session 2 built (Claude Code, 2026-08-01).**
+
+One commit on `docs/gl22a-research-and-prd`: `360a5d9`. 635/635 green, zero
+live calls. **Shipped as one PR, not the §6 two-PR split** — §2 D and E turned
+out not to touch files disjoint from A once traced (D's "one call site" *is*
+`patch_etsy_listing`, E's gate clause lives beside `publish_candidate`), so
+splitting would have meant merging D/E through the same files twice.
+
+- **The weld came out cleanly; the secondary path is un-broken.** Split into
+  `render_group_mockups` (no Gelato call, every write scoped `AND group_id = ?`)
+  and `create_candidate_gelato_product` (the single create at publish, per-
+  variant `fileUrl`). `group_mockup` for 5x7/10x24 no longer resolves the
+  candidate's primary product and no longer hits `SharedProductVariantError`.
+- **There was a second silent wipe, and it was not in the impact map.**
+  `artwork_store.persist_mockup_render` was keyed `group_product_id + index`,
+  so under a candidate-keyed record the 5x7 group's scene 0 overwrote the
+  primary group's scene 0 **file on disk** — under the seven DB call sites the
+  impact map did name. `group_id` added to the key. Worth carrying: the map
+  traced SQL and stopped there; the filesystem key was the same bug in a
+  different store.
+- **`cleanup.reclaim_stranded_pending_group_products` would have deleted every
+  live listing record.** It sweeps `pending` rows with no `gelato_product_id`
+  older than 10 minutes — which under v4.12 is the *normal* state of a
+  candidate's listing record for the entire review window, days long. Now also
+  requires no variants and no images, which is still exactly the crashed-
+  before-anything-happened row it was written for. This one was found by
+  reading the stage, not by a failing test; nothing in the suite covered a
+  pending row surviving a cleanup pass.
+- **Three deviations from the kickoff, flagged rather than taken silently.**
+  (1) The orphan-delete-before-retry branch is **deleted, not moved** — under
+  create-once no stale product can exist, so its trigger is unreachable; the
+  idempotency it protected is covered by "never create twice when
+  `gelato_product_id` is set". Related pre-existing gap left open: a crash
+  between the Gelato POST and the `UPDATE` that records the id still orphans a
+  product no DB-driven sweep can see. (2) `migrate_v412_gallery.py` **rebuilds
+  `groups`** — SQLite cannot widen a CHECK in place. Rows copied verbatim, the
+  constraint only widens, but it is not the additive shape session 1 protected.
+  (3) `render_group_mockups` gained a guard the kickoff did not ask for: a
+  group arriving with sizes *after* the product exists fails loud, because Q2
+  proved a variant cannot be added afterwards.
+- **`discard_superseded_attempt` ended up deleting less than specified.** The
+  kickoff said scope its deletes to the group; it now deletes only that group's
+  `product_images` and leaves its variant rows alone. The sizes don't change
+  between attempts — only the artwork does — and dropping the variant rows was
+  what tripped the new post-create guard on a re-render. Excluded groups' sizes
+  are pruned later, at create time, where the product's real variant set is
+  known.
+- **The digest/mockup/critic diff was bigger than the impact map implied.**
+  Ten queries repointed across `digest`, `group_digest`, `critic_pass`,
+  `group_critic_pass`, `compliance_draft`, `publish_group`, `group_mockup`,
+  `primary_mockup`. The common cause is one thing, not ten: every stage looked
+  up its row as `group_products WHERE group_id = ? AND status = 'created'`, and
+  under v4.12 **both halves of that are wrong** — the row is the candidate's,
+  and it sits at `pending` for the whole review window. `group_product.
+  live_product_row()` is now the single resolver they all call.
+- **`group_mockup`'s cycle trigger had to move from status to decision.** It
+  keyed on the primary group reaching `approved_published`, which under [D1]
+  never arrives until *after* the secondary groups have been reviewed. Left
+  alone it would have deadlocked the whole flow. Now keys on `decision =
+  'approved'`.
+- **`primary_mockup` now records the full primary size set at render time**
+  (8x12/A3/A2/A1, not 8x12-only). Under v4.11 the row grew to four sizes on
+  approval by deleting and recreating the Gelato product; with no product at
+  render time the fan-out is just the variant rows, so recording them up front
+  removes the sizes-changed branch's last trigger *and* makes the primary
+  digest's price line honest about what the listing will offer. Digest tests
+  updated accordingly — that is a behaviour change, not just fixture churn.
+- **A fourth wrong CLAUDE.md constraint, flagged not edited** (per §5): the
+  `Data storage is SQLite` bullet still reads "under v4.11 each group has ONE
+  Gelato product + ONE Etsy listing". That is now false. The three rewrites the
+  PRD drafted were applied verbatim; this one is left for the owner because the
+  kickoff said to flag rather than edit.
+- **Both subagents died mid-edit on the session limit** (`resets 6pm
+  Europe/Brussels`), leaving four test files partially converted. The main
+  thread finished them. Nothing destructive ran — the command denylist held,
+  and the one agent that wanted a clean checkout did not try to get one. Worth
+  keeping: the surviving partial work was *useful*, including one agent leaving
+  a `KNOWN PRODUCTION BUG` note on a test that correctly caught
+  `run_group_mockup_cycle` still reading `result["gelato_product_id"]`.
+- **What GL-13 inherits, explicitly.** Nothing below was proven offline:
+  one listing carrying 4/5/6 variants across its lifecycle with no duplicate
+  product; a gallery that grew across two reviews, checked against the real
+  Etsy listing rather than the DB; a rejected secondary group that deleted
+  nothing, `GET`-verified before and after; the `listing_image_id` shape the
+  idempotent re-patch depends on (currently only exercised against a stub); the
+  20-image cap against a real Etsy rejection; and the stall rule, which cannot
+  fire at all until GL-7 runs the gate on a cadence.
+- **Both approved destructive actions done.** The two GL-22a research drafts
+  are deleted — `4547726856` and `4547717123`, both `state: draft` on the
+  `GET` before, both `404` on the `GET` after (`delete_gl22a_research_drafts.py`,
+  kept as the hand-run record). First real use of session 1's `delete_listing`.
+  **The pre-delete guard fired first, and was right to:** the findings-doc
+  ledger records both as still titled `GL-22a Q1 research probe - DELETE ME`,
+  but the live `GET` returned `GL22A-PATCH-MARKER Dense Wildflower Meadow
+  Print` and `GL22A-Q3-CLEAN-PATCH-MARKER Wildflower Print`. That is the
+  ledger being stale, not the wrong listings — Q3's `update_listing` test
+  renamed them after the ledger's last read, and the findings doc records the
+  second of those titles on `4547717123` itself as "our patch". Guard relaxed
+  to the `GL22A-` marker prefix (narrow enough that nothing but this research
+  session could have written it) with that reasoning in the script, then
+  re-run. Worth carrying: a "confirm via GET before deleting" step is only
+  useful if a mismatch actually stops you, and this one did.
+  `stash@{0}`/`stash@{1}` dropped (`5f6d1c1`, `39f8300` — SHAs recorded before
+  dropping, so both stay reachable via reflog); `stash@{2}`
+  (`125331f`, feat/gl21-matte-compositor) untouched, as instructed.

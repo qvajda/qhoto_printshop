@@ -1,4 +1,5 @@
 import json
+import sys
 import urllib.parse
 import urllib.request
 import uuid
@@ -228,6 +229,15 @@ def update_listing_inventory(
             matched_sizes.add(matched_size)
             for offering in clean_product["offerings"]:
                 offering["price"] = size_to_price[matched_size]
+        else:
+            # Unmatched product keeps its existing price, just converted from Etsy's
+            # read shape ({amount, divisor, currency_code}) to the float shape the
+            # write API expects - an unconverted array price 400s the WHOLE PUT body,
+            # matched offerings included.
+            for offering in clean_product["offerings"]:
+                price = offering["price"]
+                if isinstance(price, dict):
+                    offering["price"] = price["amount"] / price["divisor"]
         products.append(clean_product)
 
     missing = set(size_to_price) - matched_sizes
@@ -252,6 +262,31 @@ def update_listing_inventory(
         headers = _headers(api_key, api_secret, token)
         headers["Content-Type"] = "application/json"
         return urllib.request.Request(url, data=body, headers=headers, method="PUT")
+
+    return _call_with_refresh(_build, access_token)
+
+
+def delete_listing(
+    listing_id: str, *, api_key: str = None, api_secret: str = None,
+    access_token: str = None, dry_run: bool = None
+) -> dict:
+    """Hand-called recovery tool - deletes an Etsy listing outright. Not wired into
+    any pipeline stage. Destructive on a real account: logs loudly on every live call."""
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    if dry_run:
+        return {"listing_id": listing_id, "_dry_run": True, "deleted": True}
+
+    print(f"[etsy_client] DELETE listing {listing_id} - destructive, live call", file=sys.stderr)
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/listings/{listing_id}"
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="DELETE")
 
     return _call_with_refresh(_build, access_token)
 

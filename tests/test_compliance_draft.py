@@ -47,22 +47,22 @@ def _insert_primary_gallery(conn, candidate_id, image_types=("flat_mockup", "lif
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, gelato_template_id, status, created_at, updated_at) "
-        "VALUES (?, 'tpl_1', ?, ?, ?)",
-        (group_id, group_product_status, timestamp, timestamp),
+        "(candidate_id, group_id, gelato_template_id, status, created_at, updated_at) "
+        "VALUES (?, ?, 'tpl_1', ?, ?, ?)",
+        (candidate_id, group_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
     conn.execute(
         "INSERT INTO group_product_variants "
-        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
-        (group_product_id, timestamp),
+        "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
+        (group_product_id, group_id, timestamp),
     )
     for order, image_type in enumerate(image_types):
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, '', ?, ?)",
-            (group_product_id, f"https://gelato/img{order}.jpg", order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, '', ?, ?)",
+            (group_product_id, group_id, f"https://gelato/img{order}.jpg", order, image_type),
         )
     conn.commit()
     return group_product_id
@@ -244,8 +244,7 @@ def test_update_gallery_alt_text_updates_rows_in_order(tmp_path):
     gallery = conn.execute(
         """
         SELECT pi.alt_text FROM product_images pi
-        JOIN group_products gp ON gp.id = pi.group_product_id
-        JOIN groups g ON g.id = gp.group_id
+        JOIN groups g ON g.id = pi.group_id
         WHERE g.candidate_id = ? ORDER BY pi.gallery_order
         """,
         (candidate_id,),
@@ -264,8 +263,7 @@ def test_update_gallery_alt_text_raises_on_count_mismatch(tmp_path):
     gallery = conn.execute(
         """
         SELECT pi.alt_text FROM product_images pi
-        JOIN group_products gp ON gp.id = pi.group_product_id
-        JOIN groups g ON g.id = gp.group_id
+        JOIN groups g ON g.id = pi.group_id
         WHERE g.candidate_id = ?
         """,
         (candidate_id,),
@@ -306,8 +304,7 @@ def test_build_compliance_draft_happy_path_writes_listing_text_and_alt_text(tmp_
     gallery = conn.execute(
         """
         SELECT pi.alt_text FROM product_images pi
-        JOIN group_products gp ON gp.id = pi.group_product_id
-        JOIN groups g ON g.id = gp.group_id
+        JOIN groups g ON g.id = pi.group_id
         WHERE g.candidate_id = ? ORDER BY pi.gallery_order
         """,
         (candidate_id,),

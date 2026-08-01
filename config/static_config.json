@@ -85,11 +85,7 @@
   },
   "primary_size": "8x12",
   "etsy_taxonomy_id": 1027,
-  "etsy_shipping_profile_id": {
-    "primary": "287910565714",
-    "5x7": "287910553824",
-    "10x24": "287910565714"
-  },
+  "etsy_shipping_profile_id": "288734253315",
   "etsy_production_partner_ids": [
     5717252
   ],

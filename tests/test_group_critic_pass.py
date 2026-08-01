@@ -68,25 +68,40 @@ def _insert_group_gallery(conn, candidate_id, group_type, size, *,
         (candidate_id, group_type, group_status, timestamp, timestamp),
     )
     group_id = group_cursor.lastrowid
-    gp_cursor = conn.execute(
-        "INSERT INTO group_products "
-        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tpl_1', ?, ?, ?, ?)",
-        (group_id, gelato_product_id, group_product_status, timestamp, timestamp),
-    )
-    group_product_id = gp_cursor.lastrowid
+
+    # v4.12: one group_products row per CANDIDATE (the shared listing record), not one
+    # per group - reuse the candidate's existing row rather than inserting a second one,
+    # mirroring group_product._ensure_product_row's own reuse-by-candidate behaviour.
+    existing = conn.execute(
+        "SELECT id FROM group_products WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()
+    if existing is not None:
+        group_product_id = existing["id"]
+        conn.execute(
+            "UPDATE group_products SET gelato_product_id = ?, status = ?, updated_at = ? WHERE id = ?",
+            (gelato_product_id, group_product_status, timestamp, group_product_id),
+        )
+    else:
+        gp_cursor = conn.execute(
+            "INSERT INTO group_products "
+            "(candidate_id, group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+            "VALUES (?, ?, 'tpl_1', ?, ?, ?, ?)",
+            (candidate_id, group_id, gelato_product_id, group_product_status, timestamp, timestamp),
+        )
+        group_product_id = gp_cursor.lastrowid
+
     conn.execute(
         "INSERT INTO group_product_variants "
-        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, ?, 'portrait', ?, 19, ?)",
-        (group_product_id, size, f"variant_{size}", timestamp),
+        "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, ?, 'portrait', ?, 19, ?)",
+        (group_product_id, group_id, size, f"variant_{size}", timestamp),
     )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, 'placeholder alt', ?, ?)",
-            (group_product_id, image_url, order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, 'placeholder alt', ?, ?)",
+            (group_product_id, group_id, image_url, order, image_type),
         )
     conn.commit()
     return group_id, group_product_id
@@ -133,9 +148,12 @@ def test_get_group_critic_state_raises_when_no_group(tmp_path):
 
 
 def test_get_group_critic_state_raises_when_no_live_group_product(tmp_path):
+    # v4.12: group_product._ACTIVE_STATUSES treats 'mockup_failed' as live/reusable (a
+    # failed render still has a real listing record to retry into) - only 'deleted'
+    # (or no row at all) is genuinely "not live".
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    _insert_group_gallery(conn, candidate_id, "10x24", "10x24", group_product_status="mockup_failed")
+    _insert_group_gallery(conn, candidate_id, "10x24", "10x24", group_product_status="deleted")
 
     with pytest.raises(ValueError, match="group_products"):
         group_critic_pass.get_group_critic_state(conn, candidate_id, "10x24")
@@ -231,7 +249,11 @@ def test_run_group_critic_pass_passes_on_first_attempt(tmp_path):
 def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id="gelato_prod_v1")
+    # v4.12: no Gelato product exists during review - it is created once, at publish,
+    # after every group is decided. The retry below re-renders locally and touches
+    # Gelato not at all.
+    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", gelato_product_id=None,
+                          group_product_status="pending")
     _insert_listing_text(conn, candidate_id)
 
     # attempt 1's reject short-circuits at tier 2 (1 call); attempt 2's pass runs both
@@ -250,7 +272,7 @@ def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=lambda *a, **k: next(critic_responses)), \
-         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.group_product.poll_until_ready", return_value=ready_product):
@@ -261,7 +283,10 @@ def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
 
     assert result["passed"] is True
     assert result["attempts"] == 2
-    mock_delete.assert_called_once_with("gelato_prod_v1", store_id="store1", api_key="key2")
+    # v4.12: a critic-pass retry deletes NOTHING on the Gelato side. The product and
+    # listing belong to the candidate; other groups depend on them surviving, and Q2
+    # proved a deleted product cannot be grown back.
+    mock_delete.assert_not_called()
 
     group_row = conn.execute(
         "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '5x7'", (candidate_id,)
@@ -272,8 +297,9 @@ def test_run_group_critic_pass_retries_once_then_passes(tmp_path):
         "SELECT * FROM group_products WHERE group_id = ?", (result["group_id"],)
     ).fetchall()
     assert len(gp_rows) == 1
-    assert gp_rows[0]["gelato_product_id"] == "gelato_prod_v2"
-    assert gp_rows[0]["status"] == "created"
+    # Still the candidate's one listing record, still awaiting its single create.
+    assert gp_rows[0]["gelato_product_id"] is None
+    assert gp_rows[0]["status"] == "pending"
 
     attempts = conn.execute(
         "SELECT * FROM critic_pass_attempts WHERE group_id = ? ORDER BY attempt_number",
@@ -308,7 +334,7 @@ def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=lambda *a, **k: next(critic_responses)), \
-         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.group_product.poll_until_ready", return_value=ready_product):
@@ -319,7 +345,9 @@ def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp
 
     assert result["passed"] is False
     assert result["attempts"] == 3
-    assert mock_delete.call_count == 3
+    # v4.12: abandoning a group marks it and excludes it. It deletes nothing - no
+    # Gelato product, no Etsy listing, no shared listing record.
+    mock_delete.assert_not_called()
 
     group_row = conn.execute(
         "SELECT status, failed_reason FROM groups WHERE candidate_id = ? AND group_type = '5x7'",
@@ -333,9 +361,23 @@ def test_run_group_critic_pass_abandons_only_this_group_after_three_failures(tmp
     assert candidate_row["status"] == "primary_review"
 
     other_group_row = conn.execute(
-        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '10x24'", (candidate_id,)
+        "SELECT id, status FROM groups WHERE candidate_id = ? AND group_type = '10x24'",
+        (candidate_id,),
     ).fetchone()
     assert other_group_row["status"] == "pending_review"
+
+    # ...including the sibling group's reviewed gallery and its variant row, and the
+    # shared listing record itself.
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM product_images WHERE group_id = ?", (other_group_row["id"],)
+    ).fetchone()["n"] == 2
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_id = ?",
+        (other_group_row["id"],),
+    ).fetchone()["n"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM group_products WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()["n"] == 1
     conn.close()
 
 
@@ -346,7 +388,10 @@ def test_run_group_critic_pass_cycle_processes_ready_groups_and_skips_uncreated(
     _insert_listing_text(conn, ready_id, niche="monstera line art")
 
     not_ready_id = _insert_candidate(conn, niche="moon phase print")
-    _insert_group_gallery(conn, not_ready_id, "10x24", "10x24", group_product_status="mockup_failed")
+    # v4.12: "not ready for review" is "this group has rendered no images yet" - the
+    # listing record is the candidate's and says nothing about one group's progress.
+    _insert_group_gallery(conn, not_ready_id, "10x24", "10x24", image_urls=(),
+                          group_product_status="mockup_failed")
     _insert_listing_text(conn, not_ready_id, niche="moon phase print")
 
     fake_response = _verdict_response("good")
@@ -397,7 +442,7 @@ def test_run_group_critic_pass_cycle_excludes_abandoned_group_from_rerun(tmp_pat
                       "productImages": [{"fileUrl": "https://gelato/flat_retry.jpg", "isPrimary": True}]}
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fail_response), \
-         patch("pipeline.critic_pass.gelato_client.delete_product"), \
+         patch("pipeline.gelato_client.delete_product"), \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
          patch("pipeline.group_product.poll_until_ready", return_value=ready_product):

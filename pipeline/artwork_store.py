@@ -75,13 +75,16 @@ def persist_group_crop(candidate_id: int, group_type: str, raw_bytes: bytes) -> 
     return _persist_artifact(filename, f"base/{filename}", raw_bytes)
 
 
-def persist_mockup_render(group_product_id: int, index: int, raw_bytes: bytes) -> dict:
+def persist_mockup_render(group_product_id: int, group_id: int, index: int, raw_bytes: bytes) -> dict:
     """Archives one self-hosted mockup-render composite (GL-5 task 3), same
-    idempotency semantics as persist_group_crop. Keyed by group_product_id + its
-    scene index (not candidate_id) so a re-render on retry overwrites the same
-    slot instead of accumulating orphan files - mirrors the existing idempotency
-    comment in group_product.py about clearing product_images before reinserting."""
-    filename = f"{group_product_id}_mockup_{index}.png"
+    idempotency semantics as persist_group_crop. Keyed by group_product_id +
+    group_id + its scene index (not candidate_id) so a re-render on retry
+    overwrites the same slot instead of accumulating orphan files - mirrors the
+    idempotency comment in group_product.py about clearing product_images before
+    reinserting. v4.12: group_id is part of the key because one group_products row
+    is now shared by up to three groups - without it, the 5x7 group's scene 0 would
+    overwrite the primary group's scene 0 file on disk."""
+    filename = f"{group_product_id}_{group_id}_mockup_{index}.png"
     return _persist_artifact(filename, f"base/{filename}", raw_bytes)
 
 

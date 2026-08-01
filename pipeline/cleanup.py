@@ -5,14 +5,22 @@ import pipeline.gelato_client as gelato_client
 
 def cleanup_orphaned_gelato_products(conn, *, store_id=None, api_key=None, now=None) -> list:
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    # v4.12: whole-candidate teardown only. The Gelato product belongs to the CANDIDATE,
+    # so a single group being rejected or abandoned must never reach this sweep - other
+    # groups' sizes live on that same product and cannot be re-added once it is gone
+    # (GL-22a Q2). The group-status rule survives only for pre-migration rows
+    # (candidate_id NULL), where one product really did belong to one group.
     rows = conn.execute(
         """
         SELECT gp.id, gp.gelato_product_id
         FROM group_products gp
         JOIN groups g ON g.id = gp.group_id
+        LEFT JOIN candidates c ON c.id = gp.candidate_id
         WHERE gp.gelato_product_id IS NOT NULL
           AND gp.status != 'deleted'
-          AND (gp.status = 'publish_failed' OR g.status IN ('rejected', 'failed_abandoned'))
+          AND (gp.status = 'publish_failed'
+               OR (gp.candidate_id IS NOT NULL AND c.status IN ('failed', 'abandoned'))
+               OR (gp.candidate_id IS NULL AND g.status IN ('rejected', 'failed_abandoned')))
         """
     ).fetchall()
 
@@ -43,12 +51,20 @@ def reclaim_stranded_pending_group_products(conn, *, max_age_minutes=10, now=Non
     is still NULL), so there's nothing to delete_product - just remove the row.
     10-minute default sits with margin above group_product.poll_until_ready's
     300s (5 min) timeout, so a still-legitimately-in-flight create is never
-    reclaimed out from under itself."""
+    reclaimed out from under itself.
+
+    v4.12: 'pending' + no gelato_product_id is now the NORMAL state of a candidate's
+    listing record for the whole review window, which can be days - the Gelato product
+    isn't created until every group is decided. So the sweep additionally requires the
+    row to carry no variants and no images: that is still exactly the crashed-before-
+    anything-happened row this was written for, and never a live listing record."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     cutoff = (now - timedelta(minutes=max_age_minutes)).isoformat()
     rows = conn.execute(
-        "SELECT id FROM group_products WHERE status = 'pending' AND gelato_product_id IS NULL "
-        "AND created_at < ?",
+        "SELECT id FROM group_products gp WHERE gp.status = 'pending' "
+        "AND gp.gelato_product_id IS NULL AND gp.created_at < ? "
+        "AND NOT EXISTS (SELECT 1 FROM group_product_variants v WHERE v.group_product_id = gp.id) "
+        "AND NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.group_product_id = gp.id)",
         (cutoff,),
     ).fetchall()
 

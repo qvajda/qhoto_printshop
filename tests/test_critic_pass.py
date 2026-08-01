@@ -104,24 +104,24 @@ def _insert_primary_gallery(conn, candidate_id,
     group_id = group_cursor.lastrowid
     gp_cursor = conn.execute(
         "INSERT INTO group_products "
-        "(group_id, gelato_template_id, gelato_product_id, "
+        "(candidate_id, group_id, gelato_template_id, gelato_product_id, "
         "status, created_at, updated_at) "
-        "VALUES (?, 'tpl_1', ?, ?, ?, ?)",
-        (group_id, gelato_product_id, group_product_status, timestamp, timestamp),
+        "VALUES (?, ?, 'tpl_1', ?, ?, ?, ?)",
+        (candidate_id, group_id, gelato_product_id, group_product_status, timestamp, timestamp),
     )
     group_product_id = gp_cursor.lastrowid
     conn.execute(
         "INSERT INTO group_product_variants "
-        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
-        (group_product_id, timestamp),
+        "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
+        (group_product_id, group_id, timestamp),
     )
     for order, image_url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, 'placeholder alt', ?, ?)",
-            (group_product_id, image_url, order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, 'placeholder alt', ?, ?)",
+            (group_product_id, group_id, image_url, order, image_type),
         )
     conn.commit()
     return group_id, group_product_id
@@ -457,7 +457,6 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
     # (cheap master-image check) then tier 3 (full rubric) - two vision calls total.
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                return_value=_verdict_response("good")) as mock_vision, \
-         patch("pipeline.critic_pass.gelato_client.delete_product"), \
          patch("pipeline.generate.replicate_client.generate_image",
                return_value={"image_url": "https://replicate.delivery/r.png", "prediction_id": "p"}), \
          patch("pipeline.generate.replicate_client.upscale_image",
@@ -529,32 +528,30 @@ def test_record_critic_attempt_stores_failure_with_reason_and_correction_notes(t
     conn.close()
 
 
-def test_discard_superseded_attempt_deletes_gelato_product_and_rows(tmp_path):
+def test_discard_superseded_attempt_leaves_shared_product_and_listing_untouched(tmp_path):
+    # v4.12: the Gelato product / group_products row belongs to the CANDIDATE, shared by
+    # every group - discarding one group's attempt must delete nothing shared (inverted
+    # from the pre-v4.12 behaviour this test used to assert).
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    _group_id, group_product_id = _insert_primary_gallery(conn, candidate_id)
+    group_id, group_product_id = _insert_primary_gallery(conn, candidate_id)
 
-    with patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete:
-        critic_pass.discard_superseded_attempt(
-            conn, group_product_id, store_id="store1", api_key="key2"
-        )
+    critic_pass.discard_superseded_attempt(
+        conn, group_product_id, group_id, store_id="store1", api_key="key2"
+    )
 
-    mock_delete.assert_called_once_with("gelato_prod_1", store_id="store1", api_key="key2")
-
+    # v4.12: discard makes no Gelato call at all (nothing shared to delete).
     assert conn.execute(
         "SELECT * FROM group_products WHERE id = ?", (group_product_id,)
-    ).fetchone() is None
+    ).fetchone() is not None
     assert conn.execute(
-        "SELECT * FROM product_images WHERE group_product_id = ?", (group_product_id,)
+        "SELECT * FROM product_images WHERE group_product_id = ? AND group_id = ?",
+        (group_product_id, group_id),
     ).fetchall() == []
     conn.close()
 
 
-def test_discard_superseded_attempt_also_deletes_variant_rows(tmp_path):
-    # ponytail: _insert_primary_gallery is pre-existing-broken against the post-migration
-    # group_products schema (size/orientation/price_eur moved to group_product_variants) -
-    # out of scope for this task, so this test inserts its own group/group_products rows
-    # directly against the current schema instead of relying on that fixture.
+def test_discard_superseded_attempt_keeps_variant_rows(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     timestamp = "2026-07-16T09:00:00"
@@ -564,42 +561,49 @@ def test_discard_superseded_attempt_also_deletes_variant_rows(tmp_path):
         (candidate_id, timestamp, timestamp),
     ).lastrowid
     group_product_id = conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tmpl', 'gelato-1', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
+        "INSERT INTO group_products (candidate_id, group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, ?, 'tmpl', 'gelato-1', 'created', ?, ?)",
+        (candidate_id, group_id, timestamp, timestamp),
     ).lastrowid
     conn.execute(
         "INSERT INTO group_product_variants "
-        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'var1', 24.0, ?)",
-        (group_product_id, timestamp),
+        "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+        "VALUES (?, ?, '8x12', 'portrait', 'var1', 24.0, ?)",
+        (group_product_id, group_id, timestamp),
     )
     conn.commit()
 
-    with patch("pipeline.critic_pass.gelato_client.delete_product"):
-        critic_pass.discard_superseded_attempt(conn, group_product_id)
+    critic_pass.discard_superseded_attempt(conn, group_product_id, group_id)
 
+    # v4.12: the group's SIZES don't change between attempts, only its artwork does -
+    # so the variant rows stay and the next render writes into the same slots. (Was
+    # "also_deletes_variant_rows": under v4.11 the whole product was torn down and
+    # rebuilt per attempt, so deleting them was the only way to avoid duplicates.)
     remaining = conn.execute(
         "SELECT COUNT(*) AS n FROM group_product_variants WHERE group_product_id = ?", (group_product_id,)
     ).fetchone()
-    assert remaining["n"] == 0
+    assert remaining["n"] == 1
+    # The shared listing record (group_products row) survives too.
+    assert conn.execute(
+        "SELECT id FROM group_products WHERE id = ?", (group_product_id,)
+    ).fetchone() is not None
     conn.close()
 
 
 def test_discard_superseded_attempt_skips_gelato_call_when_no_product_id(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    _group_id, group_product_id = _insert_primary_gallery(
+    group_id, group_product_id = _insert_primary_gallery(
         conn, candidate_id, gelato_product_id=None, group_product_status="pending"
     )
 
-    with patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete:
-        critic_pass.discard_superseded_attempt(conn, group_product_id, store_id="store1", api_key="key2")
+    critic_pass.discard_superseded_attempt(conn, group_product_id, group_id, store_id="store1", api_key="key2")
 
-    mock_delete.assert_not_called()
+    # v4.12: no gelato_product_id means nothing to delete either way, but the shared
+    # group_products row (the candidate's listing record) is never deleted here.
     assert conn.execute(
         "SELECT * FROM group_products WHERE id = ?", (group_product_id,)
-    ).fetchone() is None
+    ).fetchone() is not None
     conn.close()
 
 
@@ -661,49 +665,40 @@ def test_run_critic_pass_resumes_attempt_count_after_crash_before_regenerate(tmp
     group_id = group_row["id"]
 
     # Reproduce the exact post-crash DB state: attempt 1 failed and was recorded,
-    # its group_products/product_images were discarded, its listing_texts row was
-    # deleted, then generate.generate_for_candidate raised before attempt 2 could
-    # be set up. candidate is still 'generating', with one attempt row recorded.
+    # its group_product_variants/product_images were discarded (v4.12: the shared
+    # group_products row - the candidate's listing record - survives a discard, it is
+    # never deleted), its listing_texts row was deleted, then
+    # generate.generate_for_candidate raised before attempt 2 could be set up.
+    # candidate is still 'generating', with one attempt row recorded.
     critic_pass.record_critic_attempt(
         conn, group_id, 1, {"passed": False, "reason": "reason one"},
         now=datetime(2026, 7, 10, 12, 0, 0),
     )
-    old_group_product_id = conn.execute(
+    group_product_id = conn.execute(
         "SELECT id FROM group_products WHERE group_id = ?", (group_id,)
     ).fetchone()["id"]
-    with patch("pipeline.critic_pass.gelato_client.delete_product"):
-        critic_pass.discard_superseded_attempt(
-            conn, old_group_product_id, store_id="store1", api_key="key2"
-        )
+    critic_pass.discard_superseded_attempt(
+        conn, group_product_id, group_id, store_id="store1", api_key="key2"
+    )
     conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
     conn.commit()
 
     # A later batch cycle re-processed the candidate: run_primary_mockup_cycle's
-    # get_or_create_primary_group finds the *same* group_id (idempotent design) and
-    # just adds a fresh group_products/product_images row to it; run_compliance_draft_cycle
-    # adds a fresh listing_texts row.
+    # get_or_create_primary_group finds the *same* group_id (idempotent design), and
+    # render_group_mockups (v4.12) reuses the SAME group_products row - it is keyed off
+    # the candidate and was never deleted by the discard above - rather than inserting a
+    # new one; the variant rows were never dropped (the sizes didn't change), so it
+    # only re-renders this group's image rows.
+    # run_compliance_draft_cycle adds a fresh listing_texts row.
     timestamp = "2026-07-10T12:30:00"
-    new_gp_cursor = conn.execute(
-        "INSERT INTO group_products "
-        "(group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tpl_1', 'gelato_prod_resumed', 'created', ?, ?)",
-        (group_id, timestamp, timestamp),
-    )
-    new_group_product_id = new_gp_cursor.lastrowid
-    conn.execute(
-        "INSERT INTO group_product_variants "
-        "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-        "VALUES (?, '8x12', 'portrait', 'variant_8x12', 24, ?)",
-        (new_group_product_id, timestamp),
-    )
     for order, image_url in enumerate(
         ("https://gelato/flat_resumed.jpg", "https://gelato/life_resumed.jpg")
     ):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, 'placeholder alt', ?, ?)",
-            (new_group_product_id, image_url, order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, 'placeholder alt', ?, ?)",
+            (group_product_id, group_id, image_url, order, image_type),
         )
     conn.commit()
     _insert_listing_text(conn, candidate_id, niche="monstera line art")
@@ -795,7 +790,6 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=lambda *a, **k: next(critic_responses)), \
-         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
@@ -816,7 +810,15 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
         )
 
     assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 2}
-    mock_delete.assert_called_once_with("gelato_prod_1", store_id="store1", api_key="key2")
+    # v4.12: discard_superseded_attempt makes no Gelato call at all, and the retry's
+    # render never creates a Gelato product either (that only happens once, at
+    # publish) - the same shared group_products row is reused, never duplicated or
+    # deleted.
+    group_product_rows = conn.execute(
+        "SELECT id, gelato_product_id FROM group_products WHERE candidate_id = ?", (candidate_id,)
+    ).fetchall()
+    assert len(group_product_rows) == 1
+    assert group_product_rows[0]["gelato_product_id"] == "gelato_prod_1"
 
     candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert candidate_row["status"] == "primary_review"
@@ -875,7 +877,6 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=lambda *a, **k: next(critic_responses)), \
-         patch("pipeline.critic_pass.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
@@ -896,7 +897,14 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
         )
 
     assert result == {"candidate_id": candidate_id, "passed": False, "attempts": 3}
-    assert mock_delete.call_count == 3
+    # v4.12: abandon never deletes a Gelato product either - the primary group's render
+    # path never created one (that only happens once, at publish), so there is nothing
+    # for cleanup.py's whole-candidate sweep to find until/unless one gets created later.
+    group_product_rows = conn.execute(
+        "SELECT gelato_product_id FROM group_products WHERE candidate_id = ?", (candidate_id,)
+    ).fetchall()
+    assert len(group_product_rows) == 1
+    assert group_product_rows[0]["gelato_product_id"] == "gelato_prod_1"
 
     candidate_row = conn.execute(
         "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
@@ -930,7 +938,6 @@ def test_run_critic_pass_abandons_candidate_when_retry_regeneration_crashes(tmp_
     fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
-         patch("pipeline.critic_pass.gelato_client.delete_product"), \
          patch("pipeline.generate.generate_for_candidate", side_effect=RuntimeError("Unterminated string")):
         with pytest.raises(RuntimeError, match="Unterminated string"):
             critic_pass.run_critic_pass(
@@ -964,7 +971,6 @@ def test_run_critic_pass_does_not_abandon_on_transient_fault_during_regen(tmp_pa
     fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
-         patch("pipeline.critic_pass.gelato_client.delete_product"), \
          patch("pipeline.generate.generate_for_candidate",
                side_effect=http.HTTPError(503, "upstream unavailable")):
         result = critic_pass.run_critic_pass(
@@ -1003,7 +1009,6 @@ def test_run_critic_pass_does_not_abandon_on_replicate_throttled_during_regen(tm
     fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
-         patch("pipeline.critic_pass.gelato_client.delete_product"), \
          patch("pipeline.generate.generate_for_candidate",
                side_effect=replicate_client.ReplicateThrottledError(retry_after=10.0)):
         result = critic_pass.run_critic_pass(
@@ -1031,7 +1036,6 @@ def test_run_critic_pass_still_abandons_on_non_transient_regen_crash(tmp_path):
     fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
-         patch("pipeline.critic_pass.gelato_client.delete_product"), \
          patch("pipeline.generate.generate_for_candidate", side_effect=RuntimeError("Unterminated string")):
         with pytest.raises(RuntimeError, match="Unterminated string"):
             critic_pass.run_critic_pass(

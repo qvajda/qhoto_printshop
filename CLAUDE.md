@@ -1,8 +1,9 @@
 # Etsy AI POD pipeline
 
-Full spec: docs/SPEC_v4.11.md (supersedes v4.10 — variant listings +
-Gelato-pushes-we-patch, post-first-live-run). Root-cause analysis of the live
-run's defects: docs/superpowers/specs/2026-07-16-live-test-fixes-brainstorm.md.
+Full spec: docs/SPEC_v4.12.md (one listing per artwork; supersedes
+docs/SPEC_v4.11.md sections 3-4 — read v4.11 for sections 1-2 and 5-9, which
+are unchanged). Root-cause analysis of the first live run's defects:
+docs/superpowers/specs/2026-07-16-live-test-fixes-brainstorm.md.
 Changelog/decision history: CHANGELOG.md.
 Gelato cost reference: gelato_premium_matte_poster_prices_BE_2026-07-05.csv.
 Shop currency: EUR. Read the relevant spec section before touching a
@@ -53,18 +54,33 @@ pipeline stage — don't guess at behavior that's already specified.
   There are up to **three** digest entries per design now, not one — see
   the aspect-ratio-group rule below.
 - Critic-pass retry cap is exactly 3 attempts per group, then abandon
-  that group only: log locally as `failed`, DELETE that group's Gelato
-  product(s) via DELETE /v1/stores/{storeId}/products/{productId}. At the
-  primary-group level this also triggers the Go/Hold/Kill fallback
-  (abandoning the whole candidate); at the 5x7/10x24-group level it only
-  abandons that one group — the design's already-published groups are
-  untouched.
-- **One Etsy listing per aspect-ratio group, sizes are variants (v4.11).**
-  A group's sizes are Etsy variations of ONE listing, each at its own price
-  — not one listing per size. There are **2 Gelato multi-variant templates**
-  (portrait + landscape), sizes are the variants; a group's listing is one
-  Gelato product created with that group's size-variants in a single
-  `create-from-template` call.
+  that group only: log locally as `failed`. **Under v4.12 this never
+  deletes a Gelato product or Etsy listing** — the product/listing belongs
+  to the candidate, not the group, and other groups (already published or
+  still pending) depend on it surviving. Abandoning a group means: mark
+  that group `failed_abandoned`, exclude its sizes/images from the
+  candidate's listing build, and leave the shared product/listing alone.
+  At the primary-group level this still triggers the Go/Hold/Kill
+  fallback (abandoning the whole candidate before any listing exists) —
+  unchanged, because the primary group is decided first and no shared
+  product exists yet if it fails.
+- **One Etsy listing per artwork, sizes are variants (v4.12).** All six
+  sizes are Etsy variations of ONE listing for a candidate, each at its
+  own price — not one listing per aspect-ratio group. There is **one**
+  Gelato multi-variant template pair (portrait + landscape, unchanged from
+  v4.11) and the candidate's listing is one Gelato product created (or
+  grown) with whichever sizes have passed review as that product's
+  variants. A design still ends up offering 4, 5, or 6 sizes depending on
+  whether the 5x7/10x24 groups each pass their own review (unchanged from
+  v4.11) — it now offers them from one listing instead of up to three.
+  Adding a variant to an existing Gelato product has no API path
+  (confirmed live, GL-22a Q2 — `PUT` on the product resource silently
+  drops the added variant and severs the Etsy sync; the `/variants`
+  sub-resource is a different, incompatible custom-priced-product flow;
+  re-`create-from-template` with the same title creates a second product).
+  The listing is therefore created **once, when all three groups have
+  reached a terminal decision** (approved/edited/rejected) — never
+  incrementally.
 - **Etsy integration = Gelato pushes, we patch (v4.11).** The Gelato store is
   Etsy-connected and auto-creates the listing. The pipeline must NOT create
   Etsy listings itself (doing so collided with Gelato's push in the live
@@ -125,10 +141,19 @@ pipeline stage — don't guess at behavior that's already specified.
   4. A design can end up selling at 4, 5, or 6 sizes depending on whether
      the 5x7/10x24 groups each pass their own review — this is expected,
      not a bug.
-- Data storage is SQLite, not a flat file — one row per aspect-ratio group
-  per candidate, not one row per candidate; under v4.11 each group has ONE
-  Gelato product + ONE Etsy listing (sizes are variants), plus its own
-  decision and critic-pass history.
+- Data storage is SQLite, not a flat file. One `groups` row per aspect-ratio
+  group per candidate, each carrying its own decision and critic-pass
+  history — **that part is unchanged.** What changed in v4.12: the
+  **product/listing unit is the candidate, not the group** — ONE Gelato
+  product + ONE Etsy listing per candidate, with the validated sizes as
+  variants. `group_products` is therefore a **misnomer**: it is the
+  candidate's *listing record*, and `gelato_product_id` is one nullable
+  column on it, NULL for the whole multi-day review window until the single
+  create at publish. **Anything that sweeps `pending` rows with no product
+  id must know that** — under v4.12 that is the normal state, not a stranded
+  one. `group_product_variants` and `product_images` each carry a `group_id`
+  recording which group produced them; every delete against them must scope
+  by it, or one group's rebuild wipes another's reviewed gallery.
 - Static config (Gelato template IDs, Etsy taxonomy_id, shipping_profile_id,
   production_partner_ids, who_made value, Telegram admin/allowlist user ID)
   is resolved once and hardcoded/read from config — never discovered
@@ -169,28 +194,20 @@ price table and per-size notes; prices below are final, not placeholders)
   resolved via live `getSellerTaxonomyNodes`; Etsy has no plain
   "Posters"/"Wall Art" leaf, this parent node was chosen over
   "Art & Collectibles > Prints > Giclée" (id 121) as the better fit)
-- Etsy shipping_profile_id: **resolved, mapped per aspect-ratio group, not
-  per size.** Gelato auto-created ~49 shipping profiles on connecting to
-  the shop; product line is confirmed **unframed** premium matte posters
-  (matches the cost-reference CSV and business layer — the earlier
-  framed_poster_mounted Gelato test call in
-  `docs/gelato_call_response_example_from_manual_tests.txt` was an early
-  exploratory API test, not the real product). The matching family is
-  plain **"Posters"**, with two tiers: `287910553824` ("Small Posters",
-  €12.44 shipping) and `287910565714` ("Large Posters", €14.55 shipping)
-  — no Medium tier exists for this family. Etsy allows only **one**
-  shipping profile per listing, and each listing is an aspect-ratio
-  group (not a single size), so the assignment is per-group, rounded up
-  to the group's largest size: Gelato's packaging threshold is A4 (up to
-  A4 ships flat, larger ships in a tube) — only 5x7 (13×18cm) is at/under
-  that, so **5x7 group → Small (`287910553824`)**; **primary group
-  (8x12/A3/A2/A1) → Large (`287910565714`)**; **10x24 group → Large
-  (`287910565714`)**. `config/static_config.json`'s `etsy_shipping_profile_id`
-  is now a per-group-type dict (keys match `aspect_ratio_groups`);
-  `pipeline/config.py` exposes `get_group_type_for_size()` and
-  `get_shipping_profile_id()` to resolve it at publish time (per group, one
-  value per listing), not at compliance-draft time (a candidate's groups
-  can span both tiers, so it's never a single per-candidate value).
+- Etsy shipping_profile_id: **resolved once per candidate, not per group
+  (v4.12) — `288734253315` ("Gelato: Free shipping", €0 to
+  every destination, confirmed live 2026-08-01 via `GET
+  /v3/application/shops/{shop_id}/shipping-profiles`; owner decision
+  2026-08-01).** One listing gets
+  exactly one Etsy shipping profile; under v4.12 that's resolved once for
+  the whole candidate rather than once per aspect-ratio group. The
+  previous per-group Small/Large split (5x7 → Small `287910553824`,
+  primary + 10x24 → Large `287910565714`) no longer applies once sizes
+  share a listing. **Retail prices are unchanged** — Gelato's per-item
+  shipping (€5.10–€5.86) is billed to the seller whichever profile is
+  set, and is already inside the cost basis those prices were built on;
+  all six sizes clear cost at 21–44 % with €0 shown at checkout. See
+  `docs/2026-08-01-gl22a-findings.md` GL-22b and this PRD's margin table.
 - Etsy production_partner_ids (Gelato): **[5717252]** — resolved via live
   `getShopProductionPartners` after Gelato was manually added as a
   production partner in Shop Manager → Settings → Partners you work

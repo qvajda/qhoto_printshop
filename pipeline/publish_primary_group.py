@@ -53,9 +53,81 @@ def record_decision(conn, group_id, decision, decision_notes=None, *, now=None) 
     conn.commit()
 
 
-def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=None,
-                           gelato_api_key=None, shop_id=None, etsy_api_key=None,
-                           etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> dict:
+_SECONDARY_GROUP_TYPES = ("5x7", "10x24")
+
+# A group is done being reviewed when the owner approved or rejected it, or when it ran
+# out of retries / aged out. 'edited' is deliberately NOT terminal: it means "redo this
+# one", and the decision is overwritten by the next tap.
+_TERMINAL_DECISIONS = ("approved", "rejected")
+_TERMINAL_STATUSES = ("rejected", "failed_abandoned", "stalled_skipped")
+
+
+def _age_days(reference: str, now_dt) -> float:
+    try:
+        return (now_dt - datetime.fromisoformat(reference)).total_seconds() / 86400
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def candidate_publish_plan(conn, candidate_id, static_config, *, now=None) -> dict:
+    """v4.12 [D1] publish gate: the candidate's single listing is created once, when every
+    group has reached a terminal decision, carrying only the sizes that were validated.
+
+    [D2] adds the stall clause: a group left undecided past
+    config.GROUP_REVIEW_STALL_DAYS stops the candidate waiting - it is marked
+    'stalled_skipped' and the listing publishes without it. Measured off
+    groups.updated_at (a group with no row yet is measured off the primary group's
+    decision, so a secondary group that never renders can't hang the candidate forever).
+    This only fires when something evaluates the gate; until GL-7 runs it on a cadence
+    the effective behaviour is wait-indefinitely."""
+    now_dt = now if isinstance(now, datetime) else (
+        datetime.fromisoformat(now) if isinstance(now, str)
+        else (now or datetime.now(timezone.utc).replace(tzinfo=None))
+    )
+    timestamp = now_dt.isoformat()
+
+    rows = {
+        row["group_type"]: row for row in conn.execute(
+            "SELECT id, group_type, decision, status, updated_at FROM groups WHERE candidate_id = ?",
+            (candidate_id,),
+        ).fetchall()
+    }
+    primary = rows.get("primary")
+    if primary is None or primary["decision"] != "approved":
+        return {"ready": False, "waiting_on": ["primary"], "stalled": []}
+
+    waiting_on, stalled = [], []
+    for group_type in _SECONDARY_GROUP_TYPES:
+        if not config.get_mockup_templates(static_config, group_type, "portrait"):
+            # No scene bundles authored for this group type - group_mockup never creates
+            # a row for it, so waiting on one would deadlock the candidate.
+            continue
+        row = rows.get(group_type)
+        if row is not None and (row["decision"] in _TERMINAL_DECISIONS
+                                or row["status"] in _TERMINAL_STATUSES):
+            continue
+        reference = row["updated_at"] if row is not None else primary["updated_at"]
+        if _age_days(reference, now_dt) < config.GROUP_REVIEW_STALL_DAYS:
+            waiting_on.append(group_type)
+            continue
+        stalled.append(group_type)
+        if row is not None:
+            conn.execute(
+                "UPDATE groups SET status = 'stalled_skipped', updated_at = ? WHERE id = ?",
+                (timestamp, row["id"]),
+            )
+    if stalled:
+        conn.commit()
+
+    return {"ready": not waiting_on, "waiting_on": waiting_on, "stalled": stalled}
+
+
+def publish_candidate(conn, candidate_id, *, static_config=None, store_id=None,
+                       gelato_api_key=None, shop_id=None, etsy_api_key=None,
+                       etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> dict:
+    """v4.12: creates the candidate's ONE Gelato product with every validated size as a
+    variant, then patches the Etsy listing Gelato pushes. Called once, from the publish
+    gate - never per group."""
     static_config = static_config if static_config is not None else config.load_static_config()
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
 
@@ -64,13 +136,6 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
         raise ValueError(f"No candidate with id {candidate_id}")
     candidate = dict(candidate_row)
 
-    group_row = conn.execute(
-        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,)
-    ).fetchone()
-    if group_row is None:
-        raise ValueError(f"No primary group for candidate {candidate_id}")
-    group_id = group_row["id"]
-
     listing_text_row = conn.execute(
         "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
     ).fetchone()
@@ -78,19 +143,20 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
         raise ValueError(f"No listing_texts row for candidate {candidate_id}")
     listing_text = dict(listing_text_row)
 
-    sizes = static_config["aspect_ratio_groups"]["primary"]
+    group_ids = group_product.included_group_ids(conn, candidate_id)
 
     def attempt():
-        result = group_product.create_or_reuse_group_product(
-            conn, group_id, sizes, candidate, static_config, listing_text["title"],
+        result = group_product.create_candidate_gelato_product(
+            conn, candidate_id, candidate, static_config, listing_text["title"],
             store_id=store_id, api_key=gelato_api_key, now=now,
         )
         return group_product.patch_etsy_listing(
-            conn, result["group_product_id"], "primary", listing_text, static_config,
+            conn, result["group_product_id"], listing_text, static_config,
             shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
             etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
         )
 
+    placeholders = ", ".join("?" * len(group_ids))
     try:
         try:
             etsy_listing_id = attempt()
@@ -98,15 +164,15 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
             etsy_listing_id = attempt()
     except Exception:
         conn.execute(
-            "UPDATE groups SET status = 'publish_failed', updated_at = ? WHERE id = ?",
-            (timestamp, group_id),
+            f"UPDATE groups SET status = 'publish_failed', updated_at = ? WHERE id IN ({placeholders})",
+            (timestamp, *group_ids),
         )
         conn.commit()
         raise
 
     conn.execute(
-        "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",
-        (timestamp, group_id),
+        f"UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id IN ({placeholders})",
+        (timestamp, *group_ids),
     )
     conn.execute(
         "UPDATE candidates SET status = 'completed', updated_at = ? WHERE id = ?",
@@ -115,6 +181,26 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
     conn.commit()
 
     return {"etsy_listing_id": etsy_listing_id}
+
+
+def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=None,
+                           gelato_api_key=None, shop_id=None, etsy_api_key=None,
+                           etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> dict:
+    """Evaluates the v4.12 publish gate for a candidate and publishes if it is ready.
+    Kept under its old name because it is still the entry point every approve path and
+    the M1 harness call - but approving the primary group no longer publishes anything
+    on its own; the listing waits for the 5x7/10x24 decisions ([D1])."""
+    static_config = static_config if static_config is not None else config.load_static_config()
+    plan = candidate_publish_plan(conn, candidate_id, static_config, now=now)
+    if not plan["ready"]:
+        return {"etsy_listing_id": None, "published": False, "waiting_on": plan["waiting_on"]}
+    result = publish_candidate(
+        conn, candidate_id, static_config=static_config, store_id=store_id,
+        gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+        etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+        dry_run=dry_run, now=now,
+    )
+    return {**result, "published": True, "stalled": plan["stalled"]}
 
 
 def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *,
@@ -137,14 +223,9 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         record_decision(conn, group_id, "edited", decision_notes, now=now)
         resolved_static_config = static_config if static_config is not None else config.load_static_config()
 
-        old_gp_row = conn.execute(
-            "SELECT id FROM group_products WHERE group_id = ? AND status = 'created'",
-            (group_id,),
-        ).fetchone()
-        if old_gp_row is not None:
-            critic_pass.discard_superseded_attempt(
-                conn, old_gp_row["id"], store_id=store_id, api_key=gelato_api_key,
-            )
+        publish_group._discard_group_contribution(
+            conn, candidate_id, group_id, store_id=store_id, gelato_api_key=gelato_api_key,
+        )
         conn.execute("DELETE FROM critic_pass_attempts WHERE group_id = ?", (group_id,))
         conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
         conn.execute("DELETE FROM group_messages WHERE group_id = ?", (group_id,))
@@ -166,15 +247,9 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
     if action == "reject":
         record_decision(conn, group_id, "rejected", decision_notes, now=now)
 
-        live_row = conn.execute(
-            "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
-            "ORDER BY id LIMIT 1",
-            (group_id,),
-        ).fetchone()
-        if live_row is not None:
-            critic_pass.discard_superseded_attempt(
-                conn, live_row["id"], store_id=store_id, api_key=gelato_api_key,
-            )
+        publish_group._discard_group_contribution(
+            conn, candidate_id, group_id, store_id=store_id, gelato_api_key=gelato_api_key,
+        )
 
         conn.execute(
             "UPDATE groups SET status = 'rejected', updated_at = ? WHERE id = ?",
@@ -271,58 +346,37 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
 
 
-def retry_publish_failed_groups(conn, *, static_config=None, shop_id=None, etsy_api_key=None,
-                                 etsy_api_secret=None, etsy_access_token=None, dry_run=None, now=None) -> list:
-    """Re-attempt the Etsy patch for any group stuck at publish_failed whose decision
-    was 'approved' - once per poll cycle (H1: publish_failed isn't a dead end). The
-    group_product already exists (create succeeded, only the patch failed), so this
-    just retries patch_etsy_listing and flips the group back to approved_published on
-    success. Applies to both primary and secondary (5x7/10x24) groups."""
+def retry_publish_failed_groups(conn, *, static_config=None, store_id=None, gelato_api_key=None,
+                                 shop_id=None, etsy_api_key=None, etsy_api_secret=None,
+                                 etsy_access_token=None, dry_run=None, now=None) -> list:
+    """Re-attempt publishing any candidate stuck at publish_failed - once per poll cycle
+    (H1: publish_failed isn't a dead end). v4.12: the unit of retry is the CANDIDATE, not
+    the group, because one listing carries every group. publish_candidate is idempotent:
+    a Gelato product that was already created is reused, never re-created, and gallery
+    images that already uploaded are not uploaded twice. Returns the candidate ids
+    retried."""
     static_config = static_config if static_config is not None else config.load_static_config()
-    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
 
-    rows = conn.execute(
-        "SELECT id, candidate_id, group_type FROM groups "
-        "WHERE status = 'publish_failed' AND decision = 'approved' ORDER BY id"
-    ).fetchall()
+    candidate_ids = [
+        row["candidate_id"] for row in conn.execute(
+            "SELECT DISTINCT candidate_id FROM groups "
+            "WHERE status = 'publish_failed' AND decision = 'approved' ORDER BY candidate_id"
+        ).fetchall()
+    ]
 
     retried = []
-    for row in rows:
-        gp_row = conn.execute(
-            "SELECT id FROM group_products WHERE group_id = ? AND status IN ('created', 'published') "
-            "ORDER BY id LIMIT 1",
-            (row["id"],),
-        ).fetchone()
-        if gp_row is None:
-            continue
-        listing_text_row = conn.execute(
-            "SELECT * FROM listing_texts WHERE candidate_id = ?", (row["candidate_id"],)
-        ).fetchone()
-        if listing_text_row is None:
-            continue
+    for candidate_id in candidate_ids:
         try:
-            group_product.patch_etsy_listing(
-                conn, gp_row["id"], row["group_type"], dict(listing_text_row), static_config,
-                shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
-                etsy_access_token=etsy_access_token, dry_run=dry_run, now=now,
+            publish_candidate(
+                conn, candidate_id, static_config=static_config, store_id=store_id,
+                gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
+                etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+                dry_run=dry_run, now=now,
             )
         except Exception as exc:
-            print(f"publish_failed retry failed for group {row['id']}: {exc}")
+            print(f"publish_failed retry failed for candidate {candidate_id}: {exc}")
             continue
-        conn.execute(
-            "UPDATE groups SET status = 'approved_published', updated_at = ? WHERE id = ?",
-            (timestamp, row["id"]),
-        )
-        # A primary publish also marks the candidate 'completed' (mirror the happy
-        # path, publish_primary_group). Secondary groups leave candidate status alone
-        # (it was already 'completed' when the primary published).
-        if row["group_type"] == "primary":
-            conn.execute(
-                "UPDATE candidates SET status = 'completed', updated_at = ? WHERE id = ?",
-                (timestamp, row["candidate_id"]),
-            )
-        conn.commit()
-        retried.append(row["id"])
+        retried.append(candidate_id)
     return retried
 
 
@@ -368,7 +422,8 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
     # approved decision - a transient patch failure shouldn't strand it forever (H1).
     try:
         retry_publish_failed_groups(
-            conn, static_config=static_config, shop_id=shop_id, etsy_api_key=etsy_api_key,
+            conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+            shop_id=shop_id, etsy_api_key=etsy_api_key,
             etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
             dry_run=dry_run, now=now,
         )

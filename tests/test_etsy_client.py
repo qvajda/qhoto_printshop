@@ -332,6 +332,73 @@ def test_no_urllib_urlopen_remains_in_pipeline():
     assert offenders == [], f"raw urlopen resurfaced in pipeline/: {offenders}"
 
 
+def test_update_listing_inventory_floats_price_on_unmatched_products_too():
+    # GL-22a: an unmatched product's price must still be converted from Etsy's
+    # read shape ({amount, divisor, currency_code}) to a float, or Etsy 400s the
+    # whole PUT body - "Expected float value for 'price' (got array)" - even
+    # though only the matched sizes' prices are actually changing.
+    inventory = {
+        "products": [
+            {
+                "product_id": 1, "sku": "", "is_deleted": False,
+                "property_values": [{"property_id": 100, "property_name": "Size",
+                                      "value_ids": [1], "scale_id": None, "scale_name": None,
+                                      "values": ["8x12"]}],
+                "offerings": [{"offering_id": 10, "price": {"amount": 2000, "divisor": 100, "currency_code": "EUR"},
+                               "quantity": 999, "is_enabled": True}],
+            },
+            {
+                "product_id": 2, "sku": "", "is_deleted": False,
+                "property_values": [{"property_id": 100, "property_name": "Size",
+                                      "value_ids": [2], "scale_id": None, "scale_name": None,
+                                      "values": ["A3"]}],
+                "offerings": [{"offering_id": 11, "price": {"amount": 3500, "divisor": 100, "currency_code": "EUR"},
+                               "quantity": 999, "is_enabled": True}],
+            },
+        ]
+    }
+    with patch("pipeline.etsy_client.get_listing_inventory") as mock_get, \
+         patch("pipeline.http.send") as mock_send:
+        mock_get.return_value = inventory
+        mock_send.return_value = {"products": []}
+        # Only pricing 8x12 - A3 is left unmatched/untouched.
+        etsy_client.update_listing_inventory(
+            "shop1", "555", {"8x12": 24.0},
+            api_key="k", api_secret="s", access_token="t", dry_run=False,
+        )
+
+    sent_request = mock_send.call_args[0][0]
+    body = json.loads(sent_request.data)
+    prices = {p["property_values"][0]["values"][0]: p["offerings"][0]["price"] for p in body["products"]}
+    assert prices["8x12"] == 24.0
+    assert prices["A3"] == 35.0  # existing price, kept but converted to float shape
+    for product in body["products"]:
+        for offering in product["offerings"]:
+            assert isinstance(offering["price"], (int, float))
+
+
+def test_delete_listing_dry_run_makes_no_network_call():
+    with patch("pipeline.etsy_client.http.send") as mock_send:
+        result = etsy_client.delete_listing("555", api_key="key1", access_token="token1", dry_run=True)
+
+    mock_send.assert_not_called()
+    assert result == {"listing_id": "555", "_dry_run": True, "deleted": True}
+
+
+def test_delete_listing_sends_delete_request_when_live():
+    def fake_send(request, timeout=30):
+        assert request.full_url == "https://openapi.etsy.com/v3/application/listings/555"
+        assert request.get_method() == "DELETE"
+        return {"listing_id": 555}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        result = etsy_client.delete_listing(
+            "555", api_key="key1", api_secret="secret1", access_token="token1", dry_run=False
+        )
+
+    assert result == {"listing_id": 555}
+
+
 def test_update_listing_inventory_raises_if_a_size_has_no_matching_product():
     inventory = {"products": [{"product_id": 1, "sku": "", "is_deleted": False,
                                 "property_values": [{"property_id": 100, "property_name": "Size",

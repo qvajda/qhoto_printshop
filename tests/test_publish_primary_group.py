@@ -6,6 +6,7 @@ import pytest
 
 import pipeline.config as config
 import pipeline.db as db
+import pipeline.group_product as group_product
 import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
 
@@ -97,12 +98,14 @@ def _make_master(tmp_path, name="master.png", size=(900, 1316)):
     return str(p)
 
 
-def _insert_primary_group(conn, candidate_id, *, status="pending_review"):
+def _insert_primary_group(conn, candidate_id, *, status="pending_review", decision="approved"):
+    # decision defaults to 'approved': under v4.12 publish_primary_group evaluates the
+    # publish gate, which never fires for a primary group the owner hasn't approved.
     timestamp = "2026-07-12T09:05:00"
     cursor = conn.execute(
-        "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
-        "VALUES (?, 'primary', ?, ?, ?)",
-        (candidate_id, status, timestamp, timestamp),
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, 'primary', ?, ?, ?, ?)",
+        (candidate_id, status, decision, timestamp, timestamp),
     )
     conn.commit()
     return cursor.lastrowid
@@ -202,8 +205,31 @@ STATIC_CONFIG = {
     },
     "prices_eur": {"8x12": 24, "A3": 35, "A2": 39, "A1": 49},
     "aspect_ratio_groups": {"primary": ["8x12", "A3", "A2", "A1"], "5x7": ["5x7"], "10x24": ["10x24"]},
-    "etsy_shipping_profile_id": {"primary": "287910565714", "5x7": "287910553824", "10x24": "287910565714"},
+    "etsy_shipping_profile_id": "288734253315",
+    "etsy_shop_section_id": 59380312,
+    # No authored scenes for the secondary group types, so the v4.12 publish gate has
+    # only the primary group to wait on (group_mockup never creates a row for a
+    # group_type with no scenes, so the gate must not wait on one either).
+    "mockup_templates": {
+        "primary": {"portrait": ["flat_a"], "landscape": []},
+        "5x7": {"portrait": [], "landscape": []},
+        "10x24": {"portrait": [], "landscape": []},
+    },
 }
+
+
+def _primary_only_config():
+    """The real static config with the secondary group types scene-less - see
+    STATIC_CONFIG's mockup_templates note."""
+    static_config = config.load_static_config()
+    return {
+        **static_config,
+        "mockup_templates": {
+            **static_config["mockup_templates"],
+            "5x7": {"portrait": [], "landscape": []},
+            "10x24": {"portrait": [], "landscape": []},
+        },
+    }
 
 
 def _insert_listing_text(conn, candidate_id, niche="monstera line art"):
@@ -228,25 +254,29 @@ def _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), *, gela
                                          status="created",
                                          image_urls=("https://gelato/flat.jpg", "https://gelato/life.jpg")):
     timestamp = "2026-07-12T10:00:00"
+    candidate_id = conn.execute(
+        "SELECT candidate_id FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()["candidate_id"]
     cursor = conn.execute(
-        "INSERT INTO group_products (group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
-        "VALUES (?, 'tpl_x', ?, ?, ?, ?)",
-        (group_id, gelato_product_id, status, timestamp, timestamp),
+        "INSERT INTO group_products "
+        "(candidate_id, group_id, gelato_template_id, gelato_product_id, status, created_at, updated_at) "
+        "VALUES (?, ?, 'tpl_x', ?, ?, ?, ?)",
+        (candidate_id, group_id, gelato_product_id, status, timestamp, timestamp),
     )
     gp_id = cursor.lastrowid
     for size in sizes:
         conn.execute(
             "INSERT INTO group_product_variants "
-            "(group_product_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
-            "VALUES (?, ?, 'portrait', ?, ?, ?)",
-            (gp_id, size, f"variant_{size}", STATIC_CONFIG["prices_eur"][size], timestamp),
+            "(group_product_id, group_id, size, orientation, gelato_template_variant_id, price_eur, created_at) "
+            "VALUES (?, ?, ?, 'portrait', ?, ?, ?)",
+            (gp_id, group_id, size, f"variant_{size}", STATIC_CONFIG["prices_eur"][size], timestamp),
         )
     for order, url in enumerate(image_urls):
         image_type = "flat_mockup" if order == 0 else "lifestyle"
         conn.execute(
-            "INSERT INTO product_images (group_product_id, image_url, alt_text, gallery_order, image_type) "
-            "VALUES (?, ?, '', ?, ?)",
-            (gp_id, url, order, image_type),
+            "INSERT INTO product_images (group_product_id, group_id, image_url, alt_text, gallery_order, image_type) "
+            "VALUES (?, ?, ?, '', ?, ?)",
+            (gp_id, group_id, url, order, image_type),
         )
     conn.commit()
     return gp_id
@@ -273,12 +303,21 @@ def test_publish_primary_group_creates_one_listing_for_all_four_sizes(stub_mocku
     monkeypatch.setenv("GELATO_LIVE_MODE", "true")
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    _insert_primary_group(conn, candidate_id, status="pending_review")
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
     _insert_listing_text(conn, candidate_id)
-    static_config = config.load_static_config()
+    static_config = _primary_only_config()
+    candidate = dict(conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone())
+    # v4.12: the listing record and its variant rows come from the RENDER stage. Publish
+    # only creates the one Gelato product and patches the one listing.
+    with patch("pipeline.group_product._assert_print_dpi"):
+        group_product.render_group_mockups(
+            conn, group_id, static_config["aspect_ratio_groups"]["primary"], candidate,
+            static_config, now="2026-07-16T09:10:00",
+        )
 
     with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
          patch("pipeline.group_product._assert_print_dpi"), \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}), \
          patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve:
         mock_create.return_value = {"id": "gelato-prod-1", "_dry_run": True, "previewUrl": None, "productImages": []}
         mock_resolve.return_value = "etsy-listing-42"
@@ -288,10 +327,9 @@ def test_publish_primary_group_creates_one_listing_for_all_four_sizes(stub_mocku
         )
 
     assert result["etsy_listing_id"] == "etsy-listing-42"
+    assert mock_create.call_count == 1  # ONE Gelato product for the whole candidate
     gp_row = conn.execute(
-        "SELECT id, status FROM group_products WHERE group_id = "
-        "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary')",
-        (candidate_id,),
+        "SELECT id, status FROM group_products WHERE candidate_id = ?", (candidate_id,)
     ).fetchone()
     assert gp_row["status"] == "published"
     variant_rows = conn.execute(
@@ -320,9 +358,11 @@ def test_publish_primary_group_reuses_existing_live_group_product_on_reentry(tmp
         conn, group_id, sizes=("8x12", "A3", "A2", "A1"), gelato_product_id="gelato-prod-existing",
     )
     _insert_listing_text(conn, candidate_id)
-    static_config = config.load_static_config()
+    static_config = _primary_only_config()
 
     with patch("pipeline.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.group_product.poll_until_ready"), \
+         patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}), \
          patch("pipeline.gelato_client.get_etsy_listing_id") as mock_resolve:
         mock_resolve.return_value = "etsy-listing-77"
         result = publish_primary_group.publish_primary_group(
@@ -338,9 +378,11 @@ def test_publish_primary_group_reuses_existing_live_group_product_on_reentry(tmp
 def test_publish_primary_group_retries_once_then_succeeds(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
-    _insert_primary_group(conn, candidate_id, status="pending_review")
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), gelato_product_id=None,
+                                         status="pending")
     _insert_listing_text(conn, candidate_id)
-    static_config = config.load_static_config()
+    static_config = _primary_only_config()
 
     attempts = {"n": 0}
 
@@ -367,8 +409,10 @@ def test_publish_primary_group_marks_group_publish_failed_after_second_failure(t
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), gelato_product_id=None,
+                                         status="pending")
     _insert_listing_text(conn, candidate_id)
-    static_config = config.load_static_config()
+    static_config = _primary_only_config()
 
     with patch("pipeline.gelato_client.create_product_from_template",
                side_effect=RuntimeError("Gelato down")):
@@ -383,22 +427,27 @@ def test_publish_primary_group_marks_group_publish_failed_after_second_failure(t
     conn.close()
 
 
-def test_publish_primary_group_raises_when_no_primary_group(tmp_path):
+def test_publish_primary_group_waits_when_there_is_no_primary_group(tmp_path):
+    # v4.12: publish_primary_group is now "evaluate the gate, publish if ready". A
+    # candidate with no primary group has nothing approved, so the gate simply doesn't
+    # fire - it waits rather than raising. (Was: raised ValueError "primary group".)
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     _insert_listing_text(conn, candidate_id)
 
-    with pytest.raises(ValueError, match="primary group"):
-        publish_primary_group.publish_primary_group(
-            conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
-        )
+    result = publish_primary_group.publish_primary_group(
+        conn, candidate_id, static_config=STATIC_CONFIG, dry_run=True,
+    )
+    assert result == {"etsy_listing_id": None, "published": False, "waiting_on": ["primary"]}
     conn.close()
 
 
 def test_publish_primary_group_raises_when_no_listing_text(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    _insert_primary_group(conn, candidate_id, status="pending_review")
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), gelato_product_id=None,
+                                         status="pending")
 
     with pytest.raises(ValueError, match="listing_texts"):
         publish_primary_group.publish_primary_group(
@@ -450,22 +499,29 @@ def test_handle_decision_reject_marks_group_and_candidate(tmp_path):
     conn.close()
 
 
-def test_handle_decision_reject_deletes_live_gelato_product(tmp_path):
+def test_handle_decision_reject_deletes_nothing_on_the_gelato_side(tmp_path):
+    # v4.12 (was "deletes_live_gelato_product"): the product/listing belongs to the
+    # CANDIDATE, so a rejection never deletes it - it marks the group and excludes it.
+    # Rejecting the primary group fails the whole candidate, and cleanup.py's
+    # whole-candidate sweep is what tears any real product down.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id = _insert_ready_primary_group(conn, candidate_id)
     gp_id = conn.execute(
-        "SELECT id FROM group_products WHERE group_id = ?", (group_id,)
+        "SELECT id FROM group_products WHERE candidate_id = ?", (candidate_id,)
     ).fetchone()["id"]
 
-    with patch("pipeline.publish_primary_group.critic_pass.gelato_client.delete_product") as mock_delete:
+    with patch("pipeline.gelato_client.delete_product") as mock_delete:
         publish_primary_group.handle_decision(
             conn, candidate_id, group_id, "reject", static_config=STATIC_CONFIG,
             now=datetime(2026, 7, 12, 12, 0, 0),
         )
 
-    mock_delete.assert_called_once_with("gelato_prod_1", store_id=None, api_key=None)
-    assert conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone() is None
+    mock_delete.assert_not_called()
+    assert conn.execute("SELECT * FROM group_products WHERE id = ?", (gp_id,)).fetchone() is not None
+    assert conn.execute(
+        "SELECT status FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()["status"] == "failed"
     conn.close()
 
 
@@ -514,7 +570,7 @@ def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
                                      anthropic_api_key=None, now=None):
         _insert_listing_text(conn, candidate_id, niche="monstera line art v2")
 
-    with patch("pipeline.publish_primary_group.critic_pass.gelato_client.delete_product") as mock_delete, \
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
          patch("pipeline.publish_primary_group.generate.generate_for_candidate",
                side_effect=fake_generate_for_candidate), \
          patch("pipeline.publish_primary_group.primary_mockup.create_primary_mockup",
@@ -527,16 +583,16 @@ def test_handle_decision_edit_discards_old_product_and_regenerates(tmp_path):
         )
 
     assert result["action"] == "edit"
-    mock_delete.assert_called_once_with("gelato_prod_1", store_id=None, api_key=None)
-
-    # Not asserting "row fetched by old_gp_id is None" here: group_products.id is a plain
-    # `INTEGER PRIMARY KEY` (no AUTOINCREMENT), and in this test the discarded row is the
-    # table's only row, so SQLite recycles the freed numeric id for the next insert (see
-    # db/schema.sql:62). That's normal SQLite ROWID behavior, not a discard bug — checking
-    # by the superseded gelato_product_id is the assertion that actually reflects intent.
+    # v4.12: an edit drops this group's gallery so the regenerated art renders into a
+    # clean slot, and nothing else. The candidate's listing record survives, and the
+    # Gelato product is never deleted - it belongs to the candidate, not the group.
+    mock_delete.assert_not_called()
     assert conn.execute(
         "SELECT * FROM group_products WHERE gelato_product_id = 'gelato_prod_1'"
-    ).fetchone() is None
+    ).fetchone() is not None
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM product_images WHERE group_id = ?", (group_id,)
+    ).fetchone()["n"] == 0
     assert conn.execute(
         "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
     ).fetchall() == []
@@ -567,7 +623,7 @@ def test_handle_decision_edit_clears_group_messages_so_digest_can_resend(tmp_pat
     group_id = _insert_ready_primary_group(conn, candidate_id)
     _insert_group_message(conn, group_id, "987654321", 202)
 
-    with patch("pipeline.publish_primary_group.critic_pass.gelato_client.delete_product"), \
+    with patch("pipeline.gelato_client.delete_product"), \
          patch("pipeline.publish_primary_group.generate.generate_for_candidate"), \
          patch("pipeline.publish_primary_group.primary_mockup.create_primary_mockup"), \
          patch("pipeline.publish_primary_group.compliance_draft.build_compliance_draft"):
@@ -856,19 +912,23 @@ def test_retry_publish_failed_groups_repatches_and_flips_to_published(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="approved")
-    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_group_product_with_variants(
+        conn, group_id, sizes=("8x12",), status="created", gelato_product_id="gelato-prod-1",
+    )
     _insert_listing_text(conn, candidate_id)
 
-    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
+    with patch("pipeline.group_product.poll_until_ready"), \
+         patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
                return_value="etsy-listing-late") as mock_patch:
         retried = publish_primary_group.retry_publish_failed_groups(
             conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
             now="2026-07-18T12:00:00",
         )
 
-    assert retried == [group_id]
+    # v4.12: the unit of retry is the CANDIDATE - one listing carries every group - so
+    # this returns candidate ids, and patch_etsy_listing takes no group_type.
+    assert retried == [candidate_id]
     mock_patch.assert_called_once()
-    assert mock_patch.call_args.args[2] == "5x7"
     group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
     assert group_row["status"] == "approved_published"
     conn.close()
@@ -880,15 +940,18 @@ def test_retry_publish_failed_groups_marks_primary_candidate_completed(tmp_path)
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, status="primary_review")
     group_id = _insert_publish_failed_group(conn, candidate_id, "primary", decision="approved")
-    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_group_product_with_variants(
+        conn, group_id, sizes=("8x12",), status="created", gelato_product_id="gelato-prod-1",
+    )
     _insert_listing_text(conn, candidate_id)
 
-    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing", return_value="etsy-late"):
+    with patch("pipeline.group_product.poll_until_ready"), \
+         patch("pipeline.publish_primary_group.group_product.patch_etsy_listing", return_value="etsy-late"):
         retried = publish_primary_group.retry_publish_failed_groups(
             conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True, now="2026-07-18T12:00:00",
         )
 
-    assert retried == [group_id]
+    assert retried == [candidate_id]
     candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert candidate_row["status"] == "completed"
     conn.close()
@@ -899,10 +962,13 @@ def test_retry_publish_failed_groups_does_not_complete_candidate_for_secondary(t
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, status="completed")
     group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="approved")
-    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_group_product_with_variants(
+        conn, group_id, sizes=("8x12",), status="created", gelato_product_id="gelato-prod-1",
+    )
     _insert_listing_text(conn, candidate_id)
 
-    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing", return_value="etsy-late"):
+    with patch("pipeline.group_product.poll_until_ready"), \
+         patch("pipeline.publish_primary_group.group_product.patch_etsy_listing", return_value="etsy-late"):
         publish_primary_group.retry_publish_failed_groups(
             conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True, now="2026-07-18T12:00:00",
         )
@@ -916,10 +982,13 @@ def test_retry_publish_failed_groups_leaves_group_failed_when_patch_still_fails(
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="approved")
-    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_group_product_with_variants(
+        conn, group_id, sizes=("8x12",), status="created", gelato_product_id="gelato-prod-1",
+    )
     _insert_listing_text(conn, candidate_id)
 
-    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
+    with patch("pipeline.group_product.poll_until_ready"), \
+         patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
                side_effect=RuntimeError("still down")):
         retried = publish_primary_group.retry_publish_failed_groups(
             conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
@@ -937,14 +1006,167 @@ def test_retry_publish_failed_groups_skips_non_approved_decisions(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     group_id = _insert_publish_failed_group(conn, candidate_id, "5x7", decision="rejected")
-    _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), status="created")
+    _insert_group_product_with_variants(
+        conn, group_id, sizes=("8x12",), status="created", gelato_product_id="gelato-prod-1",
+    )
     _insert_listing_text(conn, candidate_id)
 
-    with patch("pipeline.publish_primary_group.group_product.patch_etsy_listing") as mock_patch:
+    with patch("pipeline.group_product.poll_until_ready"), \
+         patch("pipeline.publish_primary_group.group_product.patch_etsy_listing") as mock_patch:
         retried = publish_primary_group.retry_publish_failed_groups(
             conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
         )
 
     assert retried == []
     mock_patch.assert_not_called()
+    conn.close()
+
+
+# --- v4.12 [D1]/[D2]: the publish gate and its stall clause ---
+
+def _gate_config():
+    """The real static config: all three group types have authored scenes, so the gate
+    waits on both secondary groups."""
+    return config.load_static_config()
+
+
+def _insert_secondary(conn, candidate_id, group_type, *, status="pending_review",
+                       decision=None, updated_at="2026-08-01T09:00:00"):
+    cursor = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (candidate_id, group_type, status, decision, "2026-08-01T09:00:00", updated_at),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def _approved_primary(conn, candidate_id, *, updated_at="2026-08-01T09:00:00"):
+    cursor = conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, 'primary', 'pending_review', 'approved', ?, ?)",
+        (candidate_id, "2026-08-01T09:00:00", updated_at),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def test_publish_gate_waits_until_the_primary_group_is_approved(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _insert_primary_group(conn, candidate_id, decision=None)
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 1, 10, 0, 0),
+    )
+    assert plan == {"ready": False, "waiting_on": ["primary"], "stalled": []}
+    conn.close()
+
+
+def test_publish_gate_waits_for_every_secondary_group_to_be_decided(tmp_path):
+    # [D1]: the listing is created ONCE, with every validated size. Publishing before a
+    # group is decided would forfeit its size permanently - Q2 proved a variant cannot
+    # be added to an existing product.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    _insert_secondary(conn, candidate_id, "10x24")
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 1, 10, 0, 0),
+    )
+    assert plan["ready"] is False
+    assert plan["waiting_on"] == ["10x24"]
+    conn.close()
+
+
+def test_publish_gate_is_ready_once_every_group_has_a_terminal_decision(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    # A rejection is just as terminal as an approval - it settles the group.
+    _insert_secondary(conn, candidate_id, "10x24", decision="rejected", status="rejected")
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 1, 10, 0, 0),
+    )
+    assert plan == {"ready": True, "waiting_on": [], "stalled": []}
+    conn.close()
+
+
+def test_publish_gate_treats_an_abandoned_group_as_settled(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    _insert_secondary(conn, candidate_id, "10x24", status="failed_abandoned")
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 1, 10, 0, 0),
+    )
+    assert plan["ready"] is True
+    conn.close()
+
+
+def test_publish_gate_does_not_wait_on_a_group_type_with_no_authored_scenes(tmp_path):
+    # group_mockup never creates a row for a group_type with no scene bundles, so a gate
+    # that waited on one would deadlock the candidate forever.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _primary_only_config(), now=datetime(2026, 8, 1, 10, 0, 0),
+    )
+    assert plan == {"ready": True, "waiting_on": [], "stalled": []}
+    conn.close()
+
+
+def test_publish_gate_ages_out_a_group_left_undecided_past_the_stall_window(monkeypatch, tmp_path):
+    # [D2]: tested by LOWERING the constant, never by waiting. The window is measured
+    # off groups.updated_at; the aged-out group is marked 'stalled_skipped' and the
+    # candidate publishes with whatever was decided.
+    monkeypatch.setattr(config, "GROUP_REVIEW_STALL_DAYS", 2)
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    stalled_id = _insert_secondary(
+        conn, candidate_id, "10x24", updated_at="2026-08-01T09:00:00",
+    )
+
+    fresh = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 2, 9, 0, 0),
+    )
+    assert fresh["ready"] is False and fresh["waiting_on"] == ["10x24"]
+
+    aged = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 4, 9, 0, 0),
+    )
+    assert aged == {"ready": True, "waiting_on": [], "stalled": ["10x24"]}
+    assert conn.execute(
+        "SELECT status FROM groups WHERE id = ?", (stalled_id,)
+    ).fetchone()["status"] == "stalled_skipped"
+    # ...and a stalled group contributes nothing to the listing.
+    assert stalled_id not in group_product.included_group_ids(conn, candidate_id)
+    conn.close()
+
+
+def test_publish_gate_ages_out_a_secondary_group_that_never_got_a_row(monkeypatch, tmp_path):
+    # If group_mockup never manages to create the row at all, the window is measured off
+    # the primary group instead - otherwise a permanently-broken secondary render would
+    # hang the candidate forever, which v4.11 never could (it published per group).
+    monkeypatch.setattr(config, "GROUP_REVIEW_STALL_DAYS", 2)
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id, updated_at="2026-08-01T09:00:00")
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 4, 9, 0, 0),
+    )
+    assert plan["ready"] is True
+    assert plan["stalled"] == ["10x24"]
     conn.close()

@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS groups (
   decision_notes TEXT,
   decided_at TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending_generation','pending_review','approved_published','rejected','failed_abandoned','publish_failed'
+    'pending_generation','pending_review','approved_published','rejected','failed_abandoned',
+    'publish_failed','stalled_skipped'
   )),
   failed_reason TEXT,
   created_at TEXT NOT NULL,
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS generation_attempts (
 CREATE TABLE IF NOT EXISTS group_products (
   id INTEGER PRIMARY KEY,
   group_id INTEGER NOT NULL REFERENCES groups(id),
+  candidate_id INTEGER REFERENCES candidates(id),
   gelato_template_id TEXT NOT NULL,
   gelato_product_id TEXT,
   etsy_listing_id TEXT,
@@ -97,6 +99,7 @@ CREATE TABLE IF NOT EXISTS group_products (
 CREATE TABLE IF NOT EXISTS group_product_variants (
   id INTEGER PRIMARY KEY,
   group_product_id INTEGER NOT NULL REFERENCES group_products(id),
+  group_id INTEGER REFERENCES groups(id),
   size TEXT NOT NULL CHECK(size IN ('5x7','8x12','A3','A2','10x24','A1')),
   orientation TEXT NOT NULL CHECK(orientation IN ('portrait','landscape')),
   gelato_template_variant_id TEXT NOT NULL,
@@ -108,10 +111,12 @@ CREATE TABLE IF NOT EXISTS group_product_variants (
 CREATE TABLE IF NOT EXISTS product_images (
   id INTEGER PRIMARY KEY,
   group_product_id INTEGER NOT NULL REFERENCES group_products(id),
+  group_id INTEGER REFERENCES groups(id),
   image_url TEXT NOT NULL,
   alt_text TEXT NOT NULL,
   gallery_order INTEGER NOT NULL,
-  image_type TEXT NOT NULL CHECK(image_type IN ('flat_mockup','lifestyle'))
+  image_type TEXT NOT NULL CHECK(image_type IN ('flat_mockup','lifestyle')),
+  etsy_listing_image_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS group_messages (
