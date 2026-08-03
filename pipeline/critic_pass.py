@@ -341,7 +341,9 @@ def _normalize_verdict(parsed: dict) -> dict:
 def evaluate_critic_pass(gallery_image_urls: list, listing_text: dict, *, api_key: str = None,
                           flag_note: str = None) -> dict:
     prompt = build_critic_prompt(listing_text, len(gallery_image_urls), flag_note=flag_note)
-    result = anthropic_client.complete_with_images(prompt, gallery_image_urls, api_key=api_key, max_tokens=2048)
+    # 2048 truncated live on a 10-image primary gallery (7-criterion rubric, each with
+    # a note, genuinely needs more room than that) - GL-13 R3, 2026-08-02.
+    result = anthropic_client.complete_with_images(prompt, gallery_image_urls, api_key=api_key, max_tokens=4096)
     parsed = anthropic_client.parse_json_response(result["text"])
     return _normalize_verdict(parsed)
 

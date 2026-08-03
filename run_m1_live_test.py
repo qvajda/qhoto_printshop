@@ -44,10 +44,16 @@ def main():
     conn = db.get_connection(DB_PATH)
     db.init_db(conn)
 
-    # candidates.status has no state past 'generating' (see generate.py) - checking
-    # only for 'pending' missed already-generated candidates and reseeded a fresh
-    # (real, billed) one on every rerun. Any existing row means "already seeded".
-    existing = conn.execute("SELECT id FROM candidates ORDER BY id LIMIT 1").fetchone()
+    # A terminal-status row (failed/abandoned/completed) is done, not "already
+    # seeded" - same definition pipeline/research.py:trigger_fallback_if_needed
+    # uses for "alive". Checking only for 'pending' missed already-generated
+    # candidates and reseeded a fresh (real, billed) one on every rerun; checking
+    # for any row at all (the original check here) missed that terminal rows from
+    # earlier sessions never unblock reseeding.
+    existing = conn.execute(
+        "SELECT id FROM candidates WHERE status NOT IN ('failed', 'abandoned', 'completed') "
+        "ORDER BY id LIMIT 1"
+    ).fetchone()
     if existing:
         print(f"== research (skipped, candidate {existing['id']} already seeded) ==")
     else:

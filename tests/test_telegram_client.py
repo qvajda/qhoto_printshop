@@ -6,27 +6,33 @@ import pytest
 import pipeline.telegram_client as telegram_client
 
 
-def test_send_media_group_builds_correct_request_and_parses_response():
+def test_send_media_group_downloads_urls_and_uploads_as_multipart():
+    # Telegram's own server-side URL fetch (bare 'media' URL string) proved
+    # unreliable for our composited galleries (WEBPAGE_CURL_FAILED live, GL-13 R3,
+    # 2026-08-02) - every http(s) URL is now downloaded here and attached instead
+    # of referenced by URL.
     captured = {}
 
+    def fake_fetch_bytes(url, timeout=30, sleep_fn=None):
+        return b"remote-bytes-for-" + url.encode("utf-8")
+
     def fake_send(request, timeout=30):
-        captured["url"] = request.full_url
-        captured["method"] = request.get_method()
-        captured["body"] = json.loads(request.data)
+        captured["content_type"] = request.headers.get("Content-type") or request.headers.get("Content-Type")
+        captured["body"] = request.data
         return {"ok": True, "result": {"message_id": 1}}
 
-    with patch("pipeline.telegram_client.http.send", side_effect=fake_send):
+    with patch("pipeline.telegram_client.http.fetch_bytes", side_effect=fake_fetch_bytes), \
+         patch("pipeline.telegram_client.http.send", side_effect=fake_send):
         result = telegram_client.send_media_group(
             "12345", ["https://example.com/a.jpg", "https://example.com/b.jpg"], bot_token="test-token"
         )
 
-    assert captured["url"] == "https://api.telegram.org/bottest-token/sendMediaGroup"
-    assert captured["method"] == "POST"
-    assert captured["body"]["chat_id"] == "12345"
-    assert captured["body"]["media"] == [
-        {"type": "photo", "media": "https://example.com/a.jpg"},
-        {"type": "photo", "media": "https://example.com/b.jpg"},
-    ]
+    assert "multipart/form-data" in captured["content_type"]
+    assert b"attach://attach0" in captured["body"]
+    assert b"attach://attach1" in captured["body"]
+    assert b"remote-bytes-for-https://example.com/a.jpg" in captured["body"]
+    assert b"remote-bytes-for-https://example.com/b.jpg" in captured["body"]
+    assert b"https://example.com/a.jpg\"" not in captured["body"]  # never referenced as a bare URL
     assert result == {"ok": True, "result": {"message_id": 1}}
 
 
@@ -38,12 +44,16 @@ def test_send_media_group_uploads_local_paths_as_multipart(tmp_path):
     image_path.write_bytes(b"fake-jpeg-bytes")
     captured = {}
 
+    def fake_fetch_bytes(url, timeout=30, sleep_fn=None):
+        return b"remote-bytes"
+
     def fake_send(request, timeout=30):
         captured["content_type"] = request.headers.get("Content-type") or request.headers.get("Content-Type")
         captured["body"] = request.data
         return {"ok": True, "result": {"message_id": 3}}
 
-    with patch("pipeline.telegram_client.http.send", side_effect=fake_send):
+    with patch("pipeline.telegram_client.http.fetch_bytes", side_effect=fake_fetch_bytes), \
+         patch("pipeline.telegram_client.http.send", side_effect=fake_send):
         result = telegram_client.send_media_group(
             "12345", ["https://example.com/a.jpg", str(image_path)], bot_token="test-token"
         )
@@ -51,7 +61,7 @@ def test_send_media_group_uploads_local_paths_as_multipart(tmp_path):
     assert "multipart/form-data" in captured["content_type"]
     assert b"fake-jpeg-bytes" in captured["body"]
     assert b"attach://attach1" in captured["body"]
-    assert b"https://example.com/a.jpg" in captured["body"]
+    assert b"remote-bytes" in captured["body"]
     assert result == {"ok": True, "result": {"message_id": 3}}
 
 

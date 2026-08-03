@@ -27,6 +27,8 @@ def _post(method: str, payload: dict, bot_token: str) -> dict:
 
 
 def _post_multipart(method: str, fields: dict, files: dict, bot_token: str) -> dict:
+    """files maps name -> (filename, bytes). Callers own fetching the bytes (a local
+    path read or a downloaded URL) - this just builds the multipart body."""
     url = f"{TELEGRAM_API_BASE}{bot_token}/{method}"
     boundary = uuid.uuid4().hex
     parts = []
@@ -34,13 +36,11 @@ def _post_multipart(method: str, fields: dict, files: dict, bot_token: str) -> d
         parts.append(
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode("utf-8")
         )
-    for name, path in files.items():
-        content_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
-        with open(path, "rb") as f:
-            data = f.read()
+    for name, (filename, data) in files.items():
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         parts.append(
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; "
-            f"filename=\"{os.path.basename(path)}\"\r\nContent-Type: {content_type}\r\n\r\n".encode("utf-8")
+            f"filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n".encode("utf-8")
             + data + b"\r\n"
         )
     parts.append(f"--{boundary}--\r\n".encode("utf-8"))
@@ -55,23 +55,24 @@ def _post_multipart(method: str, fields: dict, files: dict, bot_token: str) -> d
 
 
 def send_media_group(chat_id: str, photo_urls: list, *, bot_token: str = None) -> dict:
+    """Always uploads as multipart, never references a URL in the request. Telegram's
+    own server-side URL fetch (used when 'media' is a bare URL string) is unreliable
+    for our composited galleries - live gallery images run 500KB-7.5MB and it failed
+    with WEBPAGE_CURL_FAILED partway through a 10-image group (GL-13 R3, 2026-08-02).
+    Downloading here and attaching removes that fetch from the failure path entirely,
+    at the cost of one extra round-trip per image."""
     bot_token = bot_token or config.require_env("TELEGRAM_BOT_TOKEN")
-    local_paths = [p for p in photo_urls if not p.startswith(("http://", "https://"))]
-    if not local_paths:
-        media = [{"type": "photo", "media": url} for url in photo_urls]
-        return _post("sendMediaGroup", {"chat_id": chat_id, "media": media}, bot_token)
-
-    # Locally cover-cropped previews (pipeline.image_crop) have no public URL, so
-    # they must be uploaded as multipart attachments instead of referenced by URL.
     media = []
     files = {}
     for i, item in enumerate(photo_urls):
+        attach_name = f"attach{i}"
+        media.append({"type": "photo", "media": f"attach://{attach_name}"})
         if item.startswith(("http://", "https://")):
-            media.append({"type": "photo", "media": item})
+            filename = item.rsplit("/", 1)[-1] or f"{attach_name}.png"
+            files[attach_name] = (filename, http.fetch_bytes(item))
         else:
-            attach_name = f"attach{i}"
-            media.append({"type": "photo", "media": f"attach://{attach_name}"})
-            files[attach_name] = item
+            with open(item, "rb") as f:
+                files[attach_name] = (os.path.basename(item), f.read())
     return _post_multipart(
         "sendMediaGroup", {"chat_id": chat_id, "media": json.dumps(media)}, files, bot_token,
     )
