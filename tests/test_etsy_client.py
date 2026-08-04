@@ -146,6 +146,52 @@ def test_find_all_listings_active_includes_optional_params_when_given():
     assert "sort_order=desc" in captured["url"]
 
 
+def test_get_listing_images_dry_run_makes_no_network_call():
+    with patch("pipeline.etsy_client.http.send") as mock_send:
+        result = etsy_client.get_listing_images("555", api_key="key1", access_token="token1", dry_run=True)
+
+    mock_send.assert_not_called()
+    assert result == {"results": [], "_dry_run": True}
+
+
+def test_get_listing_images_sends_get_when_live():
+    def fake_send(request, timeout=30):
+        assert request.full_url == "https://openapi.etsy.com/v3/application/listings/555/images"
+        assert request.get_method() == "GET"
+        return {"results": [{"listing_image_id": 1, "rank": 1}]}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        result = etsy_client.get_listing_images(
+            "555", api_key="key1", api_secret="secret1", access_token="token1", dry_run=False
+        )
+
+    assert result == {"results": [{"listing_image_id": 1, "rank": 1}]}
+
+
+def test_delete_listing_image_dry_run_makes_no_network_call():
+    with patch("pipeline.etsy_client.http.send") as mock_send:
+        result = etsy_client.delete_listing_image(
+            "shop1", "555", "111", api_key="key1", access_token="token1", dry_run=True
+        )
+
+    mock_send.assert_not_called()
+    assert result == {"listing_image_id": "111", "_dry_run": True, "deleted": True}
+
+
+def test_delete_listing_image_sends_delete_when_live():
+    def fake_send(request, timeout=30):
+        assert request.full_url == "https://openapi.etsy.com/v3/application/shops/shop1/listings/555/images/111"
+        assert request.get_method() == "DELETE"
+        return {"listing_image_id": 111}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        result = etsy_client.delete_listing_image(
+            "shop1", "555", "111", api_key="key1", api_secret="secret1", access_token="token1", dry_run=False
+        )
+
+    assert result == {"listing_image_id": 111}
+
+
 def test_update_listing_state_dry_run_makes_no_network_call():
     with patch("pipeline.etsy_client.http.send") as mock_send:
         result = etsy_client.update_listing_state(
