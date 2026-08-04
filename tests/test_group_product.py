@@ -825,6 +825,87 @@ def test_patch_etsy_listing_uploads_nothing_when_no_gallery_images(tmp_path):
     ).fetchone()["status"] == "published"
 
 
+# --- GL-33: reconcile step deletes Gelato's contaminating gallery images ---
+
+def test_patch_etsy_listing_deletes_images_not_owned_by_this_group_product(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch("pipeline.etsy_client.update_listing"), \
+         patch("pipeline.etsy_client.update_listing_inventory"), \
+         patch("pipeline.etsy_client.upload_listing_image",
+               side_effect=[{"listing_image_id": f"ours-{i}"} for i in range(20)]), \
+         patch("pipeline.etsy_client.get_listing_images", return_value={"results": [
+             {"listing_image_id": "ours-0"}, {"listing_image_id": "gelato-ghost-1"},
+             {"listing_image_id": "gelato-ghost-2"},
+         ]}), \
+         patch("pipeline.etsy_client.delete_listing_image") as mock_delete:
+        group_product.patch_etsy_listing(
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+        )
+
+    deleted_ids = {call.args[2] for call in mock_delete.call_args_list}
+    assert deleted_ids == {"gelato-ghost-1", "gelato-ghost-2"}
+    for call in mock_delete.call_args_list:
+        assert call.args[:2] == ("shop1", "DRY_RUN_ETSY_LISTING_ID")
+
+
+def test_patch_etsy_listing_reconcile_is_idempotent_second_pass_deletes_nothing(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+
+    def _patch(current_images):
+        with patch("pipeline.config.is_live_mode", return_value=False), \
+             patch("pipeline.etsy_client.update_listing"), \
+             patch("pipeline.etsy_client.update_listing_inventory"), \
+             patch("pipeline.etsy_client.upload_listing_image",
+                   side_effect=[{"listing_image_id": f"ours-{i}"} for i in range(20)]), \
+             patch("pipeline.etsy_client.get_listing_images", return_value=current_images), \
+             patch("pipeline.etsy_client.delete_listing_image") as mock_delete:
+            group_product.patch_etsy_listing(
+                conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+                shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+            )
+            return mock_delete.call_count
+
+    first_pass_images = {"results": [
+        {"listing_image_id": "ours-0"}, {"listing_image_id": "gelato-ghost-1"},
+    ]}
+    assert _patch(first_pass_images) == 1
+
+    # Second call: the listing now only carries our own images (Gelato's are gone) -
+    # nothing foreign is found, so nothing is deleted.
+    second_pass_images = {"results": [{"listing_image_id": "ours-0"}]}
+    assert _patch(second_pass_images) == 0
+
+
+def test_patch_etsy_listing_never_deletes_an_image_it_cannot_positively_account_for(tmp_path):
+    # Positive-match only: an image absent from product_images.etsy_listing_image_id for
+    # THIS group_product_id is treated as foreign and deleted - even ambiguous cases are
+    # not silently kept. Confirms the flip side: an owned id is never touched no matter
+    # how many foreign ids surround it.
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch("pipeline.etsy_client.update_listing"), \
+         patch("pipeline.etsy_client.update_listing_inventory"), \
+         patch("pipeline.etsy_client.upload_listing_image",
+               side_effect=[{"listing_image_id": f"ours-{i}"} for i in range(20)]), \
+         patch("pipeline.etsy_client.get_listing_images", return_value={"results": [
+             {"listing_image_id": "ours-0"}, {"listing_image_id": "ours-1"},
+         ]}), \
+         patch("pipeline.etsy_client.delete_listing_image") as mock_delete:
+        group_product.patch_etsy_listing(
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+        )
+
+    mock_delete.assert_not_called()
+
+
 # --- B5 pre-create print-DPI guard ---
 
 def _make_image(tmp_path, name, size):

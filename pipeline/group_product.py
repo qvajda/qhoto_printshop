@@ -1,6 +1,7 @@
 import io
 import json
 import random
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -576,6 +577,38 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
             (str(response.get("listing_image_id")), row["id"]),
         )
         conn.commit()
+
+    # GL-33: Gelato's product-create push seeds the listing with its own generic preview
+    # images. Reconcile after our uploads (never before - deleting first would leave the
+    # listing briefly imageless) and before update_listing: delete every Etsy image whose
+    # id this candidate does not positively own. "Own" is derived, never guessed - a row
+    # in product_images scoped to THIS group_product_id, the same scoping discipline
+    # _INCLUDED_GROUP_SQL uses elsewhere, so a wrong scope here can't delete another
+    # group's reviewed gallery.
+    owned_image_ids = {
+        row["etsy_listing_image_id"] for row in conn.execute(
+            "SELECT etsy_listing_image_id FROM product_images "
+            "WHERE group_product_id = ? AND etsy_listing_image_id IS NOT NULL",
+            (group_product_id,),
+        ).fetchall()
+    }
+    current_images = etsy_client.get_listing_images(
+        listing_id, api_key=etsy_api_key, api_secret=etsy_api_secret,
+        access_token=etsy_access_token, dry_run=dry_run,
+    )
+    for image in current_images.get("results", []):
+        foreign_id = str(image["listing_image_id"])
+        if foreign_id in owned_image_ids:
+            continue
+        etsy_client.delete_listing_image(
+            shop_id, listing_id, foreign_id, api_key=etsy_api_key, api_secret=etsy_api_secret,
+            access_token=etsy_access_token, dry_run=dry_run,
+        )
+        print(
+            f"[group_product] deleted foreign Etsy image {foreign_id} from listing {listing_id} "
+            f"(group_product_id={group_product_id})",
+            file=sys.stderr,
+        )
 
     shipping_profile_id = config.get_shipping_profile_id(static_config)
     listing_data = {

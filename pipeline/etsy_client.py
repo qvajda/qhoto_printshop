@@ -102,6 +102,53 @@ def upload_listing_image(
     return _call_with_refresh(_build, access_token)
 
 
+def get_listing_images(
+    listing_id: str, *, api_key: str = None, api_secret: str = None,
+    access_token: str = None, dry_run: bool = None
+) -> dict:
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    if dry_run:
+        return {"results": [], "_dry_run": True}
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/listings/{listing_id}/images"
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="GET")
+
+    return _call_with_refresh(_build, access_token)
+
+
+def delete_listing_image(
+    shop_id: str, listing_id: str, listing_image_id: str, *, api_key: str = None, api_secret: str = None,
+    access_token: str = None, dry_run: bool = None
+) -> dict:
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    if dry_run:
+        return {"listing_image_id": listing_image_id, "_dry_run": True, "deleted": True}
+
+    print(
+        f"[etsy_client] DELETE listing {listing_id} image {listing_image_id} - destructive, live call",
+        file=sys.stderr,
+    )
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/shops/{shop_id}/listings/{listing_id}/images/{listing_image_id}"
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="DELETE")
+
+    return _call_with_refresh(_build, access_token)
+
+
 def update_listing_state(
     shop_id: str, listing_id: str, state: str, *, api_key: str = None, api_secret: str = None,
     access_token: str = None, dry_run: bool = None
