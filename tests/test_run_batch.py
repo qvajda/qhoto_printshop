@@ -128,6 +128,85 @@ def test_main_returns_1_when_required_env_var_missing(tmp_path, monkeypatch):
     assert exit_code == 1
 
 
+def test_main_notifies_telegram_when_non_telegram_env_var_missing(tmp_path, monkeypatch):
+    # I2: TELEGRAM_ADMIN_CHAT_ID/TELEGRAM_BOT_TOKEN present, so a Telegram
+    # notification IS possible even though a later required var is missing.
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch, skip="GELATO_API_KEY")
+
+    with patch("run_batch.telegram_client.send_message") as mock_send:
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 1
+    mock_send.assert_called_once()
+    args, kwargs = mock_send.call_args
+    assert args[0] == "admin1"
+    assert "GELATO_API_KEY" in args[1]
+
+
+def test_main_notifies_telegram_on_stale_schema(tmp_path, monkeypatch):
+    # I2: migrate.check() runs after Telegram vars are resolved, so this path
+    # must always notify.
+    db_path = tmp_path / "test.sqlite3"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    conn.close()
+    _set_required_env(monkeypatch)
+
+    with patch("run_batch.telegram_client.send_message") as mock_send:
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 3
+    mock_send.assert_called_once()
+    args, kwargs = mock_send.call_args
+    assert args[0] == "admin1"
+    assert "stale schema" in args[1]
+
+
+def test_reconcile_drift_surfaces_in_heartbeat_detail(tmp_path, monkeypatch):
+    # I4: _run_stage previously discarded fn()'s return value, so reconcile's
+    # summary (real drift found) was computed and thrown away.
+    from contextlib import ExitStack
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        for target in STAGE_PATCHES:
+            stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+        stack.enter_context(patch(
+            "run_batch.reconcile.run_reconcile",
+            return_value={
+                "aged_out_candidates": [1, 2],
+                "etsy_reconcile": {"marked_missing": ["g1"], "checked": 5, "skipped_errors": []},
+            },
+        ))
+
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    conn = db.get_connection(db_path)
+    detail = heartbeat.last(conn, "batch")["detail"]
+    assert "2 candidates aged out" in detail
+    assert "1 listing marked missing" in detail
+
+
+def test_reconcile_no_drift_leaves_heartbeat_detail_none(tmp_path, monkeypatch):
+    from contextlib import ExitStack
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        _patch_all_stages_ok(stack)
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    conn = db.get_connection(db_path)
+    assert heartbeat.last(conn, "batch")["detail"] is None
+
+
 def test_stall_predicate_fires_through_run_batch_when_constant_lowered(tmp_path, monkeypatch):
     # Proves publish_primary_group.candidate_publish_plan's stall clause ([D2]) actually
     # fires when driven through run_batch.main's real stage wiring, not just the unit

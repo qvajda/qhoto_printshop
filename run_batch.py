@@ -47,12 +47,36 @@ def _notify_admin(admin_chat_id, bot_token, message):
 
 
 def _run_stage(name, fn, admin_chat_id, bot_token, failures):
+    # I4: return fn()'s result - reconcile's summary dict was being computed
+    # and discarded even when it found real drift (aged-out candidates, a 404'd
+    # Etsy listing). Every other stage still ignores this return value; only
+    # the reconcile call site below reads it.
     try:
-        fn()
+        return fn()
     except Exception as exc:
         print(f"{JOB_NAME}: stage {name} failed: {exc}")
         _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] stage '{name}' failed: {exc}")
         failures.append(name)
+        return None
+
+
+def _reconcile_detail(result: dict | None) -> str | None:
+    """I4: one-line summary of reconcile drift for the batch heartbeat's
+    detail field - not a Telegram send (that would be noisy on every run with
+    drift), just enough for an operator checking heartbeat_status.py."""
+    if not result:
+        return None
+    aged_out = result.get("aged_out_candidates") or []
+    marked_missing = (result.get("etsy_reconcile") or {}).get("marked_missing") or []
+    if not aged_out and not marked_missing:
+        return None
+    parts = []
+    if aged_out:
+        parts.append(f"{len(aged_out)} candidates aged out")
+    if marked_missing:
+        noun = "listing" if len(marked_missing) == 1 else "listings"
+        parts.append(f"{len(marked_missing)} {noun} marked missing")
+    return "reconcile: " + ", ".join(parts)
 
 
 def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
@@ -62,9 +86,18 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     db_path = db_path or DEFAULT_DB_PATH
     lock_path = lock_path or DEFAULT_LOCK_PATH
 
+    # I2: TELEGRAM_ADMIN_CHAT_ID/TELEGRAM_BOT_TOKEN are resolved first and on
+    # their own - if either is missing, no Telegram notification is possible,
+    # so this path is print-and-return only. Any later missing var CAN still
+    # be notified, since Telegram creds are already in hand.
     try:
         admin_chat_id = config.require_env("TELEGRAM_ADMIN_CHAT_ID")
         bot_token = config.require_env("TELEGRAM_BOT_TOKEN")
+    except config.MissingConfigError as exc:
+        print(f"{JOB_NAME}: {exc}")
+        return 1
+
+    try:
         replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
         anthropic_api_key = config.require_env("ANTHROPIC_API_KEY")
         gelato_api_key = config.require_env("GELATO_API_KEY")
@@ -75,12 +108,14 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         etsy_shop_id = config.require_env("ETSY_SHOP_ID")
     except config.MissingConfigError as exc:
         print(f"{JOB_NAME}: {exc}")
+        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {exc}")
         return 1
 
     try:
         migrate.check(db_path)
     except migrate.StaleSchemaError as exc:
         print(f"{JOB_NAME}: refusing to run on stale schema: {exc}")
+        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] refusing to run on stale schema: {exc}")
         return 3
 
     try:
@@ -168,7 +203,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 ),
                 admin_chat_id, bot_token, failures,
             )
-            _run_stage(
+            reconcile_result = _run_stage(
                 "reconcile",
                 lambda: reconcile.run_reconcile(
                     conn, shop_id=etsy_shop_id, api_key=etsy_api_key,
@@ -185,7 +220,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             if failures:
                 heartbeat.record(conn, JOB_NAME, ok=False, detail=f"failed stages: {', '.join(failures)}")
                 return 1
-            heartbeat.record(conn, JOB_NAME, ok=True)
+            heartbeat.record(conn, JOB_NAME, ok=True, detail=_reconcile_detail(reconcile_result))
             return 0
     except lock.LockHeldError as exc:
         print(f"{JOB_NAME}: {exc}")

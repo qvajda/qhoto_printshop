@@ -73,3 +73,56 @@ def test_check_does_not_write(tmp_path):
     count = conn.execute("SELECT COUNT(*) FROM schema_version WHERE id = 1").fetchone()[0]
     assert count == 0, "check() should not create schema_version row"
     conn.close()
+
+
+def _virgin_db(tmp_path, name="virgin.sqlite3"):
+    """A DB file that has never been touched by db.init_db() at all - no
+    schema_version, no heartbeats, no candidates/groups, nothing. This is the
+    real production qhoto.sqlite3's actual starting state (C1): it only ever
+    went through the individual migrate_*.py scripts directly, never
+    pipeline.db.init_db()."""
+    path = tmp_path / name
+    sqlite3.connect(path).close()
+    return path
+
+
+def test_migrate_bootstraps_absolute_zero_db(tmp_path):
+    """C1 regression: migrate() must bootstrap schema_version/heartbeats (and
+    every other schema.sql table) itself, not assume init_db() already ran."""
+    db_path = _virgin_db(tmp_path)
+
+    result = migrate.migrate(db_path)
+
+    assert result["current_version"] == len(migrate.MIGRATIONS)
+    conn = sqlite3.connect(db_path)
+    tables = {
+        row[0] for row in
+        conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    assert "schema_version" in tables
+    assert "heartbeats" in tables
+    conn.close()
+
+
+def test_check_raises_stale_schema_not_operational_error_on_virgin_db(tmp_path):
+    """C1 regression: check() must never let sqlite3.OperationalError ("no such
+    table: schema_version") leak past it on a DB that predates schema.sql's
+    additions - it must still be StaleSchemaError, and it must still not write
+    anything (check() stays read-only)."""
+    db_path = _virgin_db(tmp_path, name="virgin2.sqlite3")
+
+    try:
+        migrate.check(db_path)
+        assert False, "expected StaleSchemaError"
+    except migrate.StaleSchemaError as exc:
+        assert "0" in str(exc)
+    except sqlite3.OperationalError:
+        assert False, "check() leaked OperationalError instead of StaleSchemaError"
+
+    conn = sqlite3.connect(db_path)
+    tables = {
+        row[0] for row in
+        conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    assert tables == set(), "check() must not create any tables"
+    conn.close()

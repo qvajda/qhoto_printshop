@@ -15,6 +15,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pipeline.db as db
 import migrate_base_artwork_columns
 import migrate_candidates_art_brief
 import migrate_critic_pass_attempts_columns
@@ -46,13 +47,26 @@ class StaleSchemaError(Exception):
 
 
 def _current_version(conn) -> int:
-    row = conn.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()
+    # C1 fix: on a real production DB that predates db/schema.sql's
+    # schema_version/heartbeats additions, this table doesn't exist at all (not
+    # just an empty row) - check() must still read this as version 0 and raise
+    # StaleSchemaError, never leak the raw OperationalError.
+    try:
+        row = conn.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()
+    except sqlite3.OperationalError:
+        return 0
     return row[0] if row else 0
 
 
 def migrate(db_path) -> dict:
     conn = sqlite3.connect(db_path)
     try:
+        # C1 fix: bootstrap schema_version/heartbeats (and every other table in
+        # db/schema.sql) before anything else. The real qhoto.sqlite3 only ever
+        # went through the individual migrate_*.py scripts, never
+        # pipeline.db.init_db() - every CREATE TABLE in schema.sql is
+        # IF NOT EXISTS, so this is a safe no-op on an already-current DB.
+        db.init_db(conn)
         conn.execute(
             "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 0)"
         )

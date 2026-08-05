@@ -1,5 +1,7 @@
+import sqlite3
 from datetime import datetime
 
+import migrate
 import pipeline.db as db
 import pipeline.heartbeat as heartbeat
 
@@ -49,3 +51,18 @@ def test_record_keeps_separate_jobs_independent(tmp_path):
 
     assert heartbeat.last(conn, "hourly")["ran_at"] == "2026-08-05T03:00:00"
     assert heartbeat.last(conn, "batch")["ran_at"] == "2026-08-05T06:00:00"
+
+
+def test_record_works_against_db_bootstrapped_by_migrate_from_zero(tmp_path):
+    """C1 regression: heartbeat.record() must work on the real bootstrap path
+    (migrate.migrate() on a virgin DB file), not just on db.init_db() called
+    directly like every other fixture in this file does."""
+    db_path = tmp_path / "test.sqlite3"
+    sqlite3.connect(db_path).close()  # virgin file, zero tables
+
+    migrate.migrate(db_path)
+
+    conn = db.get_connection(db_path)
+    heartbeat.record(conn, "hourly", ok=True)
+
+    assert heartbeat.last(conn, "hourly")["ok"] is True

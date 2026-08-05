@@ -105,3 +105,38 @@ def test_main_returns_1_when_required_env_var_missing(tmp_path, monkeypatch):
     exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "hourly.lock", load_dotenv=False)
 
     assert exit_code == 1
+
+
+def test_main_notifies_telegram_when_non_telegram_env_var_missing(tmp_path, monkeypatch):
+    # I2: TELEGRAM_ADMIN_CHAT_ID/TELEGRAM_BOT_TOKEN are present, so a Telegram
+    # notification IS possible even though a later required var is missing.
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch, skip="GELATO_API_KEY")
+
+    with patch("run_hourly.telegram_client.send_message") as mock_send:
+        exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "hourly.lock", load_dotenv=False)
+
+    assert exit_code == 1
+    mock_send.assert_called_once()
+    args, kwargs = mock_send.call_args
+    assert args[0] == "admin1"
+    assert "GELATO_API_KEY" in args[1]
+
+
+def test_main_notifies_telegram_on_stale_schema(tmp_path, monkeypatch):
+    # I2: migrate.check() runs after Telegram vars are resolved, so this path
+    # must always notify.
+    db_path = tmp_path / "test.sqlite3"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    conn.close()
+    _set_required_env(monkeypatch)
+
+    with patch("run_hourly.telegram_client.send_message") as mock_send:
+        exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "hourly.lock", load_dotenv=False)
+
+    assert exit_code == 3
+    mock_send.assert_called_once()
+    args, kwargs = mock_send.call_args
+    assert args[0] == "admin1"
+    assert "stale schema" in args[1]

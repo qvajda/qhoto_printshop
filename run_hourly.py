@@ -43,9 +43,18 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     db_path = db_path or DEFAULT_DB_PATH
     lock_path = lock_path or DEFAULT_LOCK_PATH
 
+    # I2: TELEGRAM_ADMIN_CHAT_ID/TELEGRAM_BOT_TOKEN are resolved first and on
+    # their own - if either is missing, no Telegram notification is possible,
+    # so this path is print-and-return only. Any later missing var CAN still
+    # be notified, since Telegram creds are already in hand.
     try:
         admin_chat_id = config.require_env("TELEGRAM_ADMIN_CHAT_ID")
         bot_token = config.require_env("TELEGRAM_BOT_TOKEN")
+    except config.MissingConfigError as exc:
+        print(f"{JOB_NAME}: {exc}")
+        return 1
+
+    try:
         replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
         anthropic_api_key = config.require_env("ANTHROPIC_API_KEY")
         gelato_api_key = config.require_env("GELATO_API_KEY")
@@ -56,12 +65,14 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         etsy_shop_id = config.require_env("ETSY_SHOP_ID")
     except config.MissingConfigError as exc:
         print(f"{JOB_NAME}: {exc}")
+        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {exc}")
         return 1
 
     try:
         migrate.check(db_path)
     except migrate.StaleSchemaError as exc:
         print(f"{JOB_NAME}: refusing to run on stale schema: {exc}")
+        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] refusing to run on stale schema: {exc}")
         return 3
 
     try:
