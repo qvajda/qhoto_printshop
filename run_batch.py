@@ -65,6 +65,14 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     try:
         admin_chat_id = config.require_env("TELEGRAM_ADMIN_CHAT_ID")
         bot_token = config.require_env("TELEGRAM_BOT_TOKEN")
+        replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
+        anthropic_api_key = config.require_env("ANTHROPIC_API_KEY")
+        gelato_api_key = config.require_env("GELATO_API_KEY")
+        gelato_store_id = config.require_env("GELATO_STORE_ID")
+        etsy_api_key = config.require_env("ETSY_API_KEY")
+        etsy_api_secret = config.require_env("ETSY_API_SECRET")
+        etsy_access_token = config.require_env("ETSY_ACCESS_TOKEN")
+        etsy_shop_id = config.require_env("ETSY_SHOP_ID")
     except config.MissingConfigError as exc:
         print(f"{JOB_NAME}: {exc}")
         return 1
@@ -81,20 +89,32 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             static_config = config.load_static_config()
             failures = []
 
-            _run_stage("generate", lambda: generate.run_generate_cycle(conn), admin_chat_id, bot_token, failures)
+            _run_stage(
+                "generate",
+                lambda: generate.run_generate_cycle(conn, api_token=replicate_api_token),
+                admin_chat_id, bot_token, failures,
+            )
             _run_stage(
                 "primary_mockup",
-                lambda: primary_mockup.run_primary_mockup_cycle(conn, static_config=static_config),
+                lambda: primary_mockup.run_primary_mockup_cycle(
+                    conn, static_config=static_config, store_id=gelato_store_id, api_key=gelato_api_key,
+                ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
                 "compliance_draft",
-                lambda: compliance_draft.run_compliance_draft_cycle(conn, static_config=static_config),
+                lambda: compliance_draft.run_compliance_draft_cycle(
+                    conn, static_config=static_config, anthropic_api_key=anthropic_api_key,
+                ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
                 "critic_pass",
-                lambda: critic_pass.run_critic_pass_cycle(conn, static_config=static_config),
+                lambda: critic_pass.run_critic_pass_cycle(
+                    conn, static_config=static_config, anthropic_api_key=anthropic_api_key,
+                    store_id=gelato_store_id, gelato_api_key=gelato_api_key,
+                    replicate_api_token=replicate_api_token,
+                ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
@@ -107,18 +127,27 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             _run_stage(
                 "publish_primary_group_1",
                 lambda: publish_primary_group.run_publish_primary_group_cycle(
-                    conn, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config
+                    conn, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config,
+                    store_id=gelato_store_id, gelato_api_key=gelato_api_key, shop_id=etsy_shop_id,
+                    etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                    etsy_access_token=etsy_access_token,
+                    replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
                 ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
                 "group_mockup",
-                lambda: group_mockup.run_group_mockup_cycle(conn, static_config=static_config),
+                lambda: group_mockup.run_group_mockup_cycle(
+                    conn, static_config=static_config, store_id=gelato_store_id, api_key=gelato_api_key,
+                ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
                 "group_critic_pass",
-                lambda: group_critic_pass.run_group_critic_pass_cycle(conn, static_config=static_config),
+                lambda: group_critic_pass.run_group_critic_pass_cycle(
+                    conn, static_config=static_config, anthropic_api_key=anthropic_api_key,
+                    store_id=gelato_store_id, gelato_api_key=gelato_api_key,
+                ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
@@ -131,18 +160,25 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             _run_stage(
                 "publish_primary_group_2",
                 lambda: publish_primary_group.run_publish_primary_group_cycle(
-                    conn, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config
+                    conn, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config,
+                    store_id=gelato_store_id, gelato_api_key=gelato_api_key, shop_id=etsy_shop_id,
+                    etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                    etsy_access_token=etsy_access_token,
+                    replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
                 ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
                 "reconcile",
-                lambda: reconcile.run_reconcile(conn, shop_id=None),
+                lambda: reconcile.run_reconcile(
+                    conn, shop_id=etsy_shop_id, api_key=etsy_api_key,
+                    api_secret=etsy_api_secret, access_token=etsy_access_token,
+                ),
                 admin_chat_id, bot_token, failures,
             )
             _run_stage(
                 "cleanup",
-                lambda: cleanup.run_cleanup(conn),
+                lambda: cleanup.run_cleanup(conn, store_id=gelato_store_id, gelato_api_key=gelato_api_key),
                 admin_chat_id, bot_token, failures,
             )
 

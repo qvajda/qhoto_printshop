@@ -15,6 +15,27 @@ def _migrated_db(tmp_path):
     return db_path
 
 
+REQUIRED_ENV = {
+    "TELEGRAM_ADMIN_CHAT_ID": "admin1",
+    "TELEGRAM_BOT_TOKEN": "tok",
+    "REPLICATE_API_TOKEN": "replicate-tok",
+    "ANTHROPIC_API_KEY": "anthropic-key",
+    "GELATO_API_KEY": "gelato-key",
+    "GELATO_STORE_ID": "gelato-store",
+    "ETSY_API_KEY": "etsy-key",
+    "ETSY_API_SECRET": "etsy-secret",
+    "ETSY_ACCESS_TOKEN": "etsy-token",
+    "ETSY_SHOP_ID": "etsy-shop",
+}
+
+
+def _set_required_env(monkeypatch, skip=None):
+    for key, value in REQUIRED_ENV.items():
+        if key == skip:
+            continue
+        monkeypatch.setenv(key, value)
+
+
 STAGE_PATCHES = [
     "run_batch.generate.run_generate_cycle",
     "run_batch.primary_mockup.run_primary_mockup_cycle",
@@ -39,8 +60,7 @@ def test_main_returns_0_when_every_stage_succeeds(tmp_path, monkeypatch):
     from contextlib import ExitStack
 
     db_path = _migrated_db(tmp_path)
-    monkeypatch.setenv("TELEGRAM_ADMIN_CHAT_ID", "admin1")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+    _set_required_env(monkeypatch)
 
     with ExitStack() as stack:
         _patch_all_stages_ok(stack)
@@ -55,8 +75,7 @@ def test_main_returns_1_when_one_stage_fails_but_runs_the_rest(tmp_path, monkeyp
     from contextlib import ExitStack
 
     db_path = _migrated_db(tmp_path)
-    monkeypatch.setenv("TELEGRAM_ADMIN_CHAT_ID", "admin1")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+    _set_required_env(monkeypatch)
 
     with ExitStack() as stack:
         _patch_all_stages_ok(stack)
@@ -79,8 +98,7 @@ def test_main_returns_2_when_lock_held(tmp_path, monkeypatch):
     import pipeline.lock as lock
 
     db_path = _migrated_db(tmp_path)
-    monkeypatch.setenv("TELEGRAM_ADMIN_CHAT_ID", "admin1")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+    _set_required_env(monkeypatch)
     lock_path = tmp_path / "batch.lock"
 
     with lock.acquire(lock_path):
@@ -94,9 +112,17 @@ def test_main_returns_3_on_stale_schema(tmp_path, monkeypatch):
     conn = db.get_connection(db_path)
     db.init_db(conn)
     conn.close()
-    monkeypatch.setenv("TELEGRAM_ADMIN_CHAT_ID", "admin1")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+    _set_required_env(monkeypatch)
 
     exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
 
     assert exit_code == 3
+
+
+def test_main_returns_1_when_required_env_var_missing(tmp_path, monkeypatch):
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch, skip="TELEGRAM_ADMIN_CHAT_ID")
+
+    exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 1

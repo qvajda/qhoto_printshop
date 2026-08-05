@@ -46,6 +46,14 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     try:
         admin_chat_id = config.require_env("TELEGRAM_ADMIN_CHAT_ID")
         bot_token = config.require_env("TELEGRAM_BOT_TOKEN")
+        replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
+        anthropic_api_key = config.require_env("ANTHROPIC_API_KEY")
+        gelato_api_key = config.require_env("GELATO_API_KEY")
+        gelato_store_id = config.require_env("GELATO_STORE_ID")
+        etsy_api_key = config.require_env("ETSY_API_KEY")
+        etsy_api_secret = config.require_env("ETSY_API_SECRET")
+        etsy_access_token = config.require_env("ETSY_ACCESS_TOKEN")
+        etsy_shop_id = config.require_env("ETSY_SHOP_ID")
     except config.MissingConfigError as exc:
         print(f"{JOB_NAME}: {exc}")
         return 1
@@ -63,6 +71,10 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 publish_primary_group.run_publish_primary_group_cycle(
                     conn, admin_chat_id=admin_chat_id, bot_token=bot_token,
                     static_config=config.load_static_config(),
+                    store_id=gelato_store_id, gelato_api_key=gelato_api_key, shop_id=etsy_shop_id,
+                    etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                    etsy_access_token=etsy_access_token,
+                    replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
                 )
             except Exception as exc:
                 heartbeat.record(conn, JOB_NAME, ok=False, detail=str(exc))
