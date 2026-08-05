@@ -11,8 +11,6 @@ def _fresh_uninitialized_db(tmp_path):
     path = tmp_path / "test.sqlite3"
     conn = db.get_connection(path)
     db.init_db(conn)
-    conn.execute("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 0)")
-    conn.commit()
     conn.close()
     return path
 
@@ -70,3 +68,8 @@ def test_check_does_not_write(tmp_path):
         pass
 
     assert db_path.stat().st_mtime == before
+    # Verify no row was created in schema_version
+    conn = sqlite3.connect(db_path)
+    count = conn.execute("SELECT COUNT(*) FROM schema_version WHERE id = 1").fetchone()[0]
+    assert count == 0, "check() should not create schema_version row"
+    conn.close()

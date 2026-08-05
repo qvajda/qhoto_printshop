@@ -75,10 +75,6 @@ def migrate(db_path) -> dict:
 def check(db_path) -> int:
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 0)"
-        )
-        conn.commit()
         current = _current_version(conn)
         expected = len(MIGRATIONS)
         if current < expected:
