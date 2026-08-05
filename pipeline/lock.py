@@ -7,13 +7,15 @@ itself need locking to be race-free) or a third-party dependency.
 
 A stale lock from a killed process must not wedge the pipeline forever - two
 independent escape hatches: the recorded PID is checked for liveness
-(os.kill(pid, 0), the standard no-op existence probe), and the file's mtime
-is checked against stale_after_seconds regardless of PID liveness (covers PID
-reuse by an unrelated process). Either one being true means the lock is stolen,
-not respected.
+(os.kill(pid, 0) on POSIX; OpenProcess via ctypes on Windows, since Windows
+special-cases signal 0 to a console-event broadcast rather than a liveness
+probe), and the file's mtime is checked against stale_after_seconds
+regardless of PID liveness (covers PID reuse by an unrelated process). Either
+one being true means the lock is stolen, not respected.
 """
 import contextlib
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -23,6 +25,33 @@ class LockHeldError(Exception):
 
 
 def _pid_alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        # os.kill(pid, 0) on Windows is special-cased to CTRL_C_EVENT (a
+        # process-group broadcast), not a liveness probe - it does not
+        # reliably raise for a dead cross-process PID. Use OpenProcess
+        # directly instead.
+        import ctypes
+        import ctypes.wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            return False
+        try:
+            # A terminated process's object can stay openable while another
+            # process (e.g. its parent, via subprocess.Popen) still holds a
+            # handle to it - OpenProcess succeeding alone doesn't mean the
+            # process is running. Check its exit code too.
+            exit_code = ctypes.wintypes.DWORD()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(
+                handle, ctypes.byref(exit_code)
+            )
+            return bool(ok) and exit_code.value == STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except OSError:
@@ -54,8 +83,29 @@ def acquire(lock_path, *, stale_after_seconds: float = 3600, now=None):
     if lock_path.exists() and not _is_stale(lock_path, stale_after_seconds, now_ts):
         raise LockHeldError(f"{lock_path} is held by a live process")
 
-    lock_path.write_text(str(os.getpid()))
+    if lock_path.exists():
+        # Stale by our check - clear it so the atomic create below can
+        # succeed. If another process wins the race to create it first, the
+        # O_EXCL open below fails closed (LockHeldError) rather than both
+        # processes believing they hold the lock.
+        lock_path.unlink(missing_ok=True)
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        raise LockHeldError(f"{lock_path} is held by a live process")
+    with os.fdopen(fd, "w") as f:
+        f.write(str(os.getpid()))
+
     try:
         yield
     finally:
-        lock_path.unlink(missing_ok=True)
+        # Only remove the file if it still holds our own PID - a slow
+        # holder whose lock was stolen (by age) while still alive must not
+        # delete the new holder's active lock out from under it.
+        try:
+            current = lock_path.read_text().strip()
+        except FileNotFoundError:
+            current = None
+        if current == str(os.getpid()):
+            lock_path.unlink(missing_ok=True)
