@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS group_products (
   etsy_listing_id TEXT,
   title TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending','created','mockup_failed','publish_failed','published','deleted'
+    'pending','created','mockup_failed','publish_failed','published','deleted','listing_missing'
   )),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

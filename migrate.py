@@ -19,6 +19,7 @@ import migrate_base_artwork_columns
 import migrate_candidates_art_brief
 import migrate_critic_pass_attempts_columns
 import migrate_generation_attempts_table
+import migrate_gl36_listing_missing
 import migrate_group_products_candidate_id
 import migrate_v412_gallery
 
@@ -36,6 +37,7 @@ MIGRATIONS = [
     (4, "generation_attempts_table", migrate_generation_attempts_table.migrate),
     (5, "group_products_candidate_id", migrate_group_products_candidate_id.migrate),
     (6, "v412_gallery", migrate_v412_gallery.migrate),
+    (7, "gl36_listing_missing", migrate_gl36_listing_missing.migrate),
 ]
 
 
