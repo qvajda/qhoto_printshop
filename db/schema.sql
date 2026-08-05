@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS group_products (
   etsy_listing_id TEXT,
   title TEXT,
   status TEXT NOT NULL CHECK(status IN (
-    'pending','created','mockup_failed','publish_failed','published','deleted'
+    'pending','created','mockup_failed','publish_failed','published','deleted','listing_missing'
   )),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -148,4 +148,16 @@ CREATE TABLE IF NOT EXISTS listing_metrics_snapshots (
 CREATE TABLE IF NOT EXISTS telegram_offset (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   last_update_id INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  version INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS heartbeats (
+  job_name TEXT PRIMARY KEY,
+  ran_at TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  detail TEXT
 );
