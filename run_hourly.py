@@ -42,8 +42,13 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
 
     db_path = db_path or DEFAULT_DB_PATH
     lock_path = lock_path or DEFAULT_LOCK_PATH
-    admin_chat_id = config.require_env("TELEGRAM_ADMIN_CHAT_ID")
-    bot_token = config.require_env("TELEGRAM_BOT_TOKEN")
+
+    try:
+        admin_chat_id = config.require_env("TELEGRAM_ADMIN_CHAT_ID")
+        bot_token = config.require_env("TELEGRAM_BOT_TOKEN")
+    except config.MissingConfigError as exc:
+        print(f"{JOB_NAME}: {exc}")
+        return 1
 
     try:
         migrate.check(db_path)
