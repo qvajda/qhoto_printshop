@@ -83,17 +83,29 @@ def acquire(lock_path, *, stale_after_seconds: float = 3600, now=None):
     if lock_path.exists() and not _is_stale(lock_path, stale_after_seconds, now_ts):
         raise LockHeldError(f"{lock_path} is held by a live process")
 
-    if lock_path.exists():
-        # Stale by our check - clear it so the atomic create below can
-        # succeed. If another process wins the race to create it first, the
-        # O_EXCL open below fails closed (LockHeldError) rather than both
-        # processes believing they hold the lock.
-        lock_path.unlink(missing_ok=True)
+    # Bounded retry, fail closed. A single unconditional unlink-then-create
+    # is itself a race: if two processes both see the lock as stale, one
+    # unlinks and creates first, then the second's unlink would silently
+    # delete the WINNER's freshly-created live lock (unlink doesn't check
+    # content), letting both believe they hold it. So each retry re-checks
+    # staleness fresh (not the value computed above - time has passed and
+    # another process may have already reclaimed and be holding it now)
+    # immediately before unlinking, and gives up with LockHeldError rather
+    # than looping forever if it keeps losing the race.
+    fd = None
+    for _ in range(3):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            if lock_path.exists() and not _is_stale(
+                lock_path, stale_after_seconds, now_ts
+            ):
+                raise LockHeldError(f"{lock_path} is held by a live process")
+            lock_path.unlink(missing_ok=True)
+    if fd is None:
+        raise LockHeldError(f"{lock_path} is contested - could not acquire after retries")
 
-    try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        raise LockHeldError(f"{lock_path} is held by a live process")
     with os.fdopen(fd, "w") as f:
         f.write(str(os.getpid()))
 
