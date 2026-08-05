@@ -154,3 +154,10 @@ CREATE TABLE IF NOT EXISTS schema_version (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   version INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS heartbeats (
+  job_name TEXT PRIMARY KEY,
+  ran_at TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  detail TEXT
+);
