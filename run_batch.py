@@ -1,8 +1,8 @@
 """GL-7 twice-daily batch entrypoint. Sequences the same stage order
-run_m1_live_test.py already proves works end to end (generate -> primary
-mockup -> compliance draft -> critic pass -> digest -> publish (1st tap
-window) -> group mockup -> group critic pass -> group digest -> publish (2nd
-tap window)), then GL-36's reconcile pass and cleanup. Each stage is isolated
+run_m1_live_test.py already proves works end to end (research -> generate ->
+primary mockup -> compliance draft -> critic pass -> digest -> publish (1st
+tap window) -> group mockup -> group critic pass -> group digest -> publish
+(2nd tap window)), then GL-36's reconcile pass and cleanup. Each stage is isolated
 in its own try/except: a broken stage is reported and skipped, it does not
 abort stages after it - a research API outage must not also block publish,
 reconcile, or cleanup running for everything already in flight.
@@ -29,6 +29,7 @@ import pipeline.lock as lock
 import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
 import pipeline.reconcile as reconcile
+import pipeline.research as research
 import pipeline.telegram_client as telegram_client
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
@@ -124,6 +125,11 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             static_config = config.load_static_config()
             failures = []
 
+            _run_stage(
+                "research",
+                lambda: research.run_research_cycle(conn, static_config),
+                admin_chat_id, bot_token, failures,
+            )
             _run_stage(
                 "generate",
                 lambda: generate.run_generate_cycle(conn, api_token=replicate_api_token),

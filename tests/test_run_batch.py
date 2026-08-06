@@ -37,6 +37,7 @@ def _set_required_env(monkeypatch, skip=None):
 
 
 STAGE_PATCHES = [
+    "run_batch.research.run_research_cycle",
     "run_batch.generate.run_generate_cycle",
     "run_batch.primary_mockup.run_primary_mockup_cycle",
     "run_batch.compliance_draft.run_compliance_draft_cycle",
@@ -92,6 +93,38 @@ def test_main_returns_1_when_one_stage_fails_but_runs_the_rest(tmp_path, monkeyp
     assert exit_code == 1
     mock_mockup.assert_called_once()  # downstream stages still ran
     assert any("gen boom" in str(call) for call in mock_send.call_args_list)
+
+
+def test_main_calls_research_before_generate(tmp_path, monkeypatch):
+    # Regression: research.run_research_cycle (the only stage that inserts
+    # new 'pending' candidates) was missing from run_batch's stage sequence
+    # entirely - generate had nothing to ever pick up. Proves both that
+    # research runs and that it runs before generate.
+    from contextlib import ExitStack
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    call_order = []
+
+    with ExitStack() as stack:
+        for target in STAGE_PATCHES:
+            if target == "run_batch.research.run_research_cycle":
+                stack.enter_context(patch(
+                    target, side_effect=lambda *a, **k: call_order.append("research") or []
+                ))
+            elif target == "run_batch.generate.run_generate_cycle":
+                stack.enter_context(patch(
+                    target, side_effect=lambda *a, **k: call_order.append("generate") or []
+                ))
+            else:
+                stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    assert call_order == ["research", "generate"]
 
 
 def test_main_returns_2_when_lock_held(tmp_path, monkeypatch):
