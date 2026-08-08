@@ -108,6 +108,22 @@ def test_classify_demand_candidate_kills_when_ratio_below_threshold():
     assert "1000" in result["kill_reason"]
 
 
+def test_build_demand_checked_candidate_uses_a_real_etsy_sort_enum():
+    # Regression: "favorites" is not a real sort_on value - Etsy's
+    # findAllListingsActive enum is created/price/updated/score only
+    # (HTTP 400 live, GL-7 soak).
+    captured = {}
+
+    def fake_find_listings(keyword, **kwargs):
+        captured.update(kwargs)
+        return {"count": 10, "results": []}
+
+    with patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        research.collect_on_demand("test topic")
+
+    assert captured["sort_on"] in ("created", "price", "updated", "score")
+
+
 def test_collect_trending_now_combines_web_search_and_demand_proxy():
     search_response = json.dumps([
         {"keyword": "monstera line art", "rationale": "rising interest"},

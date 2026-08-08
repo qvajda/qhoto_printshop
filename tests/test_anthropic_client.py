@@ -54,6 +54,9 @@ def test_research_web_search_builds_correct_request():
     assert captured["tools"] == [
         {"type": anthropic_client.WEB_SEARCH_TOOL_TYPE, "name": "web_search", "max_uses": 5}
     ]
+    # Regression: 2048 truncated real web_search responses mid-JSON (GL-7
+    # soak) - the tool's own search-result content eats into the budget.
+    assert captured["max_tokens"] == 4096
     assert result["text"] == '[{"keyword": "monstera line art", "rationale": "rising interest"}]'
 
 
