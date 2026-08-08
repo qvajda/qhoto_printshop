@@ -10,8 +10,8 @@ def test_load_safe_evergreen_terms_reads_all_buckets():
     terms = research.load_safe_evergreen_terms()
 
     assert "monstera line art" in terms
-    assert "moon phase print" in terms
     assert "mid century modern wall art" in terms
+    assert "japanese wall art" in terms
 
 
 def test_load_safe_evergreen_terms_excludes_non_bucket_sections():
@@ -20,6 +20,31 @@ def test_load_safe_evergreen_terms_excludes_non_bucket_sections():
     joined = " ".join(terms).lower()
     assert "zodiac" not in joined
     assert "printify" not in joined
+
+
+def test_load_safe_evergreen_terms_excludes_gl43_blocked_terms():
+    """GL-43 removed three terms whose SERPs are owned by products this
+    pipeline cannot make (dated lunar calendars, personalised line-art
+    portraits). Re-adding one is a silent regression, so assert their
+    absence rather than trusting the file."""
+    terms = research.load_safe_evergreen_terms()
+
+    assert "moon phase print" not in terms
+    assert "single line drawing art" not in terms
+    assert "continuous line illustration" not in terms
+
+
+def test_load_safe_evergreen_terms_contains_no_placement_modifiers():
+    """GL-43 deferred the colour and room/placement modifier buckets to GL-44
+    precisely because this list also feeds art_brief.py, where a room word is
+    scene-word leakage (CLAUDE.md hard constraint). A flat append of the
+    delta's Part A1/A2 would break that, so catch it here."""
+    joined = " ".join(research.load_safe_evergreen_terms()).lower()
+
+    for room_word in ("bedroom", "kitchen wall", "living room", "nursery", "hallway"):
+        assert room_word not in joined
+    for colour_word in ("beige", "sage green", "terracotta", "dusty pink"):
+        assert colour_word not in joined
 
 
 def test_pick_safe_evergreen_fallback_returns_go_eligible_raw_candidate():

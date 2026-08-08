@@ -1,15 +1,248 @@
 # Go-live plan of attack — Etsy AI POD pipeline (2026-07-22)
 
-> **Last updated 2026-08-02 (late) — GL-22 is BUILT. 635/635 green.**
+> **Last updated 2026-08-08 (evening) — the storefront is finished. GL-10d
+> shipped and its banner upload closed the last item on GL-10b's checklist,
+> so GL-10 and GL-10d ticked together; GL-39 was belatedly marked done (it
+> has been a live scheduled task since 08-06). Gate: fourteen of eighteen.
+> The four that remain are the soak, GL-38's merge, GL-30 and GL-11 — and
+> only GL-30 is on our own clock.**
+>
+> Earlier 2026-08-08 — **GL-10b IS DONE, and it turned the storefront
+> from "owner-driven, unspecified" into paste-ready copy plus one small
+> coding session.** Five artefacts, from an n=10 competitor sweep (458,802
+> combined sales, every shop reached by ranking rather than by looking good):
+> `docs/2026-08-07-gl10b-findings.md` (15 rules), `-storefront-checklist.md`
+> (paste-ready, owner executes), `-listing-copy-spec.md` (spec only, build is
+> GL-10c), `-banner-icon-decision.md` (D-A resolved, phase-7 handoff),
+> `-keyword-delta.md` (**proposed, not applied**).
+>
+> **Three decisions were ratified by the owner 2026-08-07:** **D-A = A1**,
+> Qrchard's system to the letter — reached because register does **not**
+> correlate with sales in the sample (calm and shouty interleave across
+> sales/listing), which §2.4 had pre-committed to resolving as A1;
+> **retire the live banner/icon pair, keep GL-10a's icon unchanged, adjust
+> GL-10a's banner**; and **Nano Banana Pro = role C**, concept exploration
+> only, nothing generated ships.
+>
+> **What actually changes on this board, in order of consequence:**
+> **(1) GL-10 splits.** The owner-manual half (tagline, section rename,
+> About, policies) is paste-ready today and gated on nothing. The build half
+> is new: **GL-10d**, the banner rebuild — 1600 × 400, no alpha, < 1 MB, a
+> band of composited mockup renders, and `verify.py` gaining assertions
+> rather than losing them. **It joins the go-live gate** (owner, 2026-08-08),
+> because the live banner fails on four *structural* counts — it advertises
+> framed figurative portraits the pipeline does not make, carries a visible
+> garbled-text generation artifact, is 1,497.5 KB against Etsy's 1 MB
+> warning, and is 1600 × 896, which matches no documented Etsy format.
+> **(2) A sixth copy surface exists that the brief never listed** — the
+> 55-character shop tagline, indexed, free, and currently empty (R12).
+> **(3) One live-input file is now known to be wrong:** `moon phase print` is
+> in `safe_evergreen_bucket.md` and its SERP is owned by dated 2026/2027
+> calendars — evergreen as a *term*, seasonal as a *market*. The bucket was
+> validated on terms and never against who ranks for them. **Nothing is
+> applied**; the whole delta is one owner decision → **GL-43**.
+> **(4) Three findings had no home and now have rows:** set/bundle products
+> (**GL-40**, the one mechanism every high-volume shop in the sample uses to
+> raise order value, and QhotoArt has no path to it), the permanently frozen
+> listing URL slug that Gelato's title dictates (**GL-41**), and the About
+> section's unused 5-images-and-a-video trust surface (**GL-42**).
+>
+> **Two limits travel with every conclusion above, and should not be dropped
+> in the retelling.** Etsy no longer exposes listing **tags** to buyers
+> anywhere, so the keyword work is built from *title tokens*, not from
+> competitors' tag lists — a weaker instrument than the brief assumed. And
+> the register-vs-sales null result rests on two confounded outliers
+> (galerie61 sells public-domain Picasso; OriginalLunarPhase sells one dated
+> product with 13 years of reviews), so it supports only the weaker,
+> sufficient claim: **restraint is not a handicap.** The sweep's own
+> verification pass found and fixed **six errors in its own drafts**,
+> including a proposed `verify.py` assertion that already existed — listed
+> in the findings rather than quietly corrected.
+>
+> **What GL-10b explicitly did not touch:** no pipeline code, no live shop
+> write (every Etsy interaction was a `GET`, signed out throughout), no hard
+> constraint. R15 — that 8/10 shops lead with a framed in-room first image,
+> and that scene *consistency* beats scene variety — is **routed to
+> GL-6/GL-21 as a scene-authoring note**, not built here.
+>
+> **Previously, 2026-08-06 — GL-7 IS BUILT and the two-night soak is
+> RUNNING. Night 1 is dry-run and ticking: heartbeats at 10:13 (hourly, ok)
+> and 10:07 (batch, ok) local, `ETSY_LIVE_MODE`/`GELATO_LIVE_MODE` both
+> `FALSE`.** 15 commits on `worktree-gl7-cron-orchestrator`, ~3.4k lines,
+> eight new test files. **Everything the PRD asked for exists:**
+> `run_hourly.py` and `run_batch.py` (all 12 stages sequenced, per-stage
+> isolation, no stage logic moved into the runner); **GL-35** — a
+> `schema_version` table and an ordered idempotent `migrate.py` with a
+> read-only `--check` fail-fast wired into both entrypoints; **GL-36** —
+> `pipeline/reconcile.py` (age-out + Etsy-404 drift) plus a
+> `listing_missing` status; a crash-safe single-instance lock with
+> Windows-correct PID liveness and a bounded stale-lock reclaim; a
+> `heartbeats` table so a run that never happened is detectable; Telegram
+> surfacing on the missing-env and stale-schema paths; and the
+> **stall-predicate proof driven through `run_batch.main`**, not just the
+> unit. Plan: `docs/superpowers/plans/2026-08-05-gl7-cron-orchestrator.md`.
+> **The build closed the PRD's §2 items 1–7 and 9. Item 8 — the soak — is
+> what is happening now, and it is the gate.**
+> **⚠️ NEW BLOCKER, filed the same day → GL-38: none of this is on master,
+> and the soak is running out of an agent worktree.** `master` is still at
+> `14a2d10`; `run_batch.py` does not exist there. The soak therefore runs
+> from `.claude/worktrees/gl7-cron-orchestrator`, which carries **its own
+> `db/qhoto.sqlite3`** (450 KB, migrated to `schema_version` 7, actively
+> written) while the canonical `db/qhoto.sqlite3` at the repo root sits at
+> 434 KB, **untouched since 2026-08-04 and with no `schema_version` table
+> at all**. Two live states, one bot token. **This is the fourth occurrence
+> of the merge pattern** (GL-1, GL-23, GL-23b, now this) and the first one
+> where it is not merely a delay — see the GL-38 row for the Telegram
+> single-consumer hazard, which the new lock does *not* protect against
+> because the lock is per-tree.
+> **Nothing about this invalidates the soak** — it is testing scheduling,
+> the lock, the schema guard and the heartbeats, and it is testing them
+> honestly. **Owner decision 2026-08-06: the soak finishes on the worktree
+> as-is, and the merge follows it** — restarting a running soak to fix its
+> provenance would spend the only resource here that is actually scarce.
+> The consequence, carried in the GL-38 row: a five-step post-soak sequence
+> (merge → reconcile the two DBs → re-point the scheduled tasks → verify by
+> heartbeat → retire the worktree), and **the soak's result stays
+> provisional until it is done** — a pass on the branch is evidence about
+> the code, not about the deployment.
+> **✅ GL-37 ANSWERED 2026-08-06 — and the answer has a sting the question
+> did not.** Neither Creativity Standards field is settable through the v3
+> API: proven by a **full raw response dump** of two live listings (not a
+> field-name grep — the method that makes this immune to GL-34's
+> read-side/write-side trap, since there is no read-side field at all), by
+> enumerating all 15 taxonomy properties for `taxonomy_id` 1027, and by a
+> `GET /shops/{id}` that shows **no shop-level default either**. Etsy's own
+> dev channel carries an **open, unactioned feature request for exactly
+> these two fields (Discussion #1630, 2026-06-22)** — which is proof the
+> field does not exist, not a hint that it might.
+> **The sting: the only place to set them is the web listing editor, and the
+> editor's sole save action is "Activate with changes" — there is no
+> draft-save.** So the disclosure tick *is* an activation. **That collides
+> with GL-29** rather than merely gating it: a human visit takes the listing
+> live, so GL-29's programmatic activation never gets to be the thing that
+> activates a properly-disclosed listing, and its remaining value is
+> "activate at scale with the two fields left blank" — a merchandising and
+> compliance choice, not a technical one. Flagged in the GL-29 row rather
+> than quietly re-scoped (CLAUDE.md §3); **an owner decision is now needed
+> on *whether*, not *when*.**
+> **Decision recorded: accept the manual per-listing step**, exactly as
+> listing activation already is, and file the re-check as a standing
+> quarterly item → **GL-39**, tracking Discussion #1630. **The quarterly
+> check is now a live Cowork scheduled task** (`gl39-etsy-creativity-
+> standards-api-check`, first run 1 Nov 2026, then Feb/May/Aug/Nov).
+> **Three owner decisions followed the same day, and together they make one
+> coherent position rather than three patches:** (1) **the prose disclosure
+> is gone from listing descriptions** — `compliance_draft.DISCLOSURE_TEXT`
+> is now `""` and the draft prompt actively forbids the model reintroducing
+> one; both facts it carried are disclosed structurally instead (the AI tick
+> by hand, the production partner by the patch); (2) **the owner is the
+> publish gatekeeper** — he ticks "an AI generator" and publishes in a
+> single editor save; (3) **GL-29 is cancelled** and struck from the
+> go-live gate, parked as GL-29b. **The dependency runs in that order and
+> is worth stating: (1) is only safe because of (2), and (2) is only stable
+> because of (3).** Automating activation later without restoring a
+> disclosure would produce a live listing carrying neither — which is why
+> the reasoning sits in a code comment on the removed constant, not only
+> here. **This is the one
+> remaining hole in GL-7's unattended premise, and it is now a known,
+> bounded, tracked hole rather than an open question.**
+> Findings: `docs/2026-08-06-gl37-findings.md` — **which currently exists
+> only in the GL-7 worktree and must travel with GL-38's merge.**
+>
+> **Owner-manual items are now the parallel track, and the first one is
+> done: ✅ the GL-11 email went out 2026-08-06** (draft:
+> `docs/2026-08-06-gl11-developer-mode-email-draft.md`). That was the last
+> item on the board waiting on an external party — **everything remaining is
+> work done here.** Still parallel-able beside the soak: GL-37's API
+> re-check, GL-10 storefront. Candidate 42's draft listing stays alive until
+> after the soak's live night — it is GL-36's negative control.
+>
+> **Previously, 2026-08-05 — GL-33 SHIPPED and GL-34 CLOSED. Both
+> blockers off the board; master carries them (`14a2d10`, PR #6).**
+> **GL-33** — `patch_etsy_listing` now reconciles the gallery: a new
+> `get_listing_images`/`delete_listing_image` pair in `etsy_client` (both
+> dry-run-aware), and a delete pass that removes every listing image not
+> **positively matched** to the candidate's own `product_images`
+> (`etsy_listing_image_id`, scoped by `group_product_id`). Positive-match-only
+> is the correct polarity and was chosen deliberately: a "delete anything that
+> looks like Gelato's" heuristic would eventually eat a real composite. The
+> delete runs *after* the upload loop and *before* `update_listing`, so the
+> listing is never briefly imageless. 7 new tests (4 client, 3 patch-step,
+> idempotency covered). **Proven live** on candidate 42's real listing
+> (`4549960823`): 19 images → 13, the 6 Gelato ghosts gone, a second patch
+> changed nothing, variant mapping and per-variant pricing intact.
+> **GL-34 — closed with no code change, and it was never a defect.** The
+> write field is `production_partner_ids` (list of ints); the read field is
+> `production_partners` (list of objects). GL-13's check read the *write*
+> name off a *read* response, which returns "missing" on every listing
+> forever, regardless of state. GL-9's control listing (`4542159277`) shows
+> `who_made: i_did` **and** the partner, live. Written up in
+> `docs/2026-08-04-gl34-findings.md`. **That is the third finding in this
+> project traceable to reading an API echo as ground truth** — after GL-22a's
+> confounded Q3 and GL-34's own original filing. It is now a named failure
+> mode; the dashboard or a fresh `GET` is the ground truth, the response echo
+> is not.
+> **Found and flagged rather than worked around:** GL-13's R3/R5 listings were
+> already deleted live with the DB rows left `published`, so the planned
+> control was unreadable and a fresh candidate (42) was substituted with owner
+> sign-off. **That drift is now folded into GL-36** (owner, 2026-08-05) —
+> one "DB vs live state" item covering both stranded `generating` rows and
+> terminal rows pointing at dead external ids.
+> **Three things left open for the owner, all owner-only:** candidate 42's
+> draft listing `4549960823` is live and unactivated (delete when ready);
+> `.env`'s `*_LIVE_MODE` flags were already true before the session and were
+> left as-is (Claude cannot touch `.env`) — **anything hand-run now hits the
+> real APIs by default**; and candidates 40/41's rows still claim `published`
+> against dead ids.
+> **What this unblocks: GL-29.** Its two gates were GL-33 and GL-34; both are
+> satisfied. **Owner sequencing 2026-08-05: GL-7 goes next anyway** — see
+> Part 3 step 8d for the reasoning. **GL-7 is now the only expensive item
+> between here and go-live.**
+>
+> **Previously, 2026-08-03 (late) — GL-13/GL-17 PASSED. R0–R5 all green,
+> 635/635 throughout, and it is on master (`a2aff96`, PR #5).**
+> The v4.12 publish path is now proven live: one listing, created exactly
+> once, the validated sizes as variants, the gallery assembled once, a
+> rejected group that deleted nothing, and the Reject button tapped for the
+> first time since GL-9. **Four real defects were found and fixed in-flight**
+> (see Session T in Part 4): an unmigrated DB, a seed check that permanently
+> blocked fresh candidates, a `max_tokens` truncation on a 10-image gallery,
+> and Telegram's server-side fetch failing on R2 URLs.
+> **Two gaps were filed rather than fixed, per owner direction — and both are
+> now go-live blockers, not housekeeping:** **GL-33**, Gelato's own
+> auto-push leaves 5–6 untracked preview images in the listing gallery
+> alongside our composites (the self-hosted-gallery contract is the reason
+> the entire GL-6/GL-21 mockup track exists); and **GL-34**, `who_made: i_did`
+> appearing to drop `production_partner_ids` on the patch.
+> **GL-34 corrected 2026-08-04 — owner produced a dashboard screenshot from
+> the GL-9 (v4.11) round showing `Who made it? = I did` **and** `Production
+> partners: Gelato, Brussels — appears on listing as "A print shop"` on the
+> same live listing.** The two are **not** mutually exclusive, `CLAUDE.md`'s
+> "verified" line stands, and there is no policy exposure and no
+> disclosure-strategy decision to take. What survives is narrower and still
+> real: something in the v4.12 patch path either drops the field or only
+> appears to, and **GL-9's listing is a known-good control** for diagnosing
+> which. GL-33 remains blocker-class and unchanged.
+> **A different gap surfaced from the same screenshot → GL-37:** two Etsy
+> *Creativity Standards* fields — "How does your shop produce this item?" and
+> "What tools are used to make this item?" (which is where **"An AI
+> generator"** lives) — are **blank on every listing** and were never
+> settable through the API. That is the AI disclosure Etsy actually reads,
+> and it is a **manual dashboard step per listing**, which is a direct
+> problem for GL-7's unattended premise.
+> **What GL-13's pass unlocks: the GL-11 email.** Its gate was "GL-13
+> passes" and that gate is now satisfied. From here GL-11 is the only
+> critical-path item on a clock the owner does not control — every day it is
+> not sent is a day of external lead time spent for nothing.
+>
+> **Previously, 2026-08-02 (late) — GL-22 is BUILT. 635/635 green.**
 > Session 2 shipped as one PR, not two: `D` and `E` turned out not to be
 > disjoint from `A` once traced (D's "one call site" *is* `patch_etsy_
 > listing`). SPEC v4.12 written, three CLAUDE.md constraints rewritten, a
 > fourth flagged and now fixed. Both approved deletions done.
-> **The single most important fact right now: none of it is on master.**
-> `docs/gl22a-research-and-prd` is **9 commits ahead**; master's tip is
-> still `ee41fbd`. The runtime deploys from master, so v4.12 is not real
-> until this merges — same class as GL-1 and GL-23, and again the cheapest
-> thing on the critical path. Tracked as **GL-23b**.
+> ~~The single most important fact right now: none of it is on master.~~
+> **✅ Resolved — GL-23b merged 2026-08-02 (`7cbaee7`), and PR #5 (`a2aff96`)
+> landed GL-13's live fixes on top. Master is current.**
 > **Session 2 found three things no impact map caught** (a second silent
 > wipe on the *filesystem* key, a reclaim sweep that would have deleted
 > every live listing record, and a cycle trigger that deadlocked under
@@ -224,7 +457,8 @@ live re-test PASS/GO ✅ · GL-14 group crop → Gelato ✅ · GL-15 Etsy OAuth
 auto-refresh ✅ · GL-16 resilience hardening ✅ *(production-unproven — see
 GL-7)* · GL-19 compositor M1 acceptance ✅ *(failed correctly, re-run pending —
 see GL-19b)* · GL-21 compositor unfreeze + matte + aspect guard ✅ · GL-6
-attempt 3 / scene library, portrait ✅.
+attempt 3 / scene library, portrait ✅ · GL-8 host research ✅ · GL-3 host
+decision signed off, local desktop + pre-committed VPS fork ✅.
 
 ### Go-live blockers
 
@@ -232,22 +466,27 @@ attempt 3 / scene library, portrait ✅.
 |---|---|---|---|
 | GL-23 | C | **✅ DONE 2026-08-01** — merged; master carries the wired 10 + 1 + 2 gallery. Original scope: **merge `feat/gl6-p4-scene-library` → master.** 36 commits: chroma model, intake harness, the harvest, 11 landed bundles, the five accepted scenes, 5x7/10x24 wiring, `edge-alpha-jitter` (gate is 9 detectors), `gate_waivers`. 597+ tests green on the branch. The runtime deploys from master; nothing below is real until this lands. **Cheapest item on the critical path — do it first.** | branch → PR → master |
 | GL-19b | T | **✅ DONE 2026-08-01** — 13/13 rendered, deterministic, size-checked, owner-reviewed and approved (`93914b2` pre-crops the master to each group's print ratio in the harness). Gallery is clear for the guarded live upload. Original scope: **re-run the M1 render harness against the *wired* gallery.** `scripts/gl19_m1_render.py` last ran against 4 bundles, 3 of which are now rejected. The shipping gallery is 10 primary + 1 5x7 + 2 10x24 and has never been rendered end-to-end as a set. Offline render + owner eyeball, then one guarded live upload. | harness run → contact sheet → owner sign-off |
-| GL-23b | C | **Merge `docs/gl22a-research-and-prd` → master (NEW 2026-08-02).** 9 commits: GL-22a's findings + PRD, both build sessions, SPEC v4.12, the CLAUDE.md rewrites, the destructive-action log. 635/635 green on the branch. **The runtime deploys from master; nothing in v4.12 is real until this lands, and GL-13 cannot start against a branch.** Exactly the GL-1/GL-23 pattern, third time. **Cheapest item on the critical path — do it first.** | branch → PR → master |
+| GL-23b | C | **✅ DONE 2026-08-02 — merged as PR #4 (`7cbaee7`); master carries v4.12. Row reconciled 2026-08-05: it landed the day it was filed but was only ever marked done in the header prose, never in this table — three subsequent revisions read past it.** *(Two riders worth keeping with the row: the non-additive `groups` rebuild in `migrate_v412_gallery.py` was supposed to run as part of this merge and **did not** — nothing in the repo runs migrations at all, which is what GL-13's R0 walked into → **GL-35**. And PR #5 (`a2aff96`) landed GL-13's live fixes on top the following day.)* Original scope: **merge `docs/gl22a-research-and-prd` → master (NEW 2026-08-02).** 9 commits: GL-22a's findings + PRD, both build sessions, SPEC v4.12, the CLAUDE.md rewrites, the destructive-action log. 635/635 green on the branch. **The runtime deploys from master; nothing in v4.12 is real until this lands, and GL-13 cannot start against a branch.** Exactly the GL-1/GL-23 pattern, third time. **Cheapest item on the critical path — do it first.** | branch → PR → master |
 | GL-22 | C | **✅ DONE 2026-08-02 — one Etsy listing per artwork (v4.12), 635/635 green.** Session 1 (`6df9ba5` `ed660c1` `b0560df` `4c878b3`): `etsy_client` fixes, additive schema, candidate-keyed create path. Session 2 (`360a5d9` `b9b69a6` `3c525c0`): the render/Gelato **weld cut**, gallery scoped by `group_id`, `GalleryTooLargeError` at the 20-cap, `patch_etsy_listing` made idempotent via `product_images.etsy_listing_image_id`, reject/abandon deleting nothing, shipping collapsed to `288734253315`, the stall predicate, SPEC v4.12 and three CLAUDE.md rewrites. **Three deviations, stated not smuggled:** the orphan-delete branch was *removed* rather than moved (unreachable under create-once — but a pre-existing gap survives, see GL-32); `migrate_v412_gallery.py` **rebuilds `groups`** because SQLite cannot widen a CHECK in place (the first non-additive migration in this plan — the rollback story in the PRD needs reading with that in mind); and `discard_superseded_attempt` deletes less than specified (images only — dropping variant rows tripped the new post-create guard on re-render). | ✅ merged into GL-23b | Six sizes as variants of one Gelato product / one Etsy listing; gallery = primary mockups + 5x7 mockups if that crop passed + 10x24 mockups if that one passed. PRD: `docs/2026-08-01-v412-single-listing-prd.md`. **Now a two-session build. Session 1** (`docs/2026-08-01-gl22-session1-kickoff.md`): the two `etsy_client` fixes (`update_listing_inventory`'s float-price bug + a new `delete_listing`, which needs a **manual `listings_d` re-auth**), the additive schema migration (`group_products.candidate_id`, `group_product_variants.group_id`, `product_images.group_id`), and the candidate-keyed `create_or_reuse_group_product` with per-group `fileUrl` per variant in one create call. **Session 2:** gallery assembly across groups with a ≤20-image assert and scoped clear/rebuild (the sharpest correctness risk — one group's rebuild must not wipe another's images), abandon/reject/cleanup stopping the shared-product delete, the shipping-profile collapse to one value, the **new stall-sweep stage** (`[D2]`, see GL-22c), the digest/mockup/critic pass, `run_m1_live_test.py` + tests, **SPEC v4.12**, and **three CLAUDE.md rewrites + one addition**. | ✅ PRD → session 1 PR → session 2 PR |
 | GL-22a | R | **✅ DONE 2026-08-01** — findings: `docs/2026-08-01-gl22a-findings.md`. Four measured answers against the live API, two throwaway Gelato products created and deleted per the ledger. **(1) A shared `image_placeholder_name` does NOT force a shared image** — two variants carry independently-submitted `fileUrl`s in one `create-from-template` call → **GL-22d struck**. **(2) No API path adds a variant to an existing store product** — `PUT` silently drops the added variant *and* severs the Etsy sync, `PATCH` is 405, `/variants` is an incompatible custom-priced flow, and a re-`create-from-template` with the same title makes a *second* product → GL-22c option (a) dead. **(3) Q3 is confounded**, not answered — the only edit path tested (`PUT`) breaks the sync by itself; "Gelato may re-push after a dashboard edit" stays an open risk. **(4) Dropping a variation from the Etsy inventory patch orphans the Gelato mapping with no observed self-heal** → GL-22c option (c) dead. Two side-findings: a live `update_listing_inventory` float-price bug, and no `delete_listing` + no `listings_d` scope on the current token. | ✅ 4 answers → picked shape (b), struck GL-22d |
 | GL-22b | D | **✅ DECIDED 2026-08-01 — `Gelato: Free shipping` (`288734253315`), €0 to every destination, one profile for the whole candidate.** The original options list (Large / Small / re-price 5x7) was built on an incomplete profile read; the live `GET .../shipping-profiles` turned up a free-shipping profile that removes the dilemma entirely. **Two corrections it forced:** the €12.44/€14.55 figures in `CLAUDE.md` are the *default/non-EU* rate, not flat global (EU sees €5.86/€7.04); and Gelato's real per-item shipping (€5.10–€5.86) is billed to the seller **regardless of profile** and is already inside the cost basis the retail prices were set against — so **no re-pricing is required**. Verified: 5x7 21.4 %, 8x12 32.6 %, A3 38.6 %, A2 38.0 %, 10x24 44.2 %, A1 42.1 % at 9.5 % + €0.25, reproducing SPEC v4.11 §4's ~21–44 %. Floor case (5x7 through Offsite Ads at 15 %) still nets 16.4 %. **What it forfeits, recorded:** the shipping surcharge on default-region/US orders — revenue the margin table never counted. | ✅ decision → single-value `etsy_shipping_profile_id` |
 | GL-22c | D | **✅ DECIDED 2026-08-01 — option (b), create-once-when-all-groups-are-decided, publishing only validated sizes; stall rule = a plain 14-day timeout.** Options (a) and (c) were killed by GL-22a's Q2/Q4, so (b) was the surviving shape. **Stall rule revised same-day:** an initial "48 h nudge → 96 h skip" was replaced by a long timeout with **no reminder** (owner: defer the ping to post-go-live, → **GL-31**). That revision is what makes it cheap — with nothing to *send*, the rule is a **predicate, not a process**: the publish gate's "have all groups decided?" check gains an "…or has an undecided group aged past 14 days?" clause. Total scope: `stalled_skipped` in the `groups.status` CHECK, `GROUP_REVIEW_STALL_DAYS = 14` in `pipeline/config`, one predicate. **No `stall_sweep` stage, no `reminder_sent_at` column** — both struck with the nudge; the `CLAUDE.md` stage list is untouched. Window measured off the existing `groups.updated_at`. **Still depends on GL-7** in weaker form: the gate only fires when something evaluates it, so until the twice-daily batch exists the effective behaviour is wait-indefinitely — **"the stall rule fires" is a GL-7 DoD item, not a GL-22 one.** **A skipped size is a real forfeit, not a deferral** — Q2 means recovering it needs a from-scratch re-publish, which is the argument for erring long. | ✅ decision → shape (b) + a 14-day predicate |
 | GL-22d | M | **✅ STRUCK 2026-08-01 — never needed.** GL-22a Q1 proved two variants sharing one `image_placeholder_name` accept independently-submitted `fileUrl`s in a single `create-from-template` call, so the portrait template needs no second/third placeholder and `static_config`'s existing per-size `image_placeholder_name` values stand. **Kept as a line, not deleted: this was a manual owner step on the critical path that a €0 measurement removed.** Its landscape twin (named in GL-18) is struck by the same finding. | — |
-| GL-7 | C | **Cron orchestrator** — two cadences (hourly Telegram poll, twice-daily batch) wiring the existing 13 stages; one function per stage, not one loop. Unblocked since 2026-07-23. **DoD includes the overnight unattended soak** — GL-16 is proven in unit/scripted-interrupt tests only, and the soak is its production proof. **DoD gained one item 2026-08-01: prove v4.12's stall predicate actually fires.** GL-22 writes it, but it is dormant until the batch cadence evaluates the publish gate — so "the 14-day timeout works" is provable here and nowhere earlier (test with the constant temporarily lowered, not by waiting 14 days). **Now the single biggest remaining build chunk.** | GL-3 decision + kickoff → PR + clean soak |
-| GL-8 | R | Where the scheduled functions run (Cowork task vs. Claude Code cron vs. Fly/Render/Cloudflare/GitHub Actions), given cost, reliability and the persistent-process ban. Preliminary decision (GL-3): local desktop. Confirm or revise. | briefing → named host |
-| GL-3 | D | Cron deployment target — confirm the local-desktop preliminary against GL-8. **Pre-committed fork:** if the desktop fails the soak on wake/sleep or reliability, move to a cheap always-on host named in advance by GL-8. | GL-8 → confirmed host |
-| GL-13 | T | **Round 2 live re-test — the mockup-dependent slice + the v4.12 publish slice. Now the biggest remaining risk concentration outside GL-7.** Original: custom gallery in rank order, critic pass over custom scenes, `mockup_failed` retry with no Gelato fallback, the placeholder fail-loud guard, the real cover-crop reaching Gelato. **Session 2 handed over six things provable only live** (its own list, verbatim in intent): (1) **4→5→6 variants across one listing's lifecycle with no duplicate product** — the highest-value item, because Q2 proved a title collision silently creates a second product; (2) a **gallery grown across two reviews**, checked against the real listing, not the DB; (3) a **rejected group that deleted nothing**, `GET`-verified before and after; (4) the **real `listing_image_id` shape** the idempotent re-patch depends on — dry-run could only assert the mechanism, not the payload; (5) the **20-cap against a real Etsy rejection**, not just `GalleryTooLargeError`; (6) the **stall rule**, which **cannot fire until GL-7 runs the gate on a cadence** — so it moves to GL-7's DoD, not this one. **Blocked on GL-23b** — cannot run against a branch. | delta launch guide → pass/fail |
-| GL-17 | T | Residual live coverage from GL-9: the human Telegram **Reject** button (never tapped), plus any un-hit interactions. Fold into GL-13. | mini guide → pass/fail |
-| GL-10 | M | Etsy storefront overhaul — banner, sections, About, policies, SEO copy. Owner-driven, one-way-valve safe. | checklist → live storefront |
-| GL-29 | C+T | **Programmatic draft→active publishing, behind an env gate (NEW 2026-08-01, owner).** Today activation is a manual per-listing dashboard action by design. **Half of this already exists:** `etsy_client.update_listing_state` is written, dry-run-aware and unit-tested, carrying a `# DELIBERATELY UNWIRED` comment and a guard test (`test_patch_etsy_listing_never_activates_a_listing`). The work is therefore *the gate and the wiring*, not an integration: a new all-or-nothing flag (`ETSY_ACTIVATE_LISTINGS`, **default false**, resolved like `is_live_mode`), one call site at the end of the publish path, the guard test **rewritten rather than deleted** (it must now assert "never activates *unless the flag is on*"), and loud logging on every activation with the listing ID. **Three constraints the build must respect:** (1) Etsy's API says setting `state=active` publishes the listing and **it can never return to `draft`** — only `active`↔`inactive` — so this is a one-way door per CLAUDE.md §4: record an `activated_at` on the row and ship the `inactive` path in the same PR as the rollback; (2) activation costs **$0.20 per listing** and is charged in Developer Mode too, so each live test burns real money — budget a handful of euros, not a sweep; (3) **ordering vs GL-22** — activation must be the *last* step, after every group's patch has landed, or a buyer-visible listing gains variants and gallery images afterwards. **✅ Resolved 2026-08-01 by GL-22c's decision:** under create-once-when-all-groups-are-decided the listing is created with every validated size and its full gallery already assembled, so activation is unambiguously the last call in the publish path and GL-29 needs no ordering logic beyond "call it last". **Testing in Developer Mode proves the API call, not shopper-facing visibility** — the visual confirmation belongs to the first minutes after GL-11. | flag + wiring + rewritten guard → one live activation → GL-11 |
-| GL-11 | M | **Revert Etsy Developer Mode** — email developer@etsy.com, external approval lead time. Listing visibility observed before this is not representative. **Owner sequencing (2026-08-01): GL-29 lands and is tested first** — the point of reverting is a store that publishes. **Owner decision 2026-08-02: the email waits for GL-13 to pass**, rather than going out immediately. Deliberate trade — it spends lead time that cannot be recovered, in exchange for not opening an external conversation about a shop whose publish path is still unproven. **Consequence to watch: from GL-13's pass, GL-11 becomes the only item on the critical path with a clock you do not control.** If GL-13 slips, this slips with it one-for-one. | GL-13 pass → email → GL-29 → Dev Mode off |
+| GL-7 | C | **🟡 BUILT 2026-08-05, SOAK RUNNING 2026-08-06 — not done until the soak passes and it is on master.** 15 commits on `worktree-gl7-cron-orchestrator` (`6b14688`…`bc229e9`), 19 files, ~3.4k lines, eight new test files, no existing `*_cycle` module modified. **What landed:** `run_hourly.py` (lock → schema guard → `run_publish_primary_group_cycle` → heartbeat) and `run_batch.py` (all 12 stages, per-stage isolation, missing env vars a controlled `exit(1)` rather than an uncaught crash); the lock, with **Windows-correct PID liveness, atomic acquire, unlink-only-own-pid and a bounded retry that fails *closed* on a contested stale-lock reclaim** — the right polarity, since a wedged pipeline is recoverable and two concurrent batches are not; the `heartbeats` table; Telegram surfacing on the two silent-failure paths (missing env, stale schema), skipped sensibly when the missing var *is* a Telegram credential; `heartbeat_status.py` as the one-command "did it run?"; and reconcile's drift summary folded into the batch heartbeat's `detail` rather than discarded. **Soak status:** night 1 dry-run, both flags `FALSE`, hourly and batch heartbeats `ok`. **Three things the soak still owes** (PRD §6): the schema guard exercised against a deliberately stale DB, the injected-failure→Telegram path, and — night 2 only — **GL-36's 404 reconcile, which cannot fire in dry-run at all.** Original scope: **two cadences (hourly Telegram poll, twice-daily batch) wiring the existing 13 stages; one function per stage, not one loop. Unblocked since 2026-07-23. **DoD includes the overnight unattended soak** — GL-16 is proven in unit/scripted-interrupt tests only, and the soak is its production proof. **DoD gained one item 2026-08-01: prove v4.12's stall predicate actually fires.** GL-22 writes it, but it is dormant until the batch cadence evaluates the publish gate — so "the 14-day timeout works" is provable here and nowhere earlier (test with the constant temporarily lowered, not by waiting 14 days). **Now the single biggest remaining build chunk.** | GL-3 decision + kickoff → PR + clean soak |
+| GL-8 | R | **✅ DONE 2026-08-05** — briefing in `docs/2026-08-05-gl7-cron-prd-and-kickoff.md` §0: local desktop recommended, VPS named as the pre-committed fork. Fed straight into GL-3's sign-off the same day. Original scope: where the scheduled functions run (Cowork task vs. Claude Code cron vs. Fly/Render/Cloudflare/GitHub Actions), given cost, reliability and the persistent-process ban. Preliminary decision (GL-3): local desktop. Confirm or revise. | ✅ briefing → named host |
+| GL-3 | D | **✅ SIGNED OFF 2026-08-05** (`docs/2026-08-05-gl7-cron-prd-and-kickoff.md` §0, "GL-3 signed off. No code.") — local desktop confirmed against GL-8's findings, VPS fallback pre-committed rather than open. GL-7's build started the same day on that basis. **The fallback stays live, not closed out:** it's exercised only if GL-7's still-running soak fails wake/sleep or reliability. Original scope: cron deployment target — confirm the local-desktop preliminary against GL-8. **Pre-committed fork:** if the desktop fails the soak on wake/sleep or reliability, move to a cheap always-on host named in advance by GL-8. | ✅ GL-8 → confirmed host |
+| GL-13 | T | **✅ PASSED 2026-08-03 — R0–R5 all green, 635/635 throughout, fixes merged as PR #5 (`a2aff96`).** What it proved live, against the real APIs: the placeholder fail-loud guard (R1), `mockup_failed` retry with no Gelato fallback (R2), the 6/6 happy path — **one listing, created exactly once, exactly the validated sizes, no duplicate product, the gallery assembled once in rank order** (R3), re-patch idempotency against the real `listing_image_id` payload (R4), and a rejected group that **deleted nothing**, `GET`-verified either side (R5). **Four real defects found and fixed in-flight:** (1) the **DB had never been migrated to the v4.12 schema** — `group_products.candidate_id` and `product_images.group_id` were missing, and nothing in the repo runs a migration or checks schema version (→ **GL-35**); (2) `run_m1_live_test.py`'s seed check treated **any** historical candidates row as "already seeded", permanently blocking a fresh candidate on a DB with history — now checks for a *non-terminal* row, matching `research.trigger_fallback_if_needed`; (3) `critic_pass.py` truncated at `max_tokens=2048` on a 10-image gallery (the 7-criterion rubric genuinely needs the room) → 4096 — **the same defect class as GL-9's 1024→2048, second occurrence**; (4) `telegram_client.send_media_group` passed R2 URLs and relied on Telegram's own server-side fetch, which failed `WEBPAGE_CURL_FAILED` on 5–7.5 MB gallery images → now always downloads and multipart-uploads, the path local images already used. **Two gaps filed not fixed, per owner direction → GL-33 and GL-34, both promoted to blockers.** Original scope, for traceability: **Round 2 live re-test — the mockup-dependent slice + the v4.12 publish slice. Now the biggest remaining risk concentration outside GL-7.** Original: custom gallery in rank order, critic pass over custom scenes, `mockup_failed` retry with no Gelato fallback, the placeholder fail-loud guard, the real cover-crop reaching Gelato. **Session 2 handed over six things provable only live** (its own list, verbatim in intent): (1) **4→5→6 variants across one listing's lifecycle with no duplicate product** — the highest-value item, because Q2 proved a title collision silently creates a second product; (2) a **gallery grown across two reviews**, checked against the real listing, not the DB; (3) a **rejected group that deleted nothing**, `GET`-verified before and after; (4) the **real `listing_image_id` shape** the idempotent re-patch depends on — dry-run could only assert the mechanism, not the payload; (5) the **20-cap against a real Etsy rejection**, not just `GalleryTooLargeError`; (6) the **stall rule**, which **cannot fire until GL-7 runs the gate on a cadence** — so it moves to GL-7's DoD, not this one. **GL-23b ✅ merged (`7cbaee7`); guide written: `docs/2026-08-02-gl13-round2-delta-launch-guide.md`** — R0 pre-flight, R1 placeholder guard, R2 `mockup_failed` retry, R3 the 6/6 happy path, R4 re-patch idempotency, R5 reject + the never-tapped Reject button. **Two of the six handover items were stale and are corrected in the guide:** "4→5→6 variants across a lifecycle" and "a gallery grown across two reviews" both describe the publish-primary-patch-later shape `[D1]` killed — under create-once the listing is born at its final size and the gallery is assembled once. Replaced by "created exactly once, exactly the validated sizes, no duplicate product" and "the assembled gallery is complete and correctly ordered". **The 20-cap item is descoped with reasoning** (`GalleryTooLargeError` raises before any upload, so Etsy never sees a 21st image; proving Etsy's rejection would mean bypassing our own guard). | ✅ delta launch guide → pass/fail |
+| GL-17 | T | **✅ PASSED 2026-08-03, folded into GL-13's R5.** The human Telegram **Reject** button was tapped for the first time since GL-9 and the reject path behaved to v4.12 spec — group marked rejected, its images excluded, **the shared product and listing untouched**. Residual live coverage from GL-9 is now closed. | ✅ pass |
+| GL-33 | C+T | **✅ DONE 2026-08-04 — shipped and proven live (`47aa034`, PR #6 `14a2d10`).** `etsy_client` gained `get_listing_images` + `delete_listing_image` (dry-run-aware, 4 tests); `group_product.patch_etsy_listing` gained a reconcile pass (3 tests, idempotency covered) that deletes every listing image **not positively matched** to this candidate's `product_images.etsy_listing_image_id`, scoped by `group_product_id`, running after the upload loop and before `update_listing` so the listing is never briefly imageless. **Positive-match-only rather than pattern-matching Gelato's images** — a "delete what looks like a ghost" rule would eventually eat a real composite, and the DB already knows exactly which images are ours. **Live proof on candidate 42's listing `4549960823`:** 19 → 13 images, 6 Gelato ghosts deleted, 13 ours remaining, a second patch changed nothing, and the Gelato↔Etsy variant mapping and per-variant pricing both survived — which also **answers GL-22a's confounded Q3 in the narrow case that matters**: deleting a Gelato-owned *image* does not sever the sync the way `PUT`-ing the product did. Original scope: **Gelato's auto-push contaminates the listing gallery (NEW 2026-08-03, GL-13 finding). Blocker-class.** Gelato's product-creation push creates the Etsy listing *with its own preview images* — 5 or 6 of them, one per variant — and our patch then adds the tracked composites **alongside** them rather than instead of them. The result is a gallery that mixes Gelato's generic renders with the scenes GL-6/GL-21 spent four attempts authoring, in an order nobody chose. **This voids the self-hosted-gallery contract that is the entire justification for the mockup track** — and it is invisible today only because every listing so far is a draft. **Not a cosmetic item:** it is the first thing a buyer sees, and the 20-image cap is measured against the contaminated total, so six ghosts also eat six real slots. Likely shape (verify, don't assume): a `delete_listing_image` in `etsy_client` — which **does not exist yet**, `upload_listing_image` is the only image call in that module — plus a reconcile step in `group_product.patch_etsy_listing` that lists the listing's current images, deletes anything absent from `product_images`, and *then* uploads in rank order. **Two things to measure before building:** whether Gelato re-pushes previews after our delete (GL-22a Q3 is confounded on exactly this — the only edit path tested severed the sync), and whether deleting a Gelato-owned image breaks the Gelato↔Etsy mapping the way dropping a variation did (Q4). | measure → patch-step reconcile → live verify |
+| GL-34 | T→C | **✅ CLOSED 2026-08-04 — no defect, no code change. It was a read-side field-name error, not a regression.** Findings: `docs/2026-08-04-gl34-findings.md`. The PATCH **request** takes `production_partner_ids` (list of ints); the listing **GET response** never echoes that key — it returns `production_partners` (list of `{production_partner_id, partner_name, location}`). A check reading the write-side name off a read-side response reports "missing" on **every** listing forever, independent of actual state. **Control confirmed live:** GL-9's listing `4542159277` returns `who_made: i_did` together with `production_partners: [{5717252, 'A print shop', 'Brussels, Belgium'}]`, matching the owner's dashboard screenshot exactly. The subject listing could not be read — GL-13's R3/R5 were already deleted live (→ GL-36), so candidate 42 was substituted with owner sign-off. **`CLAUDE.md`'s `who_made: i_did` + `production_partner_ids` lines both stand; the §3 contradiction flag is withdrawn; `someone_else`/`collective` stay off the table.** **The lesson, third occurrence: an API response echo is not listing state.** Original scope: **`production_partner_ids` appears to drop on the v4.12 patch (NEW 2026-08-03; SCOPE CORRECTED 2026-08-04). No longer a policy item, no longer a decision — a narrow diagnosis with a known-good control.** The original filing read the GL-13 observation as "`i_did` and `production_partner_ids` are mutually exclusive on Etsy", and concluded from that a mandatory-disclosure risk and a `who_made` change. **Owner evidence 2026-08-04 kills that reading:** a dashboard screenshot from the **GL-9 (v4.11) round** shows, on one live listing, `Who made it? = I did` **together with** `Production partners for this listing: Gelato, Brussels, Belgium — Appears on listing as "A print shop"`. They coexist. **Three consequences, stated plainly:** (1) there is **no policy exposure** — the disclosure was present on the listings that had it; (2) `CLAUDE.md`'s "verified" `who_made: i_did` line **stands and needs no correction** — the §3 contradiction flag raised against it on 2026-08-03 is **withdrawn**; (3) `someone_else`/`collective` are **off the table** — moving to them would be *less* accurate (the design genuinely is the seller's) and would forfeit the "designed by a seller" label for nothing. **What actually remains:** GL-9's patch sent `production_partner_ids=[5717252]` with `who_made: i_did` (see `docs/2026-07-22-v411-live-test-launch-guide.md`) and the partner landed; GL-13's patch appeared not to. Either the v4.12 patch path regressed, or the GL-13 observation read the **API response echo** rather than the listing's actual state. Diagnosis, not research: reproduce, then `GET` the listing *and* look at the dashboard, with GL-9's listing as the control. **Only weakly blocks GL-29** — confirm the field is present on the listing before activating, but the shop-suspension framing was wrong. | reproduce → `GET` + dashboard vs GL-9 control → fix or close as observation artifact |
+| GL-37 | M+R | **✅ ANSWERED 2026-08-06 — neither field is API-settable, at either level, and the decision is to accept the manual per-listing step.** Findings: `docs/2026-08-06-gl37-findings.md` *(currently only in the GL-7 worktree — it must travel with GL-38's merge or it is lost).* **What was actually checked, and why the answer is trustworthy this time:** (1) a **full raw response dump** of `GET /listings/{id}` on two live listings (`4549960823`, `4542159277`) — every field enumerated, not a field-name grep, which is what makes this immune to the read-side/write-side aliasing that produced GL-34's false alarm: *there is no read-side field to alias to*; (2) all **15 taxonomy properties for `taxonomy_id` 1027** enumerated — `Craft type, Material multi, Primary/Secondary color, Width/Height/Depth, Sustainability, Home style, Occasion, Holiday, Room, Custom1–3` — killing the "it's hiding as a listing property" theory; (3) `GET /shops/{shop_id}` dumped — **no shop-level default exists**, so the hoped-for "tick it once, ever" is not available; (4) the dev-relations channel, where **Discussion #1630 (opened 2026-06-22)** is an open, unactioned feature request asking for exactly these two fields under exactly the names one would guess (`production_process`, `tools_used`). **A feature request is proof the field does not exist, not evidence it might.** One reply, no Etsy staff response, no PR, no changelog entry. **⚠️ The finding with teeth, which is not the "no API" part:** the only place to set these is the web listing editor, and **the editor's sole save action is "Activate with changes" — there is no draft-save.** So the disclosure tick *is* an activation. See the GL-29 row: this collides with the activation policy and changes GL-29's shape rather than merely gating it. **Recurring re-check filed post-launch as GL-39.** Original filing: **The Creativity Standards fields are blank on every listing, and that is where Etsy's AI disclosure actually lives (NEW 2026-08-04, from the same screenshot).** Two listing questions are unanswered on every listing the pipeline has produced: **"How does your shop produce this item?"** (made from scratch / assembled / altered / curated / natural material — all five radios empty) and **"What tools are used to make this item?"** (handheld / computerized / **an AI generator** / none — all four boxes empty). **`CLAUDE.md` already records that the tools question is not API-settable** and that the AI disclosure therefore lives in the description text. The screenshot confirms that and adds the produce-method field, which was not previously noted. **Why this is worth its own line rather than a footnote:** "An AI generator" is the checkbox Etsy's own Creativity Standards point at, and a description sentence is a *weaker* substitute than the structured field, not an equivalent one. **And the automation consequence is the sharp part:** if these can only be set by hand in Shop Manager, then every listing needs a human dashboard visit before it is compliant — which is a per-listing manual step sitting inside a pipeline whose entire premise (GL-7) is unattended operation. Scope: (1) re-check whether the v3 API has since exposed either field — this was established some time ago and Etsy has been actively shipping Creativity Standards changes; (2) if not, decide whether the manual tick is acceptable per listing, batched, or whether a shop-level default exists; (3) record the answer where GL-28 and the description-disclosure text can both point at it. **Not a GL-33/34 session item** — it is owner-manual and research, and folding it in would blur a clean coding session. | API re-check → owner decision on the manual step → recorded |
+| GL-10 | M | **✅ DONE 2026-08-08 — every item on the checklist tackled in Shop Manager; the GL-10d banner upload was the last one.** Item 5 (the structured "an AI generator" tick) remains the per-listing publish action it always was — closing GL-10 does **not** close that, because it is a property of each listing, not of the storefront (see GL-37). Item 4.2's returns wording was a view the owner took, not a paste; if it was left on Etsy's default, say so here before GL-11 rather than after. Previously: **🟢 RESEARCHED AND SPECIFIED 2026-08-07 (GL-10b) — reduced to a paste-and-click list; nothing here is blocked by anything.** Artefact: `docs/2026-08-07-gl10b-storefront-checklist.md`, seven items, six of them safe in any order. **What to actually do:** (1) paste the **shop tagline** — `AI-made botanical & minimalist art prints, unframed`, 51 of 55 chars — a **surface the original brief did not know existed** (R12), indexed by Google, currently empty; (2) **rename section 59380312** "Posters" → **`Unframed Art Prints`** (19 chars) — chosen because it completes the `[product-form qualifier] + [medium]` pair with the existing "Framed Photography", which is exactly how GateOfDesign (the sample's only other two-fulfilment shop) splits its catalogue, and because **0 of 10 sampled shops use the bare word "Posters"**; (3) paste the **About** text — ~120 words, and the AI statement is a **paragraph, not a footnote**, because under GL-37 `DISCLOSURE_TEXT = ""` makes this the only *written* disclosure anywhere in the shop; (4) **policies** — 4.1–4.4 drafted with `[[ ]]` placeholders left **deliberately unfilled** (they are facts about the Gelato account and shipping profile `288734253315`; guessing them puts wrong information in front of a buyer), 4.5 uses Etsy's own privacy template; (6) announcement stays off (Q3 unchanged — only 1 of 10 shops ran one and it was inert since April 2025). **Two things that are not clerical.** ⚠️ **Item 5, the structured "an AI generator" tick, is not a quick pre-launch tick — it *is* the publish action.** Etsy's web editor has no draft-save; its only save is "Activate with changes" (GL-37). Sequence it with GL-11, and never do it on a listing you are not ready to make live. ⚠️ **Item 4.2's returns wording needs a view taken, not a paste.** EU distance-selling gives a 14-day right of withdrawal with an exemption for goods "made to the consumer's specifications or clearly personalised"; whether a standard-size POD poster sits inside that exemption is **genuinely arguable** — the design is not personalised, only the timing of manufacture is. The competitor sample is no help (TheWorldGallery, also POD and also UK/EU, simply accepts 14-day returns). The artefact says plainly it is not legal advice and that **the safe default is to accept returns**. **Two things are explicitly NOT in this row:** a subject taxonomy (Botanical/Celestial/Minimalist sections) — that means the publish path stops reading a single `etsy_shop_section_id`, which is code, deferred with GL-10c; and the banner rebuild → **GL-10d**. **Renaming is free and reversible** (R11): section URLs are `?section_id=<numeric>`, the name is not in the URL, and `static_config.json` is unaffected — so get it right because it is a browse and relevance surface, **not** because it is a one-way door. Original scope: Etsy storefront overhaul — banner, sections, About, policies, SEO copy. Owner-driven, one-way-valve safe. | ~~checklist~~ ✅ → **owner executes in Shop Manager** |
+| GL-10d | C+M | **✅ DONE 2026-08-08 — banner rebuilt, `verify.py` green, both banner and icon uploaded to the shop.** The upload also closed the last open item on GL-10b's storefront checklist, so this row and GL-10 ticked together. Filed the same day it was created — the shortest-lived row on the board. Original scope: **the banner rebuild, promoted to a go-live gate item (owner).** Decision document, deliberately self-contained for a cold Claude Code session: `docs/2026-08-07-gl10b-banner-icon-decision.md` §4 and §7. **The icon needs no build at all** — `assets/brand/qhoto-shop-icon-500.png` (Bone badge on Pine, symbol only, 8.7:1) is already correct; **just upload it**. The sweep confirmed by measurement what GL-10a had already reasoned to: judged at true 74 px avatar size, **symbol-led icons are legible 4/4 and wordmark-led icons 0/6**, no exceptions in either cell, including two Star Sellers with 20k+ sales. The live `shop_icon.jpg` — monogram over a "Qhoto-Art" wordmark filling the lower half — is squarely in the 0/6 cell. **The banner is an adjustment inside A1, not a rebuild and not a move to A2:** the Ink ground, Pine `#23402F`, Bone, Fraunces + Inter, the badge geometry and every palette/geometry constant in `verify.py` are **unchanged**. **One thing changes** — the banner gains a band of **product imagery composited from existing mockup renders**: real QhotoArt prints, in the existing hand-authored scenes, on the Ink ground. **Why composited rather than generated, stated so it is not relitigated:** we already produce those renders deterministically at a known crop through `pipeline/mockup_render.py`; a generative model cannot hold an exact palette value, cannot reproduce a measured mark, and cannot be regenerated identically later. That is also why **Nano Banana Pro is role C** — role A needs the field's imagery to be *atmospheric*, and all 8 of the 8 imagery-carrying banners are framed product in styled rooms, which is a mockup, not a texture plate. **Why it is on the gate rather than post-launch:** the four failures of the live banner (§4.1) are structural, not aesthetic, and survive any D-A outcome — promise mismatch (it advertises framed figurative portraits the pipeline does not make), a **visible garbled-text generation artifact** in the largest brand surface on the page, 1,497.5 KB against Etsy's stated 1 MB upload warning, and 1600 × 896 matching **no documented Etsy format**, so Etsy crops it wherever it likes. **DoD:** emitted by `build_final.py` at 1600 × 400, no alpha, < 1 MB; **`verify.py` passes with MORE assertions than it had, not fewer** — new no-alpha check (Etsy renders transparency as black and nothing currently catches it), safe zones at lines 82–88 **re-parameterised** to the off-centre lockup rather than deleted, existing palette/geometry/size checks intact (**the < 1 MB check already exists at line 45** — an earlier draft proposed adding it); icon untouched and still passing; `assets/brand/README.md` records that the live pair is retired **and why**, so it cannot be resurrected; owner uploads both in Shop Manager. **Losing the verifier is the actual risk of this change.** **One sub-decision is deliberately left open:** whether the *wordmark* sets "QhotoArt", "Qhoto Art" or "Qhoto-Art" — all copy uses `QhotoArt` (that is what a buyer sees in the URL and the search row) but the lockup is a design question for phase 7, flagged so it is not silently inherited. **Do not read the sample's panelled/carousel banners as a target** — Etsy restricts those to Etsy Plus; on the free tier there is exactly one option, a single static 1600 × 400. | decision doc ✅ → Claude Code session → `verify.py` green → owner uploads |
+| GL-38 | C+M | **OWNER DECISION 2026-08-06: let the soak finish on the worktree as-is; merge afterwards, then re-point the scheduled tasks.** Endorsed — restarting a running soak to fix its provenance would throw away the one thing that costs wall-clock time, and the divergence is understood rather than surprising. **What that decision buys and what it costs, stated so neither is a surprise later:** it buys two uninterrupted nights; it costs a **post-merge sequence that is now mandatory, not optional**, and it means **the soak's result is provisional until that sequence is done** — a pass on the worktree is evidence about the code, not about the deployment. **The post-soak sequence, in order:** (1) merge the branch to master; (2) **reconcile the two databases into one, canonical DB backed up first** — decide deliberately which is authoritative rather than defaulting to the newer file (CLAUDE.md §4: this is destructive, show the plan and wait for "proceed"); (3) re-point both Windows scheduled tasks at the repo root and **verify by heartbeat**, not by assumption — `heartbeat_status.py` against the canonical DB should show a fresh run after the switch; (4) confirm `db/gl7.lock` now lives beside the canonical DB and that the worktree's copies are out of the picture; (5) **prune or lock the worktree** so nothing can invoke it again. **The standing hazard until step 3 completes is unchanged and is the thing to actually watch: one bot token, one `getUpdates` cursor, two trees, and a lock that is keyed per-tree so it does not arbitrate between them.** Nothing may be run from the main checkout while the soak is up — and after the switch, nothing from the worktree. **The token-scoped guard (below) is worth building even after the merge**, because this failure mode is a property of the design, not of this week's accident. Original filing: **The soak is running from an unmerged agent worktree, against a forked database (NEW 2026-08-06). Blocker-class, and cheap.** `master` is at `14a2d10` and does not contain `run_batch.py`, so the scheduled tasks are invoking `.claude/worktrees/gl7-cron-orchestrator/`. Both entrypoints resolve `DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"` — **relative to the script**, which is correct code and exactly why the fork happened silently. **Three distinct problems, in increasing order of sharpness:** **(1) The merge, fourth occurrence.** GL-1, GL-23, GL-23b and now this. The runtime deploys from master; a soak that passes on a branch has proven something about a tree nobody will run. It should stop being written as a per-item note and start being a **standing definition-of-done**: a build is not done until master carries it. **(2) Two databases.** The worktree's is migrated (`schema_version` 7, 450 KB, actively written); the canonical one is 434 KB, last touched 2026-08-04, with no `schema_version` table. Soak state — heartbeats, aged-out rows, any candidate the batch creates — accrues to the copy. Somebody has to decide which is canonical **before the live night**, and the answer is not automatically "the newer one". **(3) The Telegram single-consumer hazard, which is the genuinely dangerous one.** `getUpdates` has one cursor per bot token, and each tree keeps its own `telegram_offset` row. If anything is run from the main checkout while the soak is up — `run_m1_live_test.py` still exists there and still works — **the two trees eat each other's updates, and an owner tap can be consumed by the tree that cannot act on it, then acknowledged and gone.** The new lock does **not** cover this: it is a file lock at `<tree>/db/gl7.lock`, so the two trees take two different locks and both proceed. This is PRD §2 item 3's property being satisfied *within* a tree and violated *between* trees. **Fix shape (small):** land the branch on master, point the scheduled tasks at the repo root, reconcile the two DBs into one with a backup first, and — the part worth keeping — make the single-consumer property enforceable rather than conventional, e.g. a lock keyed on the bot token or the DB's identity rather than on the script's directory. **Until it lands, the operational rule is: do not run anything from the main checkout while the soak is up.** | merge + one DB + a token-scoped guard |
+| GL-29 | C+T | **❌ CANCELLED as a go-live item 2026-08-06 (owner) — struck from the go-live gate, re-filed post-launch as GL-29b. This row is kept, not deleted, because the reasoning is worth more than the row.** GL-37 established that the AI-disclosure tick lives only in the web listing editor and that the editor's only save action activates the listing. **The owner is therefore the publish gatekeeper by Etsy's design: he ticks "an AI generator" and publishes in one action.** Programmatic activation would race that step, not save it — it would produce a live listing that is *less* disclosed than the manual path, for €0.20, through a door that only opens one way. **What makes the cancellation clean rather than a deferral:** the code already exists and is already safe. `etsy_client.update_listing_state` stays written, dry-run-aware, unit-tested and **`# DELIBERATELY UNWIRED`**, and `test_patch_etsy_listing_never_activates_a_listing` stays exactly as it is — the guard test that was going to be *rewritten* by this item now simply keeps doing its job. **Nothing to build, nothing to undo.** **Reopen when, and only when:** Discussion #1630 ships (→ GL-39) so the disclosure becomes API-settable, **or** listing volume makes a per-listing dashboard visit the actual bottleneck. Until one of those is true this is a cost with no benefit. Original scope, for traceability: **Programmatic draft→active publishing, behind an env gate (NEW 2026-08-01, owner).** Today activation is a manual per-listing dashboard action by design. **Half of this already exists:** `etsy_client.update_listing_state` is written, dry-run-aware and unit-tested, carrying a `# DELIBERATELY UNWIRED` comment and a guard test (`test_patch_etsy_listing_never_activates_a_listing`). The work is therefore *the gate and the wiring*, not an integration: a new all-or-nothing flag (`ETSY_ACTIVATE_LISTINGS`, **default false**, resolved like `is_live_mode`), one call site at the end of the publish path, the guard test **rewritten rather than deleted** (it must now assert "never activates *unless the flag is on*"), and loud logging on every activation with the listing ID. **Three constraints the build must respect:** (1) Etsy's API says setting `state=active` publishes the listing and **it can never return to `draft`** — only `active`↔`inactive` — so this is a one-way door per CLAUDE.md §4: record an `activated_at` on the row and ship the `inactive` path in the same PR as the rollback; (2) activation costs **$0.20 per listing** and is charged in Developer Mode too, so each live test burns real money — budget a handful of euros, not a sweep; (3) **ordering vs GL-22** — activation must be the *last* step, after every group's patch has landed, or a buyer-visible listing gains variants and gallery images afterwards. **✅ Resolved 2026-08-01 by GL-22c's decision:** under create-once-when-all-groups-are-decided the listing is created with every validated size and its full gallery already assembled, so activation is unambiguously the last call in the publish path and GL-29 needs no ordering logic beyond "call it last". **Testing in Developer Mode proves the API call, not shopper-facing visibility** — the visual confirmation belongs to the first minutes after GL-11. ~~**Blocked as of 2026-08-03 by GL-33, and weakly by GL-34.**~~ **✅ Both gates cleared 2026-08-04 — GL-33 shipped, GL-34 closed as a non-defect. GL-29 is unblocked and is now the cheapest remaining blocker on the board.** Kept for the reasoning: activation is the one-way door that makes the gallery and the disclosure buyer-visible, and `active` can never return to `draft`, so the only remedy for publishing a known defect is `inactive`. ~~**One gate does remain, and it is GL-37**~~ — **GL-37 answered 2026-08-06, and it does not gate GL-29 so much as partially collide with it. Flagging this rather than quietly re-scoping (CLAUDE.md §3).** GL-37 established that the two Creativity Standards fields can only be set in the web listing editor, and that **the editor's only save action activates the listing** — there is no draft-save. Consequences for this row, in order: **(1) the manual disclosure step is itself an activation**, so for any listing you intend to disclose properly, a human visit to the editor is what takes it live — and GL-29's programmatic call never gets to be the thing that activates it. **(2) GL-29's remaining value is therefore narrower and should be stated honestly:** it activates *at scale, without a dashboard visit*, which is only useful if you accept the two fields staying blank on those listings. That is a real merchandising/compliance choice, not a technical detail. **(3) The €0.20 and the one-way door are unchanged**, but the ordering question flips — the cheapest correct path today may be "no GL-29 at all for the first listings", tick-and-activate by hand, and revisit when Discussion #1630 ships (→ GL-39). **Owner decision needed before this is built, and it is no longer "when", it is "whether, and for which listings".** **Owner sequencing 2026-08-05: GL-7 runs first anyway** — GL-29 is a session that will still be a session later, and it costs real money each time it is exercised. | ~~GL-33 + GL-34~~ ✅ → GL-37 decision → flag + wiring + rewritten guard → one live activation → GL-11 |
+| GL-11 | M | **🟡 EMAIL SENT 2026-08-06 — the clock is started and now runs in the background.** Draft used: `docs/2026-08-06-gl11-developer-mode-email-draft.md`. **What this changes about the plan's shape: nothing on the board is waiting on anyone external any more.** Since 2026-08-03 this row has been the one item on a clock the owner does not control, and every revision since said so; it is now spending that lead time in parallel with the GL-7 soak, which is the best available use of it. **What is still owed here:** Etsy's reply and the actual mode change — the item is not ✅ until the shop is out of Developer Mode. **Two follow-ups worth not dropping:** (1) if there is no reply in ~10 business days, reply in the same thread rather than opening a new one; (2) the sent email's "test listings have been deleted" line — candidate 42's draft `4549960823` was still live at send time and is deliberately being kept alive as GL-36's negative control for the soak's live night. Delete it after that run, so the statement becomes true rather than staying approximately true. Original scope: **Revert Etsy Developer Mode** — email developer@etsy.com, external approval lead time. Listing visibility observed before this is not representative. **Owner sequencing (2026-08-01): GL-29 lands and is tested first** — the point of reverting is a store that publishes. **Owner decision 2026-08-02: the email waits for GL-13 to pass**, rather than going out immediately. Deliberate trade — it spends lead time that cannot be recovered, in exchange for not opening an external conversation about a shop whose publish path is still unproven. **Consequence to watch: from GL-13's pass, GL-11 becomes the only item on the critical path with a clock you do not control.** If GL-13 slips, this slips with it one-for-one. **✅ 2026-08-03 — the gate is satisfied. GL-13 passed, so the email is unblocked and is now the single highest-leverage action available: it costs ~10 minutes, it is owner-only, it needs no code, and every day it is not sent is external lead time burned for nothing.** Send it in parallel with the GL-33/34 session — nothing about those two changes what the email says. | ~~GL-13 pass~~ ✅ → **email (send now)** → GL-29 → Dev Mode off |
 | GL-30 | C+M | **One-off backup of the mockup corpus to Cloudflare R2 (NEW 2026-08-01, owner).** Every generated scene — accepted, parked and rejected — exists only on the desktop. **Scope it to what git does not already have**, see the note below the table: the git-ignored `outputs/gl6_*` batches (~160 screened images **and their `screen.json` verdicts**), the untracked `inflow/` sources, `lifestyle_small_kitchenshelf`, and anything parked outside the tree. **Reuse `artwork_store._r2_put_object` + `_sigv4_headers`** — the S3-compatible PUT, the SigV4 signing and the all-or-nothing `R2_*` env gate are already written and tested; do not write a second uploader. **Write-once, never overwrite:** date- or content-addressed keys under one prefix, because a sync that can overwrite is a copy, not a backup. **Carry each image's sidecar/`screen.json` with it** — without the verdicts the corpus is 160 anonymous PNGs and the inventory value (the thing the harvest proved was worth more than the mask change) is lost. Parallel to the critical path; must not delay GL-7 or GL-22. | script → uploaded corpus + a manifest of what landed where |
-| GL-12 | M | Apply for Google Trends API alpha access (zero cost, parallel). | how-to → submitted |
+| GL-12 | M | **🔴 DEFERRED TO POST-LAUNCH 2026-08-08 (owner) — not the zero-cost item it was filed as.** Alpha registration turns out to require standing up a Google Cloud Console project first (GCP project, Workspace linkage, billing attached) before the application can even be submitted — real setup cost, not a "click apply" parallel task. Moved off the go-live board; see the Post-launch table. Original scope: Apply for Google Trends API alpha access (zero cost, parallel). | how-to → submitted |
 
 **Scoping note for GL-30 — what is actually at risk.** Committed bundles are
 **not** local-only: `origin` on GitHub is already an off-machine copy of every
@@ -267,6 +506,15 @@ than as a data-loss argument.
 | 1 | GL-24 | IR+C | **The `qops` ways-of-working overhaul** — owner-deferred to the **first action after go-live**, deliberately, so it does not delay the pipeline. PRD v2 written and unsigned; `.qops/` issue corpus untracked; its own review found the token-payback claim wrong by ~5×. Re-open the PRD, do not re-derive it. |
 | 1b | GL-30b | C | **Authoring-time R2 sync (NEW 2026-08-01, owner — the long-term half of GL-30).** Every candidate lands in R2 as it is screened/authored, with its verdict, so the one-off never has to be repeated. Natural hook: `scripts/scene_intake.py`, which already runs the screen, the gate and prints the verdict block — it just does not persist anything durable. Same write-once key discipline as GL-30. Owner-deferred to post-go-live. |
 | 1c | GL-31 | C | **The stall reminder ping (NEW 2026-08-01, owner — the deferred half of GL-22c's stall rule).** Before a group ages out of review, re-send its digest entry as a nudge so the owner has a chance to act. Deferred so v4.12's stall rule stays a predicate rather than growing a stage. **Worth pulling forward rather than letting it sink:** with no reminder, the only signal a group is aging out is the owner remembering an untapped digest entry, and a size that times out **cannot be added back** (GL-22a Q2 — recovery is a from-scratch re-publish). Scope when it lands: a `groups.reminder_sent_at` column, a send point, and a threshold constant below `GROUP_REVIEW_STALL_DAYS`. |
+| 1d | GL-39 | R (recurring) | **✅ SET UP 2026-08-06 — this is live as a Cowork scheduled task and needs no further action; it is listed here for traceability, not as work.** Task id `gl39-etsy-creativity-standards-api-check`, cron `0 9 1 2,5,8,11 *` (09:00 on the 1st of Feb/May/Aug/Nov), enabled, first run 2026-08-06, next 2026-11-01. **It was never ticked in this document, which is the small failure worth recording:** a recurring item that is genuinely done can sit on a board looking open indefinitely, because nothing about it ever changes state again. Prompt lives at `C:\Users\QVajd\Claude\Scheduled\gl39-etsy-creativity-standards-api-check\SKILL.md` — edit there, not here. Original scope: **The Creativity Standards API re-check — a standing quarterly item (NEW 2026-08-06, from GL-37's answer).** GL-37 established that `production_process` and `tools_used` are settable **only** in the web listing editor, and that the editor's only save action activates the listing. **That is a fact with a shelf life**, and the tracking artefact already exists: **`etsy/open-api` GitHub Discussion #1630**, opened 2026-06-22, unactioned as of 2026-08-06. **Scope of each check (~10 minutes, no code):** re-read Discussion #1630 for an Etsy staff reply, a linked PR or a changelog entry; if it looks shipped, confirm against a **full raw `GET /listings/{id}` dump** rather than a field-name grep — GL-37's own method, and the thing that makes the answer trustworthy. **Cadence: quarterly**, or immediately on any Etsy API changelog entry mentioning listing create/update. **Why this is worth a numbered row rather than a mental note:** the manual per-listing tick is the single remaining hole in GL-7's unattended premise, it collides with GL-29 (see that row), and the day it closes is the day both problems disappear at once — but nobody will notice that day unless someone is looking. **Candidate for a Cowork scheduled task** rather than a memory: it is exactly the shape — recurring, small, external-source-driven. |
+| 1e | GL-29b | C+T | **Programmatic activation, parked (was GL-29, cancelled from the go-live gate 2026-08-06).** Reopen only on one of two triggers: **(a)** GL-39 reports Discussion #1630 shipped, so the AI-disclosure tick becomes API-settable and programmatic activation stops being *less* compliant than the manual path; or **(b)** listing volume makes the per-listing dashboard visit the real bottleneck. **The build is small and stays small** — `etsy_client.update_listing_state` is already written, dry-run-aware, unit-tested and deliberately unwired; the work is the `ETSY_ACTIVATE_LISTINGS` flag (default false), one call site at the end of the publish path, rewriting the guard test to "never activates *unless the flag is on*", loud logging with the listing id, an `activated_at` column, and the `inactive` rollback shipped in the same PR (Etsy's `active` can never return to `draft`). €0.20 per activation, charged in Developer Mode too. |
+| 1f | GL-43 | D | **✅ DECIDED AND PARTLY APPLIED 2026-08-08 — owner agreed with the findings; the doc-only half is live in `safe_evergreen_bucket.md` v2, the rest is now GL-44.** **What went in:** 9 subject-seed additions (`vintage botanical print`, `antique botanical illustration`, `wildflower print`, `bauhaus print`, `bauhaus poster`, `art deco poster`, and a new Japanese/East-Asian bucket), 3 BLOCKED removals (`moon phase print`, `single line drawing art`, `continuous line illustration`), and 2 at-risk flags kept in the list but annotated (`star chart poster`, `lunar cycle art`). Bucket goes 38 → 44 terms. **What did NOT go in, and this is the important half:** the colour-family and room/placement modifier buckets — **the delta's own highest-value finding** — because this file is a flat list feeding *both* `research.py` and `art_brief.py`, so appending `bedroom wall art` sends a room word into the art brief, which is the exact leakage that made the first live run print lifestyle mockups as the artwork. Also held back: tag-safe short forms (8 terms over Etsy's 20-char cap) and the seasonal windows (`EVENT_WINDOWS_2026` is code). **Two new tests guard the split** — one asserts the three BLOCKED terms stay out, one asserts no room or colour word ever appears in the bucket, so a future flat append fails loudly instead of quietly poisoning the prompts. One existing test changed: it asserted `moon phase print` was present. Original scope: **The GL-10b keyword delta — one owner decision, and it is the only GL-10b artefact that touches what the pipeline *makes*.** Proposal: `docs/2026-08-07-gl10b-keyword-delta.md`. **Nothing is applied**, deliberately: `docs/safe_evergreen_bucket.md` is `research.py`'s live input and carries an owner-approval note in its header, and `EVENT_WINDOWS_2026` is code. **What is proposed.** *Additions:* two entirely new **modifier** buckets — **colour-family** (neutral, beige, sage green, terracotta, dusty pink, navy blue, black and white, pastel…) and **room/placement** (bedroom, kitchen, nursery, living room, hallway, entryway, office, bathroom) — plus additions to the mid-century, botanical and a new Japanese/East-Asian bucket. This is **the highest-leverage, lowest-risk finding in the sweep** (R3): it is a large, cheap, entirely missing axis, it recurs in every niche SERP and in Bestseller-badged titles, 6 of 10 shops run room sections, and **it changes nothing about what the art looks like**. *Removals:* **`moon phase print` — BLOCKED**, its SERP is 4/10 dated 2026/2027 calendars and 4/10 personalised, anchored by a 3-listing shop whose single section is literally named `2026`; and `single line drawing art` / `continuous line illustration` — BLOCKED by personalisation occupancy. **The delta adds a third tag the bucket never had — BLOCKED** — for terms that pass the flat-volume test but whose SERP is owned by a product the pipeline physically cannot make. The bucket was validated on *terms* and never against *who ranks for them*; this is the first time it has been, and one entry fails. **Two things make this a decision rather than a paste.** (a) Colour and room words are **modifiers, not seed terms** — "beige" alone is not a niche — so the value is in *combination*, which makes it as much a change to how `art_brief.py` and the title formula consume the bucket as to the bucket itself (Part D). (b) **Room words are exactly where scene-word leakage will happen** — "bedroom wall art" is one careless hop from the scene words that made the first live run print lifestyle mockups *as* the artwork. The delta routes them **away from `art_brief.py`** for that reason, and any implementation must keep them there. **Two caveats carried honestly:** `sage green` and `terracotta` are proposed evergreen on the strength of *current* occupancy and are flagged for re-check, not asserted as permanent; and the whole delta is built from **title tokens, because Etsy no longer exposes tags to buyers at all**. |
+| 1f-bis | GL-44 | C | **🆕 The modifier-class schema change — GL-43's deferred half, and it carries GL-43's best finding.** `safe_evergreen_bucket.md` becomes classed rather than flat: **subject seeds** (research + art brief), **style modifiers** (research + art brief — `vintage`, `neutral`, `black and white`), **placement modifiers** (research + listing copy only, **never `art_brief.py`**), and **tag-safe short forms** (tag generator only). Then `load_safe_evergreen_terms()` gains a class filter and each consumer asks for what it is allowed to see. **The value is real and was measured:** colour and room words are a large, cheap, entirely missing axis — they recur in every niche SERP and in Bestseller-badged titles, 6 of 10 sampled shops run room sections, and **they change nothing about what the art looks like.** **The risk is equally real and is the whole reason this is code:** the safety property is currently enforced by absence (the words simply are not in the file, and two tests keep it that way); after GL-44 it is enforced by routing, which is a stronger claim needing stronger tests. Do it **with or just before GL-10c** — the tag-safe short forms exist only to serve GL-10c's tag generator, and building that generator first means inventing truncations at draft time, which the spec forbids. Also re-check `sage green` and `terracotta` when it lands: they were admitted on *current* occupancy, flagged as a 2020s palette moment rather than a permanent one. |
+| 1g | GL-10c | C | **🆕 The listing-copy template build — spec written, build post-launch.** Spec: `docs/2026-08-07-gl10b-listing-copy-spec.md`, targeting `compliance_draft.DRAFT_TEXT_PROMPT_TEMPLATE`. **Title:** five comma-separated slots, subject front-loaded, brand name never, 15-word ceiling, no word more than twice. **Tags: the hard constraint is 20 characters each**, and that **disqualifies five terms already in `safe_evergreen_bucket.md`** outright (`mid century modern wall art` 27, `continuous line illustration` 28, `minimalist landscape print` 26, `geometric shapes wall art` 25, `single line drawing art` 23). The length budget must be a **first-class generation constraint, not a post-hoc trim** — long phrases route to the *title*, which has no cap, while their short heads go to tags. **GL-10c's first task is plumbing, not prompting:** the title formula needs the artwork's colour and the niche's room word threaded through to draft time, and they are not there today; a fallback that drops those slots must exist for old rows. **Two things this spec deliberately does NOT do:** it does **not** reintroduce a prose AI disclosure (`DISCLOSURE_TEXT` stays `""` per GL-37 — and the spec says why in the spec, so a future session cannot restore it by accident), and it does not attempt head terms. **R1 is the reason:** sorted by reviews with digital downloads excluded, **9 of 9** non-ad results for `wall art print` are personalised or customer-supplied-file products — custom lyrics, pet portraits, photo canvases. **The head of "wall art" is a personalisation market and the pipeline cannot enter it**, so the ranking strategy is long-tail aesthetic descriptor, full stop. Depends on GL-43 for the lexicon. |
+| 1h | GL-40 | IR+C | **🆕 Set / bundle products — the basket-size lever, and QhotoArt has no path to it (R4).** **This is a finding with a size, not a nice-to-have:** it is the single mechanism by which every high-volume shop in the sample raises order value. **7 of 7** gallery-wall results and 4 of 8 botanical results sell a multi-print set, with the quantity stated **numerically in the title** ("Set of 3", "4 Piece"); **6 of 10** shops run a set/bundle section; TheWorldGallery's `SETS OF 3` section alone holds **1,369 listings**; LotusNurseryArt productises it further with `CREATE YOUR SET` and `MIX & MATCH`. **Why it is post-launch and not a gate item:** it is a Gelato product-shape change, not a copy change — a set is a different product with different variants and different pricing, and v4.12's one-listing-per-artwork model has no representation for "three artworks, one listing". Filed as its own row rather than implied by GL-10c precisely so its size is visible. |
+| 1i | GL-41 | note→IR | **🆕 Every listing's URL is permanently frozen to Gelato's auto-generated title (R13). Flagged, unsolved, deliberately not fixed here.** Etsy, verbatim: *"Your listing's URL is based on the title you enter when you first publish the listing. Once it's published, the URL won't change again, even if [the title changes]."* Under the Gelato-pushes-we-patch architecture, Gelato creates the listing and the pipeline PATCHes the title afterwards — **so the patched title never reaches the slug.** **The cost is bounded and worth stating precisely: Google SEO only.** Etsy's *internal* search reads the title field, not the slug, so nothing about ranking inside Etsy is affected. **The reason it is a row and not a fix:** the only remedies are architectural — take listing creation back from Gelato (which collided with Gelato's push in the live run, the exact reason the current design exists) or influence Gelato's product title at create time. Both are real projects. Re-open alongside GL-29b/GL-11 if Google traffic ever matters. |
+| 1j | GL-42 | M | **🆕 The About section's unused media slots (R12).** Etsy's About accepts **up to 5 images and a video**, and QhotoArt uses none. **For an AI-art shop specifically, this is the strongest available trust surface** — process shots, the print in hand, packaging — because it is the one place a buyer can see that a physical object with real production standards sits behind a generated image. Cheap, owner-manual, no code, no dependency. Out of GL-10b's scope by its own admission; worth doing once there are real prints to photograph. |
+| 1k | GL-12 | M | **🔴 MOVED from the go-live board 2026-08-08 (owner) — turned out not to be a zero-cost parallel task.** Google Trends API alpha registration requires a Google Cloud Console project first (GCP project, Workspace linkage, billing attached) before the application itself can be submitted. That's real setup, not a "how-to → submitted" afternoon item, so it no longer belongs on the critical path. Original scope unchanged: apply for alpha access, zero direct cost, runs in parallel with everything else once picked up. |
 | 2 | GL-18 | C+M | **Landscape enablement.** Two halves: the compositor/config wiring GL-5 left portrait-only, and a landscape scene library. **Owner direction 2026-07-31:** do not re-derive prompts — take the *successful portrait prompts* for validated scenes, adapt them to landscape, and pass the **portrait render as Nano Banana's reference image** so the landscape version is the same room, same light, same props. Needs a landscape geometry card per group. **The landscape template's placeholder edit — GL-22d's twin — is struck by GL-22a Q1** (a shared placeholder name does not force a shared image), so this is now one fewer manual Gelato step than the plan assumed. |
 | 3 | GL-25 | C | **Wire Nano Banana Pro into `replicate_client`.** Deferred, not rejected — `_predict(model, input_body, …)` is already model-generic, so the work is a model constant, an input body, **reference-image encoding** (which GL-18 needs anyway), per-scene provenance, and a polling fallback for the 60 s `Prefer: wait` window that cost 11 of 72 images in P4b1. Direct dependency of GL-18. |
 | 4 | GL-26 | IR+C | **Mockup authoring / compositor refinement** so fewer technical defects reach the owner's eye. Named contents: the **grey band on the two held 5x7 portraits** (undiagnosed); `flat_leaning_bookstack`'s "stairs-effect", explicitly *not* explained by `de79795`; §6's **occluded-corner extrapolation** (fit the four edges, intersect them — currently a scene class is unauthorable and the workaround is "no props at corners"); §4.4's `gain_map` reference = a single 99th-percentile hotspot, which reads as a dull print; and `scene_intake`'s hard stop on any screen failure when the screen is stricter than the gate. |
@@ -284,7 +532,9 @@ than as a data-loss argument.
 |---|---|---|
 | GL-27 | M+C | **Asset and doc hygiene, in one pass with GL-23.** **Eight committed bundles are not wired** — seven at primary (`flat_leaning_bookstack`, `flat_pegs_windowsill`, `lifestyle_console_pampas`, `lifestyle_framed_wall_plant`, `lifestyle_held_greytee`, `lifestyle_shelf_books`, `lifestyle_studio_held`) and `lifestyle_small_bookstack` at 5x7, which passes 8/8 at aspect 0.7285 and is the strongest 5x7 asset the repo has. Each is either owner-rejected (keep, but say so in the bundle) or an oversight (wire it) — right now "have 17, ship 10" is indistinguishable from a bug. The 5x7 one matters most: the shipping gallery has exactly **one** 5x7 image. `lifestyle_small_kitchenshelf` is untracked and fails `distortion` 2.26 % → regenerate or drop, don't re-author. Untracked inflow sources for 10x24/5x7/primary → commit with sidecars or delete (a bundle must stay a pure function of source + tool). Three inflow sidecars carry **no `key_rgb`**, so a re-`extract` silently switches `d_key_spill` off — normalise them. `lifestyle_sideboard_leaning` sits in inflow with no bundle and no recorded reason. `assets/mockups/manifest.json` is **dead and lying** (nothing reads it; it omits seven bundles) → delete it or make something read it. A `desktop.ini` is tracked-adjacent in `inflow/5x7/`. |
 | GL-32 | C | **The orphan gap session 2 could not close (NEW 2026-08-02).** With create-once, the orphan-delete-before-retry branch became unreachable and was **removed**; idempotency now rests on "never create twice when `gelato_product_id` is set". **That leaves one hole, pre-existing and now the only one:** a crash between the Gelato `POST` returning and the id-recording `UPDATE` committing orphans a real Gelato product **no DB sweep can see** — there is no row pointing at it. Cheap mitigations to weigh (do not build blind): write an intent row *before* the POST and reconcile after, or a periodic list-products-vs-DB reconciliation. **Also folded in:** `discard_superseded_attempt` now deletes images but leaves `group_product_variants` rows behind (dropping them tripped the new post-create guard on re-render) — decide whether that residue is harmless or wants a scoped cleanup. Small, real, and invisible until it bites. |
-| GL-28 | M | **SynthID.** Every Nano Banana output carries an invisible watermark, and the store's photography is now all Nano Banana. Not an Etsy problem — the artwork is disclosed via `who_made: i_did` — but it should be a **recorded, conscious choice** rather than a thing discovered later. |
+| GL-35 | C | **✅ BUILT 2026-08-05 inside GL-7 (`7e82444`, `f153266`, `bc229e9`) — pending the same merge as its parent.** `db/schema.sql` gained a `schema_version` table; `migrate.py` chains the six existing root-level `migrate_*.py` scripts plus the new `migrate_gl36_listing_missing.py` in order and records progress; `--check` is **genuinely read-only** (that took its own commit) and is called at the top of both entrypoints, so a stale schema is a clean refusal rather than a crash three stages deep. **One real bootstrap defect found and fixed in-flight:** the production DB had never been through `init_db` — only the individual migrate scripts — so `schema_version`/`heartbeats` did not exist and `check()` leaked a raw `OperationalError`; `migrate()` now calls `init_db` first and a missing table is read as version 0. **That is the same class of finding as GL-13's R0**: the code was right about a database that had never actually been operated on. The worktree DB is now at version 7; **the canonical repo DB has no `schema_version` table at all** → GL-38. Original scope: **Nothing runs the migrations (NEW 2026-08-03, GL-13 finding — the first thing R0 hit).** Six `migrate_*.py` scripts sit at the repo root and **not one is referenced by any code, test, doc or runbook** — `grep migrate_ pipeline/ README.md` returns nothing. The live DB was still on the pre-v4.12 schema; GL-13 stalled until both were run by hand. **This is a deploy-hygiene gap that gets worse, not better, with GL-7:** a scheduled function on a host has no operator standing by to notice a missing column at 03:00, and the failure mode is a mid-run crash, not a clean refusal. Cheap shape: a `schema_version` row, one idempotent `migrate.py` that applies pending scripts in order, and a **fail-fast check at pipeline start** that refuses to run against a stale schema rather than discovering it three stages in. **Fold into GL-7's kickoff** — it is a soak prerequisite, not an independent project. Note `migrate_v412_gallery.py` **rebuilds `groups`** (SQLite cannot widen a CHECK in place), so "idempotent" here has to mean *actually* idempotent, not "safe to re-run by inspection". |
+| GL-36 | C | **🟡 CODE BUILT 2026-08-05 inside GL-7 (`d79c6d7`, `d3c77a7`); the proof is night 2's, and the repair has not happened.** `pipeline/reconcile.py` ages out stranded `generating` candidates and marks `published` rows whose Etsy listing 404s as `listing_missing` (a widened `group_products.status` CHECK, migrated). **Positive matching only, as briefed:** a definitive 404 marks the row; timeouts, 401s and 5xxs are skipped and logged, so a bad afternoon at Etsy cannot mark the shop dead. **What is not done:** the reconcile calls Etsy, so it **cannot fire on a dry-run night** — night 1 proves nothing here. Candidates **40 and 41 still read `published`** against `4548623111`/`4548892148`, both of which 404; candidate 42's row also still reads `published` against `4549960823`, which is still a live draft. Confirmed in both DBs 2026-08-06. **The night-2 checklist item is therefore concrete:** with live mode on, the reconcile should flip exactly 40 and 41 and leave 42 alone — three rows that make a clean, falsifiable test the plan did not have before. Original scope: **Rescoped 2026-08-05 (owner) — one item: the DB and the live world drift apart, in both directions.** The original half is below. **The second half, found by GL-33/34:** candidates 40/41 (GL-13's R3/R5) still carry `published` rows with `etsy_listing_id`s that **404 live** — the listings were deleted during that session's documented cleanup, and the cleanup instructions never touch the DB. That is a *deliberate* desync, not a bug, which is exactly why it wants an item: it cost the GL-34 session its planned control listing and forced a fresh live candidate. **Both halves are the same failure:** a row asserting something about the world that stopped being true, with nothing that notices. Cheap shape to weigh together — a reconcile pass (`GET` each non-terminal/published row's external id; mark `listing_missing` on a 404) plus an age-out for `generating`, and cleanup runbook steps that update the DB in the same breath as the live delete. **Unrepaired right now:** candidates 40/41's rows, and candidate 42's listing `4549960823` still live as a draft. **Folded into GL-7's DoD** alongside the stall-predicate proof. Original scope: **Stranded `generating` candidates have no recovery path (NEW 2026-08-03).** 29 candidates (ids 5–34) sat in `generating` from earlier test rounds and were cleared **by hand** with a recovery note; the DB backup holds them. Nothing sweeps or ages out a row that entered `generating` and never came back — which is exactly the state a crash, a Replicate timeout or a killed process leaves behind. GL-16's resilience work covers interrupted *stages*; this is the residue when the process itself dies between them. Same argument as GL-35: harmless while a human runs each round, a slow leak once GL-7 runs unattended. **Fold into GL-7's DoD** alongside the stall-predicate proof. |
+| GL-28 | M | **SynthID.** Every Nano Banana output carries an invisible watermark, and the store's photography is now all Nano Banana. Not an Etsy problem — the artwork is disclosed via `who_made: i_did` — but it should be a **recorded, conscious choice** rather than a thing discovered later. **2026-08-03: that reasoning now depends on GL-34.** If the disclosure moves off `i_did`, re-read this line before relying on it; the description-text disclosure is the part that survives either way. |
 
 ---
 
@@ -350,20 +600,51 @@ schedule slip.
 8. **GL-7** two-cadence orchestrator → **overnight unattended soak**. Do not
    tick "unattended-safe" on merge alone.
 
-**Track D — manual and parallel, owner-driven:** GL-10 storefront now, GL-12
-Trends application now, **GL-30** the one-off corpus backup (small, independent,
+**Track D — manual and parallel, owner-driven:** GL-10 storefront now,
+**GL-30** the one-off corpus backup (small, independent,
 must not push anything else right). **The GL-11 email now waits for GL-13 to
 pass** (owner, 2026-08-02) — a deliberate spend of uncompressible lead time to
 avoid opening an external conversation about an unproven publish path. From
 GL-13's pass onward it is the only critical-path item on someone else's clock.
 
-**Then, in order (owner sequencing confirmed 2026-08-02):**
+**Then, in order (owner sequencing confirmed 2026-08-02; revised 2026-08-03
+after GL-13's pass):**
 
-8b. **GL-23b** — merge the 9 commits to master. Head of the critical path;
-    GL-13 cannot run against a branch. **The non-additive `groups` rebuild in
+8b. **GL-23b** ✅ merged (`7cbaee7`). **The non-additive `groups` rebuild in
     `migrate_v412_gallery.py` runs as part of this** — back the DB up first.
+    *(Post-hoc: it was not run as part of it. Nothing runs migrations at all
+    — GL-13's R0 found the live DB still on the old schema. → GL-35.)*
 
-9. **GL-13 + GL-17 — the chosen next track after the merge.** One live pass
+8c. **GL-33 + GL-34** ✅ **DONE 2026-08-04** (`14a2d10`, PR #6). GL-33 shipped
+    with live proof on candidate 42; GL-34 closed as a read-side field-name
+    artifact, no code. Kickoff/PRD: `docs/2026-08-04-gl33-gl34-kickoff.md`;
+    findings: `docs/2026-08-04-gl34-findings.md`. **The session's own
+    judgement call is worth recording:** it hit a blocked control (R3/R5
+    deleted live, DB stale), and it **stopped and asked** rather than
+    inventing a substitute — the substitution to candidate 42 carries owner
+    sign-off. That is the behaviour the plan wants from a live session.
+
+8d. **GL-7 + GL-8/GL-3 — the chosen next track (owner, 2026-08-05).**
+    Chosen over GL-29 even though GL-29 is now unblocked and much cheaper.
+    **The reasoning, stated because it looks backwards:** GL-29 is a flag,
+    one call site and a rewritten guard test — it will cost the same session
+    in three weeks as it costs today, and each live exercise of it burns
+    €0.20 and one irreversible listing. GL-7 is the *only* item left whose
+    duration is uncertain, it is the only one with an unattended soak that
+    cannot be compressed, and it carries two riders (GL-35, GL-36) that make
+    every subsequent live run cheaper. Spending the next session on the cheap
+    item would be optimising the wrong end of the schedule. **GL-29 also has
+    one gate left that GL-33/34 did not clear — GL-37** — so pulling it
+    forward would mean either taking GL-37's decision under time pressure or
+    activating with it open. Kickoff/PRD: `docs/2026-08-05-gl7-cron-prd-and-
+    kickoff.md`. **GL-8/GL-3 (host research + decision) is section 0 of that
+    document, not a separate track** — it was always GL-7's first gate and
+    has been open since 2026-07-22. **Owner-manual items run in parallel and
+    cost no build time:** the GL-11 email (still the only clock you do not
+    control), GL-37's dashboard/API re-check, deleting candidate 42's draft
+    listing, and repairing 40/41's rows.
+
+9. **GL-13 + GL-17** ✅ **PASSED 2026-08-03.** One live pass
    covering the custom gallery and its first guarded upload, the v4.12
    single-listing publish, the human Reject button, the crop-to-Gelato
    confirmation, and session 2's six live-only handovers. Chosen over
@@ -372,15 +653,123 @@ GL-13's pass onward it is the only critical-path item on someone else's clock.
    find v4.12's bugs. **GL-8/GL-3 (host decision) can run in parallel** to
    keep the long pole moving while GL-13 waits on owner availability.
 10. **GL-29** activation behind its flag, proven with one paid live activation
-    (Developer Mode proves the call, not the shopper's view).
-11. **GL-11** Developer Mode off → the visual confirmation GL-29 could not get.
+    (Developer Mode proves the call, not the shopper's view). ~~**Now gated on
+    GL-33 + GL-34**~~ — ✅ both cleared 2026-08-04. **The remaining gate is
+    GL-37's decision**, and the remaining sequencing constraint is that it
+    runs after GL-7 by owner choice (8d), not by dependency.
+11. **GL-11** Developer Mode off → the visual confirmation GL-29 could not
+    get. **The email itself no longer waits for step 10; only the Dev-Mode-off
+    confirmation does.**
+12. **GL-7 + GL-8/GL-3 — the long pole, and after 8c the only substantial
+    build left.** Its kickoff now carries two riders GL-13 produced:
+    **GL-35** (a migration runner and a fail-fast schema check — a soak
+    prerequisite, because an unattended host has no operator to notice a
+    missing column) and **GL-36** (stranded `generating` recovery). Neither
+    is big; both are the kind of thing that only bites unattended.
 
-**Go-live gate (2026-08-02):** GL-23 ✅ **+** GL-19b ✅ **+**
+**Parallel track while the soak runs (2026-08-06).** The soak occupies two
+nights of wall-clock and **zero hours of anyone's attention** — it is the
+first item on this plan that advances while you do something else, so the
+question is what to put beside it. In descending order of value per minute:
+
+1. ~~**The GL-11 email — send it today.**~~ ✅ **SENT 2026-08-06.** Draft:
+   `docs/2026-08-06-gl11-developer-mode-email-draft.md`. Its lead time now
+   runs in parallel with the soak, which is exactly what it was for.
+   **Consequence worth stating: the plan no longer has a single item waiting
+   on an external party.** Everything left is work someone here does. Next
+   action on this row is a reply from Etsy, or a same-thread nudge at ~10
+   business days.
+2. ~~**GL-37 — the API re-check.**~~ ✅ **ANSWERED 2026-08-06.** Not
+   settable, no shop-level default, tracked upstream as Discussion #1630.
+   **It resolved in the direction that adds a permanent manual step rather
+   than a code change** — and it did the useful thing a research item can do:
+   it changed GL-29 from "cheap and unblocked" to "needs a decision about
+   whether to build it at all". Recurring re-check → GL-39.
+3. ~~**GL-10 — the storefront.**~~ ✅ **RESEARCHED AND SPECIFIED 2026-08-07
+   (GL-10b).** It was the single largest block of parallelisable work on the
+   board; it is now **two much smaller things**, and the split is the useful
+   part.
+   **3a. The paste-and-click half — do this next, it is the highest value
+   per minute left on the board.** Tagline, section rename, About, policies:
+   `docs/2026-08-07-gl10b-storefront-checklist.md`, ~30 minutes in Shop
+   Manager, blocked by nothing, touching no code and no live listing.
+   **Two items inside it are not clerical and should not be batched with the
+   rest:** the returns wording needs a view taken on EU distance-selling law
+   (the artefact recommends simply accepting 14-day returns and says plainly
+   it is not legal advice), and **the "an AI generator" tick is the publish
+   action, not a pre-flight tick** — it belongs with GL-11, not with this.
+   **3b. GL-10d — the banner rebuild.** A small Claude Code session against
+   a self-contained decision document. **The icon half is free: upload
+   `qhoto-shop-icon-500.png` and stop** — no rebuild, no code. **The same
+   caveat as GL-30 applies to the build half:** it is a coding session while
+   two live trees exist, so either wait for GL-38's merge or keep it strictly
+   to `assets/brand/` (which, conveniently, is exactly where it lives —
+   `build_final.py` and `verify.py` and nothing else). Doing it *before* the
+   merge is defensible for that reason; doing it in the same session as
+   anything touching `pipeline/` is not.
+   **3c. GL-43 — the keyword delta.** One owner decision, ~15 minutes of
+   reading. **Worth taking before go-live even though the build is
+   post-launch**, for one reason: `moon phase print` is live input to
+   `research.py` today and its market is dated calendars, so every day it
+   stays in the bucket is a day the pipeline can spend a generation on a
+   niche it cannot win.
+4. **Delete candidate 42's draft listing** (`4549960823`) — one minute, and it
+   removes the last live artifact from the GL-33 session. **Do it after the
+   soak's live night**, not before: GL-36's reconcile wants 42 alive as the
+   negative control (see the GL-36 row).
+5. **GL-30 — the corpus backup.** A Claude Code session, small, independent,
+   reusing the existing R2 uploader. The one caveat: it is a *coding* session
+   and GL-38 says the repo has two live trees right now — either wait for the
+   merge or keep it strictly to a new script.
+
+**What not to start:** GL-29. It is cheap, it is unblocked apart from GL-37,
+and it is still wrong to begin — it is the one-way door, and the soak may yet
+produce findings that change the publish path it activates.
+
+**Go-live gate (2026-08-06, GL-38 added):** GL-23 ✅ **+** GL-19b ✅ **+**
 GL-22a ✅ **+** GL-22b ✅ **+** GL-22c ✅ **+** GL-22d ✅ struck **+**
-GL-22 ✅ built **+** **GL-23b merged to master** **+** GL-7 cron running with
-a clean overnight soak **+** GL-10 storefront **+** GL-13/17 clean **+**
-GL-29 activation proven behind its flag **+** GL-30 corpus backed up **+**
-GL-11 Developer Mode reverted.
+GL-22 ✅ built **+** GL-23b ✅ merged **+** GL-13/17 ✅ clean **+**
+GL-33 ✅ gallery de-contaminated, proven live **+** GL-34 ✅ partner field
+confirmed present (the "missing" read was the wrong field name) **+**
+GL-37 ✅ answered 2026-08-06 (not API-settable at any level; **the manual
+per-listing step is consciously accepted**, and the recurring re-check is
+filed as GL-39) **+** GL-38 the soak's tree merged and the scheduled tasks
+re-pointed **+** GL-7 cron running with a clean
+overnight soak (carrying GL-35 + GL-36) **+** GL-10 storefront
+**✅ DONE 2026-08-08 — every item on
+`docs/2026-08-07-gl10b-storefront-checklist.md` tackled, closed by the banner
+upload** **+** **GL-10d ✅ DONE 2026-08-08 — banner rebuilt and uploaded
+(the live banner's four failures were structural, not aesthetic)** **+**
+~~GL-29 activation proven behind its flag~~ **struck 2026-08-06 — publishing
+is a deliberate manual act by the owner, and GL-37 made that Etsy's design
+rather than a limitation of ours** (parked as GL-29b) **+** GL-30 corpus
+backed up **+** GL-11 Developer Mode reverted.
+**Fourteen of eighteen ticked (2026-08-08, latest)** — GL-10 and GL-10d both
+ticked the same day: the banner upload was simultaneously GL-10d's last step
+and the last open item on GL-10b's storefront checklist, so one action closed
+two gate rows. Earlier that day GL-10d had joined the gate unticked, which is
+why the denominator is eighteen. GL-37 ✅ joined the ticked side on 08-06,
+GL-29 left the gate entirely, GL-38 joined it unticked, and GL-7 stays
+unticked until the soak passes *and* master carries it.
+**What is left is exactly four things: finish the soak, merge it (GL-38),
+back up the corpus (GL-30), and wait for Etsy's reply (GL-11).** Only one of
+those is a build (GL-30) and it is small; **two of the four are on someone
+else's clock** — the soak's and Etsy's — which is what makes GL-30 the only
+gate item anyone can move right now.
+**GL-10b's honest effect on the gate: it did not remove an item, it
+converted one.** GL-10 went from an unspecified owner-driven overhaul to a
+30-minute paste plus a bounded coding session — which is a real reduction in
+*uncertainty* even though the count moved the wrong way. That is the trade
+research is supposed to make, and it is worth naming rather than hiding
+inside a number. Recounted 2026-08-05; the previous
+"eight of fifteen" and its predecessors were miscounts against this same
+list, which is worth noting only because a gate you cannot count is a gate
+you are not really using. What remains is **one substantial build (GL-7,
+carrying GL-35 + GL-36)**, two cheap builds (GL-29, GL-30), one research +
+owner decision (GL-37), and two owner-manual items (GL-10 storefront, GL-11
+Developer Mode — whose email should already have gone out). **Nothing left
+on the board is both uncertain and expensive except GL-7** — which is the
+whole argument for 8d.
 **Longest poles: (1) GL-7 cron + soak; (2) GL-22 → GL-13 → GL-29 → GL-11.**
 Note that the last pole is now a *chain* of four, three of which are cheap —
 the expensive one is GL-22, and GL-11's external lead time runs in parallel
@@ -391,6 +780,21 @@ GL-7 remains the long pole and is now unambiguously **the** long pole; it
 picked up one new DoD item (prove the stall predicate fires, by lowering
 the constant). GL-13's delta grew by six live-only items handed over from
 session 2.
+**What changed 2026-08-03:** GL-13 passed, so the second pole collapses to
+**GL-33/34 → GL-29 → GL-11**, all three cheap. **GL-7 is now the only
+expensive item between here and go-live** — every other open blocker is a
+session or an email. The plan's shape has inverted from "one big build after
+another" to "one big build, and a to-do list": if GL-7 slips, go-live slips;
+nothing else on the board can say that, with the single exception of GL-11's
+external lead time, which is why the email should not wait another day.
+**What changed 2026-08-05:** the second pole collapses again, to
+**GL-37 → GL-29 → GL-11**, and only GL-11's lead time is uncompressible.
+**There is no longer a second pole in any meaningful sense — there is GL-7,
+and there is a to-do list.** The one thing that can still surprise this plan
+is the soak, which is precisely the thing that has never been run. Note also
+that the email is now *two days* older than the sentence above complaining
+about it; if it has not gone out, that is the single cheapest correction
+available on the whole board.
 
 ### Tool-fit flags (CLAUDE.md §7)
 
@@ -1050,3 +1454,416 @@ splitting would have meant merging D/E through the same files twice.
   `stash@{0}`/`stash@{1}` dropped (`5f6d1c1`, `39f8300` — SHAs recorded before
   dropping, so both stay reachable via reflog); `stash@{2}`
   (`125331f`, feat/gl21-matte-compositor) untouched, as instructed.
+
+---
+
+## Part 4 (cont.) — Session log (2026-08-03)
+
+**Session V — GL-13/GL-17 round 2, live (Claude Code, 2026-08-03).**
+
+**Verdict: PASS.** R0–R5 all green, suite 635/635 throughout, fixes merged as
+PR #5 (`a2aff96`). The v4.12 publish path is proven against the real APIs:
+one listing created exactly once with exactly the validated sizes and no
+duplicate product; the gallery assembled once, in rank order; the re-patch
+idempotent against the real `listing_image_id` payload; a rejected group that
+deleted nothing, `GET`-verified either side; and the Telegram **Reject**
+button tapped for the first time since GL-9 (GL-17 closed).
+
+**Four defects found live and fixed in-flight:**
+
+1. **The DB had never been migrated to v4.12** — `group_products.candidate_id`
+   and `product_images.group_id` missing. The two existing migration scripts
+   were run by hand. Root cause is not the missing columns: **nothing in the
+   repo runs, orders, records or checks migrations.** → **GL-35**.
+2. **`run_m1_live_test.py`'s seed check** treated any historical `candidates`
+   row as "already seeded", permanently blocking a fresh candidate on a DB
+   with history. Now checks for a *non-terminal* row — the definition
+   `research.trigger_fallback_if_needed` already used. A harness-only bug, but
+   it cost a debugging cycle before the round could start at all.
+3. **`critic_pass.py` truncated at `max_tokens=2048`** on a 10-image gallery →
+   4096. **This is the second occurrence of the same defect class** — GL-9
+   raised the same constant 1024→2048 for the same reason. Twice is a pattern:
+   the limit is set against today's prompt and silently invalidated the next
+   time the gallery or the rubric grows, with truncation presenting as a
+   content failure rather than a size failure. Worth a guard rather than a
+   third raise.
+4. **`telegram_client.send_media_group` passed R2 URLs** and relied on
+   Telegram's own server-side fetch, which failed `WEBPAGE_CURL_FAILED` on
+   gallery images in the 5–7.5 MB range. Now always downloads and
+   multipart-uploads — the path local images already took. Note the shape:
+   the code had a working path and a convenient path, and the convenient one
+   was chosen for the case with the larger payloads.
+
+**Two gaps filed rather than fixed, per owner direction — both promoted to
+go-live blockers here, which is a deviation from "known gaps" and is stated
+rather than smuggled:**
+
+- **GL-33** — Gelato's product-creation auto-push leaves 5–6 untracked preview
+  images on the Etsy gallery alongside our tracked composites. The
+  self-hosted-gallery contract is the *reason the GL-6/GL-21 mockup track
+  exists*; a gallery that opens on Gelato's generic renders spends four
+  authoring attempts and buys nothing. It is invisible today only because
+  every listing is a draft, which is exactly why it is cheap to fix now.
+- **GL-34** — `production_partner_ids` appeared to drop when `who_made:
+  i_did` was set. ~~Mutually exclusive; contradicts a "verified" `CLAUDE.md`
+  line; mandatory-disclosure risk.~~ **Corrected 2026-08-04 — see the
+  addendum below. That reading was wrong.**
+
+**Addendum, 2026-08-04 — GL-34 re-scoped, and one item added.** The owner
+produced a Shop Manager screenshot from the **GL-9 (v4.11)** round showing
+`Who made it? = I did` and `Production partners: Gelato, Brussels — appears
+on listing as "A print shop"` **on the same listing**. The two coexist, so:
+the mutual-exclusivity claim is false, the mandatory-disclosure risk does not
+exist, the `CLAUDE.md` contradiction flag is **withdrawn**, and the
+`someone_else`/`collective` branch is dropped as *less* accurate rather than
+more. **What is left is a diagnosis with a control:** GL-9's patch sent the
+same `who_made` + partner pair and it landed; GL-13's appeared not to, so
+either v4.12 regressed the patch path or the observation read the API
+response echo rather than the listing. Either way it is one `GET` and a
+dashboard look, not a decision.
+
+**The lesson worth keeping, since this is the second time:** the original
+filing reasoned from an API observation to a *policy* conclusion in one step,
+with no dashboard check — the same move that made GL-22a's Q3 "confounded".
+The dashboard is the ground truth for anything a shopper or Etsy's own
+review sees; the API response is not, and treating a `GET` echo as
+listing state is now a named failure mode in this project.
+
+**Added from the same screenshot — GL-37.** "How does your shop produce this
+item?" and "What tools are used to make this item?" are blank on every
+listing, and the second is where **"An AI generator"** lives. `CLAUDE.md`
+already knew the tools question was not API-settable; the produce-method
+field is new information. The automation consequence is the sharp part: a
+per-listing manual dashboard step inside a pipeline whose premise is
+unattended operation.
+
+**Housekeeping done:** 29 stale `generating` candidates (ids 5–34) from
+earlier rounds marked `failed` with a recovery note; DB backed up first. The
+underlying gap — nothing recovers a row stranded in `generating` — is
+**GL-36**, and like GL-35 it is harmless while a human runs each round and a
+leak once GL-7 runs unattended.
+
+**Reading across the four fixes and the two riders:** none of them was a
+v4.12 logic error. Every one was an *operational* defect — schema not
+applied, harness state check wrong, a limit outgrown, a transport assumption
+— in a codebase whose business logic passed 635/635 the whole time. That is
+the profile of a system that has been carefully tested and never actually
+operated, and it is a direct argument for GL-7's soak being a real gate
+rather than a formality.
+
+---
+
+## Part 4 (cont.) — Session log (2026-08-04 → 2026-08-05)
+
+**Session W — GL-33 shipped, GL-34 closed (Claude Code, 2026-08-04).**
+
+**Verdict: both blockers off the board.** One PR (#6, `14a2d10`, commit
+`47aa034`), 7 new tests, live proof against a real listing.
+
+**GL-33 — built and proven.** `etsy_client` gained `get_listing_images` and
+`delete_listing_image` (dry-run-aware, 4 tests). `group_product.
+patch_etsy_listing` gained a reconcile pass (3 tests, idempotency covered):
+after the upload loop and before `update_listing`, delete every image on the
+listing whose `listing_image_id` is **not** present in this candidate's
+`product_images.etsy_listing_image_id`, scoped by `group_product_id`.
+
+Three design points, each of which could have gone the other way:
+
+1. **Positive-match-only deletes.** The rule is "delete what we cannot prove
+   is ours", not "delete what looks like Gelato's". The negative form is the
+   tempting one — Gelato's previews are recognisable — and it is the one that
+   eventually deletes an authored composite after some future rename. The DB
+   already knows precisely which images are ours; the heuristic was never
+   needed.
+2. **Delete after upload, not before.** The listing is never briefly
+   imageless, which matters because it is a live resource with a third party
+   (Gelato) syncing against it.
+3. **Scoped by `group_product_id`.** Same discipline the v4.12 gallery rework
+   established — one candidate's reconcile must not reach another's images.
+
+**Live result (candidate 42, listing `4549960823`):** 19 images → 13. Six
+Gelato ghosts deleted, thirteen of ours remaining, a second patch changed
+nothing, and the variant mapping and per-variant pricing both survived.
+**That last part quietly answers GL-22a's Q3 in the case that matters** — Q3
+was confounded because the only edit path ever tested (`PUT` on the product)
+severed the Gelato↔Etsy sync by itself. Deleting a Gelato-owned *image* does
+not. The general question ("can Gelato re-push after any edit") is still
+open; the specific one this pipeline depends on is now measured.
+
+**GL-34 — closed with no code change, and it was never a defect.** The PATCH
+request field is `production_partner_ids` (list of ints); the GET response
+field is `production_partners` (list of `{production_partner_id,
+partner_name, location}`). GL-13's check read the write-side name off a
+read-side response — which returns "missing" on every listing that has ever
+existed, regardless of state. GL-9's control (`4542159277`) shows `who_made:
+i_did` **and** the partner, live, matching the dashboard exactly. Written up
+in `docs/2026-08-04-gl34-findings.md`.
+
+**This is the third finding in this project traceable to the same move:**
+GL-22a's Q3, GL-34's original filing (API observation → policy conclusion in
+one step), and now GL-34's root cause. The pattern is not "we read the wrong
+field once" — it is **treating an API response echo as the state of the
+world**. The dashboard, or a fresh `GET` of the resource itself, is ground
+truth. Worth more than a lesson: any future check that asserts a field is
+missing should name which side of the request/response boundary it read.
+
+**Found and flagged, not worked around.** The kickoff's §4 said to reuse
+GL-13's R3 listing. R3 and R5 were both already deleted live — their
+`group_products` rows still say `published` against ids that 404. The
+session stopped, reported it, and substituted a fresh candidate (42) **with
+owner sign-off** rather than inventing a control. That is the intended
+behaviour and it is the reason this entry can be trusted; a session that had
+quietly picked its own substitute would have produced the same PR and a
+weaker record.
+
+**Open, owner-only, carried out of the session:**
+
+- Candidate 42's draft listing `4549960823` is live and unactivated — delete
+  it like the other test listings whenever convenient.
+- **`.env`'s `*_LIVE_MODE` flags were already true before the session and
+  were left as-is** (Claude cannot edit `.env`). Stated because it is a live
+  hazard rather than a loose end: **anything hand-run from this working tree
+  now hits the real APIs by default**, including anything run to "just check
+  something". Flip them off between live rounds.
+- Candidates 40/41 still carry `published` rows against dead listing ids —
+  **folded into GL-36** (owner, 2026-08-05), which is now one item covering
+  drift in both directions rather than stranded `generating` rows alone.
+
+**Reading it against Session V.** GL-13's four defects were all operational
+— schema, harness state, a limit outgrown, a transport assumption. GL-33's
+was different in kind: a **contract** defect. The pipeline believed
+`product_images` described the listing, and it did not, because a third
+party was writing to the same resource. Nothing in the test suite could have
+caught it, because the suite's model of the world was the same wrong one.
+The general form — *we are not the only writer to this resource* — is worth
+carrying into GL-7, where the same assumption underpins every stage that
+reads a row, acts, and writes it back on a cadence.
+
+**Plan hygiene done in the same pass (Cowork, 2026-08-05).** **GL-23b was
+reconciled**: it merged on 2026-08-02 as PR #4 (`7cbaee7`) and was recorded
+in the header prose the same day, but its blocker-table row was never
+ticked, and three subsequent revisions read past it. No consequence — GL-13
+ran against master and passed — but a plan whose table and prose disagree is
+a plan that gets read selectively. The row now carries the merge, the
+migration rider (→ GL-35) and the PR #5 follow-on.
+
+---
+
+## Part 4 (cont.) — Session log (2026-08-05 → 2026-08-06)
+
+**Session X — GL-7 built; soak night 1 running (Claude Code, 2026-08-05).**
+
+**Verdict: the build did what the PRD asked, and it did it without touching a
+single stage.** 15 commits on `worktree-gl7-cron-orchestrator`, 19 files,
+~3.4k lines, eight new test files, and — the constraint that mattered most —
+**no existing `pipeline/*_cycle` module modified.** The runner sequences; it
+does not absorb. The implementation plan
+(`docs/superpowers/plans/2026-08-05-gl7-cron-orchestrator.md`) was written
+first and worked task-by-task, which is why this entry is short on surprises.
+
+**What the commit sequence shows, which is more interesting than the file
+list.** Four of the fifteen commits are the author correcting their own work
+before anyone reviewed it:
+
+- `74c8bb5` adds the lock; `5904f6d` then fixes **Windows-correct PID
+  liveness, atomic acquire and unlink-only-own-pid**; `fb64e4f` then makes a
+  contested stale-lock reclaim **fail closed** rather than race. That is the
+  correct polarity and worth stating plainly: **a wedged pipeline is
+  recoverable by a human; two concurrent batch runs against one SQLite file
+  are not.** Failing closed on ambiguity is the same instinct as GL-33's
+  positive-match-only deletes and GL-36's 404-only marking. Three items, three
+  sessions, one rule: *when unsure, do less.*
+- `d4f6620` turns a missing env var from an uncaught crash into a controlled
+  `exit(1)`; `35b5c88` then threads the real credentials into both entrypoints
+  with a regression test. The first commit is the one that matters — an
+  unattended job that dies on a `KeyError` at 03:00 leaves a stack trace on a
+  console nobody is reading.
+
+**One real defect found against the production database**, and it is the
+same shape as GL-13's R0. `migrate.check()` leaked a raw `OperationalError`
+because the live DB **had never been through `init_db`** — it had only ever
+had the individual `migrate_*.py` scripts run against it by hand, so
+`schema_version` and `heartbeats` did not exist as tables at all, and "table
+missing" is not the same error as "table empty". `bc229e9` makes `migrate()`
+bootstrap via `init_db` first and reads a missing table as version 0, while
+keeping `check()` read-only. **Third instance of the pattern:** the code was
+correct about a database that had never actually been *operated*.
+
+**Also in `bc229e9`, and easy to skim past:** `run_batch`'s `_run_stage` now
+returns the stage's result, so reconcile's drift summary lands in the batch
+heartbeat's `detail` field instead of being computed and dropped. A sweep
+whose findings go nowhere is a sweep that will be believed and never read.
+
+**Soak status at time of writing (2026-08-06, morning).** Night 1 is
+**dry-run** — `ETSY_LIVE_MODE` and `GELATO_LIVE_MODE` both `FALSE` in the
+soak tree's `.env`, per PRD §4 and the owner's Q2 answer. Heartbeats:
+`hourly` ok, `batch` ok, both within the last cadence. Schema at version 7.
+No stranded `generating` rows. **The soak is doing real work and the four
+things it has proven so far are all real** — the scheduler fires, the lock
+does not wedge, the schema guard passes a migrated DB, and the heartbeats
+make "did it run?" a one-command question (`heartbeat_status.py`).
+
+**Three of PRD §6's pass conditions are still outstanding**, and one of them
+is structurally impossible on night 1:
+
+1. The schema guard has not been exercised against a *deliberately stale* DB
+   — it has only ever seen a good one.
+2. The injected-failure→Telegram path has not been fired.
+3. **GL-36's reconcile cannot run in dry-run at all** — it needs live Etsy
+   `GET`s to find a 404. Night 2 owns this, and it now has a clean,
+   falsifiable test the plan did not previously have: **candidates 40 and 41
+   should flip to `listing_missing`, and 42 should not**, because 42's draft
+   listing is still alive. Do not delete 42's listing before that run.
+
+**The finding this session did not produce, which someone had to → GL-38.**
+None of the above is on master. `master` is at `14a2d10` and has no
+`run_batch.py`, so the scheduled tasks necessarily invoke the worktree at
+`.claude/worktrees/gl7-cron-orchestrator`. Both entrypoints resolve their DB
+path relative to `__file__` — correct code, and precisely why the divergence
+is silent: the worktree now carries **its own migrated 450 KB database**
+while the canonical one sits at 434 KB, untouched since 2026-08-04, with no
+`schema_version` table.
+
+**The part that is a hazard rather than an inconvenience:** one bot token has
+one `getUpdates` cursor, and each tree keeps its own `telegram_offset`. The
+lock does not help — it is keyed on the script's own directory, so two trees
+take two locks and both proceed. **PRD §2 item 3 is satisfied within a tree
+and violated between trees.** If anything is run from the main checkout while
+the soak is up (`run_m1_live_test.py` is still there and still works), an
+owner tap can be swallowed by the tree that cannot act on it, acknowledged,
+and lost. **Operational rule until the merge lands: nothing runs from the
+main checkout while the soak is up.**
+
+**Fourth occurrence of the merge pattern** — GL-1, GL-23, GL-23b, GL-7. It
+has been written four times as a per-item note and should be promoted to a
+standing definition-of-done: *a build is not done until master carries it.*
+Worth noting what is different this time: the previous three cost delay. This
+one produced a second database and a shared-cursor hazard, because the branch
+was not merely unmerged — it was **being run**.
+
+**Owner-facing, unchanged from the PRD's "not in this plan":** the Task
+Scheduler wiring and the soak itself are operator steps, and they are the two
+things now in flight.
+
+---
+
+## Part 4 (cont.) — Session log (2026-08-06)
+
+**Session Y — GL-37, the Creativity Standards re-check (Claude Code,
+read-only, 2026-08-06).** Findings:
+`docs/2026-08-06-gl37-findings.md` *(in the GL-7 worktree only — carry it
+through GL-38's merge)*.
+
+**Verdict: not settable, at any level, by any endpoint. Decision: accept the
+manual per-listing step. Recurring re-check filed as GL-39.**
+
+**The method is the reason to believe it**, and it was chosen deliberately
+against this project's own history:
+
+- **A full raw response dump** of `GET /listings/{id}` on two live listings,
+  every field enumerated rather than looked up by name. This is the direct
+  answer to GL-34, where a field-name grep against the wrong side of the
+  request/response boundary produced a confident wrong answer. Here there is
+  no read-side field to alias to — the dump shows the absence, rather than a
+  lookup failing to show a presence.
+- **All 15 taxonomy properties for `taxonomy_id` 1027** enumerated, killing
+  the "maybe it is a listing property" theory outright rather than by
+  inference.
+- **`GET /shops/{shop_id}`** dumped, which retired question 3 (shop-level
+  default vs per-listing) as moot rather than answering it: there is nothing
+  to default at either level.
+- **Discussion #1630** (2026-06-22), an open feature request naming exactly
+  the two fields, with exactly the names one would guess. **Correctly read as
+  proof of absence, not as a hint of presence** — a distinction the write-up
+  makes explicitly, and one that a less careful session would have gotten
+  backwards.
+
+**The finding that matters is not "no API".** It is that the **only** place
+to set these fields is the web listing editor, and **the editor's sole save
+action is "Activate with changes"** — no draft-save exists. Three
+consequences, none of which were visible when GL-37 was filed:
+
+1. **The disclosure tick is an activation.** You cannot pre-fill disclosure
+   on a draft and activate later; the two are one action.
+2. **This collides with GL-29** rather than gating it. GL-29 buys
+   programmatic activation; but for any listing you intend to disclose
+   properly, a human is already in the editor and the save takes it live. So
+   GL-29's real value narrows to "activate at scale with both fields left
+   blank" — which is a compliance and merchandising choice, not a technical
+   one. **Raised in the GL-29 row rather than silently re-scoped, per
+   CLAUDE.md §3.** The owner decision is no longer *when* to build GL-29 but
+   *whether*, and for which listings.
+3. **GL-7's unattended premise now has one named, bounded hole.** Everything
+   up to a draft listing runs unattended; the last inch is manual, forever,
+   until Etsy ships #1630. That is a materially different statement from "the
+   pipeline is unattended", and the plan should stop making the shorter
+   claim.
+
+**Why GL-39 is a numbered row and not a note.** The day #1630 ships is the
+day two problems close simultaneously — the manual step and GL-29's
+ambiguity. Nobody notices that day without looking. Quarterly, ten minutes,
+and the first thing to check is the discussion, not the API. **Good
+candidate for a Cowork scheduled task**, which is exactly the shape:
+recurring, small, driven by an external source that changes without telling
+you.
+
+**Reading it against Sessions W and X.** Three consecutive sessions have now
+turned on the same axis: *what is the ground truth, and did we actually look
+at it?* GL-34 read an echo for state. GL-33 discovered a second writer to a
+resource we assumed we owned. GL-37 dumped the whole response instead of
+grepping, and got a durable answer. The pattern worth keeping is not
+"be careful with APIs" — it is that **every one of these was cheap to do
+correctly and expensive to do by inference.**
+
+**Session Y addendum — three decisions off the back of GL-37 (Cowork,
+2026-08-06).**
+
+**1. The quarterly re-check is wired, not remembered.** Cowork scheduled task
+`gl39-etsy-creativity-standards-api-check`, cron `0 9 1 2,5,8,11 *` — first
+run 1 Nov 2026. Its prompt is deliberately self-contained (each run starts
+cold): it carries the settled background so no run re-derives GL-37, and it
+carries the **confirmation standard** — if #1630 looks shipped, a changelog
+line is not enough; a full raw `GET /listings/{id}` dump is. That is GL-34's
+lesson written into a recurring job rather than into a document nobody
+re-reads. Caveat recorded: scheduled tasks only fire while the desktop app is
+open, otherwise on next launch.
+
+**2. The prose disclosure is removed from listing descriptions.**
+`compliance_draft.DISCLOSURE_TEXT` is now `""`, the draft prompt **actively
+instructs the writer not to add one** (silence would let the model
+reintroduce it unbidden — the old text creeping back without anyone deciding
+to bring it back), and `listing_texts.disclosure_text` is retained `NOT NULL`
+and written empty rather than migrated away. Both facts the sentence carried
+are disclosed structurally: the AI tick by hand at publish, the production
+partner via `production_partner_ids` on the patch (verified live, GL-34).
+Tests updated; the write-path test now asserts `== ""` rather than asserting
+against the constant, so a reintroduced disclosure **fails loudly** instead of
+silently satisfying an equality. 132 tests green across every module that
+touches `disclosure_text` (`compliance_draft`, `digest`, `critic_pass`,
+`cleanup`, `group_digest`, `group_critic_pass`); the full suite was not run
+to completion in this environment and should be before the commit.
+
+**Worth stating plainly, since this removes a compliance artefact:** the
+critic rubric never checked for the disclosure sentence, so nothing was
+enforcing it anyway — its removal changes what a listing *says*, not what any
+gate *checks*. The real enforcement was always going to be the structured
+field.
+
+**3. GL-29 is cancelled, and this is the interesting one.** Not deferred for
+cost or time — **cancelled because GL-37 revealed it would make things
+worse.** Programmatic activation produces a live listing with the disclosure
+tick unset; the manual path produces one with it set, because in Etsy's
+editor the tick and the publish are the same save. So the automated route is
+strictly *less* compliant than the human one, for €0.20, through a one-way
+door. The code stays exactly where it is — written, tested,
+`# DELIBERATELY UNWIRED`, with its guard test unchanged rather than rewritten.
+**Nothing to build and nothing to undo**, which is the cheapest possible
+shape for a cancelled item. Parked as **GL-29b** with two explicit reopen
+triggers: #1630 ships, or volume makes the dashboard visit the bottleneck.
+
+**The three decisions are one position, and the order matters:** removing the
+prose disclosure is safe *only because* the owner publishes by hand, and
+publishing by hand stays true *only because* GL-29 is not built. That chain
+is recorded as a comment on the removed constant in `compliance_draft.py`, not
+just here — a future session wiring up activation will read the code, not this
+plan.
