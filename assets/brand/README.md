@@ -1,6 +1,8 @@
-# Qhoto Art — store visual identity (GL-10a)
+# Qhoto Art — store visual identity (GL-10a, banner rebuilt GL-10d)
 
 Delivered 2026-07-24. Brief: `docs/2026-07-24-gl10a-store-visual-identity-brief.md`.
+Banner rebuild 2026-08-08 (GL-10d): `docs/2026-08-07-gl10b-banner-icon-decision.md`,
+`docs/2026-08-08-gl10d-banner-kickoff.md`.
 System of record: `Qrchard/brand_sheet.pdf`.
 
 ## Upload these
@@ -8,12 +10,49 @@ System of record: `Qrchard/brand_sheet.pdf`.
 | File | Where | Spec |
 | --- | --- | --- |
 | `qhoto-shop-icon-500.png` | Shop Manager → shop icon | 500×500, 12 KB |
-| `qhoto-shop-banner-1600x400.png` | Shop Manager → big banner | 1600×400, 101 KB |
+| `qhoto-shop-banner-1600x400.png` | Shop Manager → big banner | 1600×400, 346 KB |
 | `qhoto-shop-banner-mini-1600x213.png` | only if you switch to the mini layout | 1600×213, 57 KB |
 
-`.jpg` alternates are included; the PNGs are smaller *and* lossless here, so
-prefer them. Both are far under Etsy's 1 MB limit. Upload is manual in Shop
-Manager — not an API write, so nothing publishes without you doing it.
+`.jpg` alternates are included; the PNG is smaller for the icon, but the
+banner's photographic band makes the JPEG the smaller file now (106 KB vs
+346 KB) — either is far under Etsy's 1 MB limit, use whichever you prefer.
+Upload is manual in Shop Manager — not an API write, so nothing publishes
+without you doing it.
+
+## GL-10d — the banner now carries a product-imagery band
+
+The big banner's lockup (badge + "Photo Art" + tagline) moved off centre to
+`LOCKUP_CX = 450` (see `banner.py`) to make room for a band of three
+composited mockup renders on the right, cover-cropped from
+`outputs/gl19_m1/` — the deterministic, owner-reviewed pool from GL-19b, not
+a new generation. Current picks: `flat_console_vase.png`,
+`lifestyle_easel_shelf.png`, `lifestyle_floor_terracotta.png`, all the same
+approved wildflower artwork in different hand-authored scenes. Swap the
+`BAND_IMAGES` list in `banner.py` to change them; nothing generative touches
+the shipped pixels, so the build stays reproducible.
+
+**The mini banner (`qhoto-shop-banner-mini-1600x213.png`) is unchanged and
+stays type-led — no band.** At 213 px tall a product band isn't legible;
+this is a deliberate scope decision, not an oversight.
+
+**The tagline (`ART · PRINTED TO ORDER`) is unchanged too.** It predates the
+storefront checklist's shop tagline; they're different surfaces and the
+lockup wasn't crowded enough by the band to force dropping it.
+
+**The wordmark spelling is still "Qhoto Art"** (badge-as-Q + "hoto Art" in
+Fraunces), inherited from GL-10a, not re-decided here — all *copy* uses
+`QhotoArt`, but the wordmark's letterspacing question is separate and was
+already settled.
+
+### `etsy-banner.png` / `shop_icon.jpg` — retired
+
+Both were untracked, off-system files that predated GL-10a and were never
+produced by `build_final.py`. Reasons they're retired, not just superseded:
+`etsy-banner.png` measured 1600×896 (1,497.5 KB) — a size matching no
+documented Etsy banner format — and carried a visible garbled-text
+generation artifact together with a promise mismatch (it didn't depict what
+the shop actually sells). Do not resurrect them from the folder; the
+current pair above is the one to upload.
 
 ## Locked decisions
 
@@ -65,17 +104,35 @@ simply never been tested at avatar size. Worth fixing for Qrchard too.
 
 ```
 python3 build_final.py     # writes all deliverables (GL10A_OUT=<dir>)
-python3 verify.py .        # 27 assertions: dimensions, weight, exact hexes,
-                           # circle-crop safety, banner safe zone, legibility
+python3 verify.py .        # 36 assertions across 20 check() call sites:
+                           # dimensions+weight+no-alpha (3 x 5 files = 15),
+                           # palette (5), circle-crop (3), lockup safe zone
+                           # (4), imagery band (4, GL-10d), legibility (5 x
+                           # 5 downscales). Count executed assertions, not
+                           # call sites — the dimensions/legibility blocks
+                           # each loop, so grepping `check(` undercounts.
 ```
 
 Requires `cairosvg`, `numpy`, `Pillow`, and the bundled `fonts/` (Fraunces
 400/500-italic/600 + Inter 400/500/600, converted from the Google Fonts woff2
-originals via `@fontsource`).
+originals via `@fontsource`). `cairosvg` needs a native `libcairo-2.dll` on
+Windows — it isn't bundled by pip; install the GTK3 runtime (e.g.
+`winget install tschoonj.GTKForWindows`) and put its `bin/` on `PATH`.
 
 Downsampling uses 4× supersample + area-average (`Image.BOX`), not LANCZOS —
 LANCZOS ringing pushed edge pixels to `#FFF6E8`, breaking the exact-palette
-requirement. `verify.py` asserts this and will catch a regression.
+requirement. `verify.py` asserts this and will catch a regression. This
+still governs the flat vector art (badge, ground, type); the imagery band's
+product photos are cover-cropped and resized with `Image.LANCZOS` instead —
+correct for photographic content, and outside what that rule protects.
+
+**Palette and lockup safe-zone checks are region-scoped (GL-10d), not
+global.** `verify.py`'s brightest/greenest-pixel and content-bbox/centroid
+checks now search only `banner.LOCKUP_ZONE` — a global search breaks the
+moment a photograph is in frame (a window highlight out-brightens Bone, a
+botanical print out-greens Pine). `LOCKUP_ZONE`, `LOCKUP_CX`, and `BAND_ZONE`
+live once in `banner.py` and are imported by `verify.py`, so the two can't
+drift apart.
 
 ## Deferred (not in GL-10a)
 

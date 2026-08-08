@@ -34,9 +34,10 @@ def build():
     banner.icon(p("qhoto-shop-icon-500.png"), size=500, geom=G,
                 ring=BONE, handle=BONE, ground=PINE, fill=0.70)
 
-    # 2. big banner — 1600x400
+    # 2. big banner — 1600x400, product-imagery band (GL-10d)
     banner.banner(p("qhoto-shop-banner-1600x400.png"), W=1600, H=400, geom=G,
-                  ring=PINE, handle=BONE, base_frac=0.485, tag_frac=0.660)
+                  ring=PINE, handle=BONE, base_frac=0.485, tag_frac=0.660,
+                  lockup_cx=banner.LOCKUP_CX, band_images=banner.BAND_IMAGES)
 
     # 3. mini banner — 1600x213 (optional layout)
     banner.banner(p("qhoto-shop-banner-mini-1600x213.png"), W=1600, H=213, geom=G,
