@@ -54,3 +54,38 @@ branch already; one is open, deliberately left for later.
    near-duplicate candidates for the same 6 event niches. Not soak-breaking,
    but worth a dedup pass before this is trusted to run unattended for
    longer stretches.
+
+4. **Telegram button taps silently dropped, root cause unknown** (found
+   2026-08-08, unresolved). Owner reported tapping approve/reject on 7
+   `pending_review` primary groups (candidates 48, 49, 55, 57, 58, 59, 60);
+   only 3 (48, 49, 55) ever produced a `telegram_events_log` row. The owner
+   re-tapped the remaining 4 explicitly to test - this was their **third**
+   attempt on those specific buttons, not their first - and only that third
+   attempt was captured (one via a manual `run_hourly.py` invocation, three
+   more via a second manual invocation). The first two rounds of taps left
+   **zero trace** in `telegram_events_log`, not even a "discarded" row.
+
+   Code review found no logic path that explains this: `set_telegram_offset`
+   only advances past `update_id`s the loop actually iterated;
+   `resolve_callback` only returns `None` (silent, unlogged skip) for
+   updates with no `callback_query` at all, which a real button tap always
+   has; every other path (wrong admin, stale message match, processing
+   exception) logs an explicit row. So either Telegram never delivered
+   those two earlier rounds of `callback_query` updates to `getUpdates` at
+   all, or something outside the reviewed code path is consuming/discarding
+   them before `resolve_callback` ever sees them. **Do not repeat the
+   "they probably weren't actually tapped" explanation - the owner has
+   directly contradicted it.** Also worth noting: Telegram's inline buttons
+   never visually change after a tap (no greyed-out/disabled/spinner
+   state), which is a separate, real UX gap - it made it hard for the owner
+   to tell whether an earlier tap had registered at all, but it is not
+   itself the cause of the drop (the DB evidence shows the tap truly never
+   arrived, not just that it looked unconfirmed).
+
+   Not investigated further yet: whether this correlates with manual
+   `run_hourly.py` invocations racing real Task-Scheduler-fired runs
+   during today's testing (several manual runs happened outside the
+   normal cadence while debugging other findings in this same session).
+   Needs reproduction with instrumentation on the raw `getUpdates` response
+   before a real fix can be attempted - owner decision 2026-08-08: log and
+   continue the soak, revisit if it recurs.
