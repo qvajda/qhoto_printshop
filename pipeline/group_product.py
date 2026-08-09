@@ -468,8 +468,16 @@ def create_candidate_gelato_product(conn, candidate_id: int, candidate: dict, st
         }
 
         def _image_url_for(row):
+            # GL-48: NOT gated on live mode. A dry run that takes a different branch
+            # from live is not a rehearsal, it is a different program - the old
+            # `and config.is_live_mode("GELATO")` meant every dry run submitted the
+            # uncropped master, so the two-night soak was structurally incapable of
+            # observing the crop path at all. Without R2 the crop's durable_url is a
+            # local filesystem path; that is still the right URL to hand over, because
+            # create_product_from_template's non-http(s) guard then fails loud on a
+            # live call and returns before any guard on a dry-run one.
             crop = crops.get(row["group_type"])
-            if crop is not None and config.is_live_mode("GELATO"):
+            if crop is not None:
                 return crop["durable_url"]
             return candidate["base_image_url"]
 

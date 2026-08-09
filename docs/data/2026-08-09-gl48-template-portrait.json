@@ -1,0 +1,134 @@
+{
+  "id": "23444c3a-c0ab-4a82-b6f7-44fb03a6607d",
+  "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+  "templateName": "Vertical Poster POD",
+  "title": "Premium Matte Paper Poster",
+  "description": "Our premium matte paper is heavier-weight, white, and features a smooth, uncoated finish that feels luxuriously soft to the touch:\n\n    Paper Finishing: Matte, smooth, non-reflective surface.\n    Paper Weight: 200 gsm (80 lb), thickness: 0.26 mm (10.3 mils).\n    Sustainable Paper: FSC-certified or equivalent paper for sustainability.\n    Available Sizes: 29 sizes in inches (US&amp;CA) and cms (rest of the world).\n\nLearn about paper types and their unique textures and finishes here.\nNo minimum orders, printed and shipped on demand.",
+  "productType": null,
+  "vendor": null,
+  "previewUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/6c49a531-4d02-4e30-8e6a-cadd61896c5c/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175823Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=86936fcd7efb8607f0207ab1f8bd3ce8997fedfe1b5f73f59ee72ffaac72a4e0",
+  "variants": [
+    {
+      "id": "91514a4b-202a-4a1d-b487-aee90c57e960",
+      "title": "13x18 cm / 5x7\u2033 - Vertical",
+      "productUid": "flat_130x180-mm-5r_200-gsm-80lb-uncoated_4-0_ver",
+      "variantOptions": [
+        {
+          "name": "Size",
+          "value": "13x18 cm / 5x7\u2033"
+        }
+      ],
+      "imagePlaceholders": [
+        {
+          "name": "011_mt_sunday_brook.JPG",
+          "height": 188,
+          "width": 141,
+          "printArea": "1"
+        }
+      ],
+      "textPlaceholders": []
+    },
+    {
+      "id": "be74451a-ff36-4108-9e8a-bc80cbb08b83",
+      "title": "25x60 cm / 10x24\u2033 - Vertical",
+      "productUid": "flat_250x600-mm-10x24-inch_200-gsm-80lb-uncoated_4-0_ver",
+      "variantOptions": [
+        {
+          "name": "Size",
+          "value": "25x60 cm / 10x24\u2033"
+        }
+      ],
+      "imagePlaceholders": [
+        {
+          "name": "004_doorframe_bottles_madeira_color.JPG",
+          "height": 608,
+          "width": 405.2442882249,
+          "printArea": "1"
+        }
+      ],
+      "textPlaceholders": []
+    },
+    {
+      "id": "7965e259-d5bd-404f-ac7f-ddcb422eccf6",
+      "title": "A2 (42 x 59.4  cm) - Vertical",
+      "productUid": "flat_a2_200-gsm-80lb-uncoated_4-0_ver",
+      "variantOptions": [
+        {
+          "name": "Size",
+          "value": "A2 (42 x 59.4  cm)"
+        }
+      ],
+      "imagePlaceholders": [
+        {
+          "name": "003_flower_in_stream_madeira_color.JPG",
+          "height": 648.2667844524,
+          "width": 432.1778563017,
+          "printArea": "1"
+        }
+      ],
+      "textPlaceholders": []
+    },
+    {
+      "id": "ffcd60b8-b32a-4535-85cb-f4af77938e90",
+      "title": "A1 (59.4 x 84.1  cm) - Vertical",
+      "productUid": "flat_a1_200-gsm-80lb-uncoated_4-0_ver",
+      "variantOptions": [
+        {
+          "name": "Size",
+          "value": "A1 (59.4 x 84.1  cm)"
+        }
+      ],
+      "imagePlaceholders": [
+        {
+          "name": "003_flower_in_stream_madeira_color.JPG",
+          "height": 914.2500000001,
+          "width": 609.5000000002,
+          "printArea": "1"
+        }
+      ],
+      "textPlaceholders": []
+    },
+    {
+      "id": "a55fef92-c197-4ac1-b4e5-e0a41a805011",
+      "title": "21x29.7 cm / 8x12\" - Vertical",
+      "productUid": "flat_a4-8x12-inch_200-gsm-80lb-uncoated_4-0_ver",
+      "variantOptions": [
+        {
+          "name": "Size",
+          "value": "21x29.7 cm / 8x12\""
+        }
+      ],
+      "imagePlaceholders": [
+        {
+          "name": "003_flower_in_stream_madeira_color.JPG",
+          "height": 328.4408127209,
+          "width": 218.960541814,
+          "printArea": "1"
+        }
+      ],
+      "textPlaceholders": []
+    },
+    {
+      "id": "5c1ef62e-432d-42c4-8c58-43c7454df43e",
+      "title": "A3 (29.7 x 42  cm) - Vertical",
+      "productUid": "flat_a3_200-gsm-80lb-uncoated_4-0_ver",
+      "variantOptions": [
+        {
+          "name": "Size",
+          "value": "A3 (29.7 x 42  cm)"
+        }
+      ],
+      "imagePlaceholders": [
+        {
+          "name": "003_flower_in_stream_madeira_color.JPG",
+          "height": 460.8939929329,
+          "width": 307.2626619553,
+          "printArea": "1"
+        }
+      ],
+      "textPlaceholders": []
+    }
+  ],
+  "createdAt": "2026-07-15T17:09:17+0000",
+  "updatedAt": "2026-08-09T17:08:35+0000"
+}
