@@ -558,6 +558,36 @@ def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
     ]
 
 
+def test_dry_run_create_sends_the_same_hosted_print_crop_as_a_live_one(tmp_path):
+    # GL-48: the crop URL used to be gated on GELATO live mode, so a dry run submitted
+    # the uncropped master and never exercised the crop path - which is why two soak
+    # nights could not observe the 10x24 letterbox defect. Dry-run must change what the
+    # call DOES, never which branch reaches it.
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path, secondary="10x24", secondary_sizes=("10x24",))
+    r2_env = {
+        "R2_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "key", "R2_SECRET_ACCESS_KEY": "secret",
+        "R2_BUCKET": "bucket", "R2_ENDPOINT": "https://acct.r2.cloudflarestorage.com",
+        "R2_PUBLIC_BASE_URL": "https://cdn.example.com",
+    }
+    candidate_id = ctx["candidate_id"]
+
+    with patch("pipeline.config.is_live_mode", return_value=False), \
+         patch.dict("os.environ", r2_env), \
+         patch("pipeline.group_product.gelato_client.create_product_from_template") as mock_create, \
+         patch("pipeline.artwork_store.http.put_bytes"):
+        mock_create.return_value = DRY
+        group_product.create_candidate_gelato_product(
+            conn, candidate_id, ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    assert [v["image_url"] for v in mock_create.call_args[0][1]] == [
+        ctx["candidate"]["base_image_url"],
+        f"https://cdn.example.com/base/{candidate_id}_10x24_crop.png",
+    ]
+
+
 def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(tmp_path, monkeypatch):
     # If R2 isn't configured, persist_group_crop's durable_url is a local filesystem
     # path - the create-path's non-http(s) guard must reject it, not silently fall back
