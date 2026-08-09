@@ -1,0 +1,413 @@
+{
+  "id": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+  "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+  "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+  "externalId": "4549960823",
+  "title": "Mid-Century Line Art Botanical Poster | Minimalist Printable Wall Art | Retro Abstract Plant Print | Modern Home Decor",
+  "description": "Our premium matte paper is heavier-weight, white, and features a smooth, uncoated finish that feels luxuriously soft to the touch:\n    Paper Finishing: Matte, smooth, non-reflective surface.\n    Paper Weight: 200 gsm (80 lb), thickness: 0.26 mm (10.3 mils).\n    Sustainable Paper: FSC-certified or equivalent paper for sustainability.\n    Available Sizes: 29 sizes in inches (US&amp;CA) and cms (rest of the world).\nLearn about paper types and their unique textures and finishes here.\nNo minimum orders, printed and shipped on demand.",
+  "previewUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/73a0c50a-e6a8-4d2b-9570-e5e167cfcd5f/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=a0818d260dad5e7eaed2e97c72bc40a01bb64efa5d81f3d01aad597227000e48",
+  "externalPreviewUrl": "https://i.etsystatic.com/63060058/r/il/9fd50d/8387709363/il_fullxfull.8387709363_5bbx.jpg",
+  "externalThumbnailUrl": "https://i.etsystatic.com/63060058/r/il/9fd50d/8387709363/il_170x135.8387709363_5bbx.jpg",
+  "isReadyToPublish": true,
+  "publishedAt": "2026-08-04T21:14:44+00:00",
+  "createdAt": "2026-08-04T20:26:29+0000",
+  "updatedAt": "2026-08-04T21:14:44+0000",
+  "previewFileType": "jpeg",
+  "productVariantPreviewScene": "8f9a231d-1f7e-4866-89ee-56ec730a8d97",
+  "variants": [
+    {
+      "id": "628a499a-3538-4a36-806b-45237b33fd08",
+      "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "title": "25x60 cm / 10x24\u2033 - Vertical",
+      "externalId": "33361050827",
+      "connectionStatus": "connected",
+      "isHidden": false,
+      "productUid": "flat_250x600-mm-10x24-inch_200-gsm-80lb-uncoated_4-0_ver"
+    },
+    {
+      "id": "2cc29800-d948-4463-9520-b0ddef30bd00",
+      "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "title": "A3 (29.7 x 42  cm) - Vertical",
+      "externalId": "33361050823",
+      "connectionStatus": "connected",
+      "isHidden": false,
+      "productUid": "flat_a3_200-gsm-80lb-uncoated_4-0_ver"
+    },
+    {
+      "id": "66f167c7-2e59-4e6b-97b5-23cbab1d6148",
+      "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "title": "A2 (42 x 59.4  cm) - Vertical",
+      "externalId": "33707376860",
+      "connectionStatus": "connected",
+      "isHidden": false,
+      "productUid": "flat_a2_200-gsm-80lb-uncoated_4-0_ver"
+    },
+    {
+      "id": "1895626d-a70e-4aef-8b78-7004c4b53347",
+      "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "title": "13x18 cm / 5x7\u2033 - Vertical",
+      "externalId": "33707376866",
+      "connectionStatus": "connected",
+      "isHidden": false,
+      "productUid": "flat_130x180-mm-5r_200-gsm-80lb-uncoated_4-0_ver"
+    },
+    {
+      "id": "0d4c0bbd-19cb-48fe-af51-f2bd32f4d2d7",
+      "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "title": "21x29.7 cm / 8x12\" - Vertical",
+      "externalId": "33361050829",
+      "connectionStatus": "connected",
+      "isHidden": false,
+      "productUid": "flat_a4-8x12-inch_200-gsm-80lb-uncoated_4-0_ver"
+    },
+    {
+      "id": "9d49ba02-7a4b-47be-9a89-b3b3658d9a7c",
+      "clientId": "99c49810-f518-4c46-948f-73d7d6c070a0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "title": "A1 (59.4 x 84.1  cm) - Vertical",
+      "externalId": "33361050821",
+      "connectionStatus": "connected",
+      "isHidden": false,
+      "productUid": "flat_a1_200-gsm-80lb-uncoated_4-0_ver"
+    }
+  ],
+  "productVariantOptions": [
+    {
+      "name": "Size",
+      "values": [
+        "13x18 cm / 5x7\u2033",
+        "21x29.7 cm / 8x12\"",
+        "25x60 cm / 10x24\u2033",
+        "A3 (29.7 x 42  cm)",
+        "A2 (42 x 59.4  cm)",
+        "A1 (59.4 x 84.1  cm)"
+      ]
+    }
+  ],
+  "collectionsIds": [],
+  "tags": [],
+  "status": "active",
+  "productImages": [
+    {
+      "id": "73a0c50a-e6a8-4d2b-9570-e5e167cfcd5f",
+      "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "productVariantIds": [
+        "9d49ba02-7a4b-47be-9a89-b3b3658d9a7c"
+      ],
+      "fileUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/73a0c50a-e6a8-4d2b-9570-e5e167cfcd5f/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=a0818d260dad5e7eaed2e97c72bc40a01bb64efa5d81f3d01aad597227000e48",
+      "isPrimary": true,
+      "status": "published",
+      "createdAt": "2026-08-04T21:13:33+0000",
+      "updatedAt": "2026-08-04T21:13:40+0000",
+      "metadata": [],
+      "skipPublishing": false
+    },
+    {
+      "id": "1c87d9cc-789a-4fd0-8b7a-484162aaed2e",
+      "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "productVariantIds": [
+        "1895626d-a70e-4aef-8b78-7004c4b53347"
+      ],
+      "fileUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/1c87d9cc-789a-4fd0-8b7a-484162aaed2e/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=b08e7dc6840b6c06e849ba9bff868182c0d626d129ec72d0d2b967323f19101c",
+      "isPrimary": false,
+      "status": "published",
+      "createdAt": "2026-08-04T21:13:32+0000",
+      "updatedAt": "2026-08-04T21:13:46+0000",
+      "metadata": [],
+      "skipPublishing": false
+    },
+    {
+      "id": "1b399868-e3c4-48e3-ac24-1f6ee3e0f49f",
+      "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "productVariantIds": [
+        "628a499a-3538-4a36-806b-45237b33fd08"
+      ],
+      "fileUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/1b399868-e3c4-48e3-ac24-1f6ee3e0f49f/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=7f4aee05dcae28f44a4b9513aef99bcd29d7e57938a8d387dfe1529749cb67e9",
+      "isPrimary": false,
+      "status": "published",
+      "createdAt": "2026-08-04T21:13:33+0000",
+      "updatedAt": "2026-08-04T21:13:46+0000",
+      "metadata": [],
+      "skipPublishing": false
+    },
+    {
+      "id": "0aad56c4-fbc0-4386-9bfc-8c0ca270364f",
+      "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "productVariantIds": [
+        "66f167c7-2e59-4e6b-97b5-23cbab1d6148"
+      ],
+      "fileUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/0aad56c4-fbc0-4386-9bfc-8c0ca270364f/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=5673720581814c13d33d6f54be8c35c84caf1068edbe25ad408fb1f545d6fffd",
+      "isPrimary": false,
+      "status": "published",
+      "createdAt": "2026-08-04T21:13:34+0000",
+      "updatedAt": "2026-08-04T21:13:46+0000",
+      "metadata": [],
+      "skipPublishing": false
+    },
+    {
+      "id": "884e026d-166f-4180-bcf0-21ca0d04bccd",
+      "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "productVariantIds": [
+        "2cc29800-d948-4463-9520-b0ddef30bd00"
+      ],
+      "fileUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/884e026d-166f-4180-bcf0-21ca0d04bccd/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=bb189fbc22df5a1a549fdf01d5fdf262d4a59e5485855e0eae68faed6fd25bfd",
+      "isPrimary": false,
+      "status": "published",
+      "createdAt": "2026-08-04T21:13:35+0000",
+      "updatedAt": "2026-08-04T21:13:46+0000",
+      "metadata": [],
+      "skipPublishing": false
+    },
+    {
+      "id": "7d71c7ca-cf5e-495e-8d58-d5480dc1ce49",
+      "storeId": "a2dab3b5-b2ed-4d3e-95c7-615ad0d2f48a",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "productVariantIds": [
+        "0d4c0bbd-19cb-48fe-af51-f2bd32f4d2d7"
+      ],
+      "fileUrl": "https://gelato-api-live.s3.eu-west-1.amazonaws.com/ecommerce/store_product_image/7d71c7ca-cf5e-495e-8d58-d5480dc1ce49/preview?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3QM3COBP5QN4IUGA%2F20260809%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260809T175543Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86400&X-Amz-Signature=f7ca19f5bde47cc1ef2a2035ec35288d9adbe450ac60c7e4aff43aa944d99c80",
+      "isPrimary": false,
+      "status": "published",
+      "createdAt": "2026-08-04T21:13:36+0000",
+      "updatedAt": "2026-08-04T21:13:46+0000",
+      "metadata": [],
+      "skipPublishing": false
+    }
+  ],
+  "metadata": [
+    {
+      "id": "827bc208-4994-4871-a8e3-9c993e6b84ab",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "previewFileType",
+      "value": "jpeg",
+      "isExternal": false
+    },
+    {
+      "id": "a90e43e3-dfa7-4048-b169-ae4de3dbc53f",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "previewScenes",
+      "value": "[\"8f9a231d-1f7e-4866-89ee-56ec730a8d97\"]",
+      "isExternal": false
+    },
+    {
+      "id": "a75a921f-e37c-4493-95e1-d1e38069938b",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "videoMockups",
+      "value": "[]",
+      "isExternal": false
+    },
+    {
+      "id": "b123f110-049c-4c46-9dcf-33b6a1292c04",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "primaryPreviewScene",
+      "value": "8f9a231d-1f7e-4866-89ee-56ec730a8d97",
+      "isExternal": false
+    },
+    {
+      "id": "6b75da5c-a994-4a3a-b3fe-9f3e8e271391",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "primaryPreviewProductVariantKey",
+      "value": "flat_a1_200-gsm-80lb-uncoated_4-0_ver",
+      "isExternal": false
+    },
+    {
+      "id": "639b6842-c7ae-4001-99a3-37a8f65e8f70",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "attachSizeGuideCmTable",
+      "value": "true",
+      "isExternal": false
+    },
+    {
+      "id": "f21d4f00-93bf-482f-a0f9-fea9214765d1",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "attachSizeGuideInchTable",
+      "value": "true",
+      "isExternal": false
+    },
+    {
+      "id": "0d245f91-2313-4110-a026-80721c11491e",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "attachProductCareInstructions",
+      "value": "true",
+      "isExternal": false
+    },
+    {
+      "id": "cacb8680-37ec-4838-a906-9ee3618114c0",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "skipMockups",
+      "value": "false",
+      "isExternal": false
+    },
+    {
+      "id": "baaab8ae-5289-4e8c-8a19-83c6b3be0101",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "usedStandardMockup",
+      "value": "1",
+      "isExternal": false
+    },
+    {
+      "id": "e68df24e-48bd-4593-b2b1-5cba9b1e0445",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "sanityProductId",
+      "value": "premium-uncoated-paper-posters",
+      "isExternal": false
+    },
+    {
+      "id": "bc5dd99f-59e5-4b40-b2b0-aa833f81f984",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "productVariantOptions",
+      "value": "[{\"name\":\"Orientation\",\"values\":[\"ver\"]},{\"name\":\"FormatSize\",\"values\":[\"13x18 cm / 5x7\u2033\",\"A4 21x29.7 cm / 8x12\u2033\",\"25x60 cm / 10x24\u2033\",\"A3 (29.7 x 42  cm)\",\"A2 (42 x 59.4  cm)\",\"A1 (59.4 x 84.1  cm)\"]}]",
+      "isExternal": false
+    },
+    {
+      "id": "d4b87346-94ea-4bf5-b840-a34166441fd4",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "publishScopes",
+      "value": "[\"product\",\"variants\",\"images\",\"videos\",\"prices\"]",
+      "isExternal": false
+    },
+    {
+      "id": "79288124-b166-4252-9da4-1a7f27b35aaa",
+      "productId": "5e15c0b4-dfa4-4e82-8c9a-1b0ec45b9d41",
+      "variantId": null,
+      "imageId": null,
+      "videoId": null,
+      "key": "publishMode",
+      "value": "create_product",
+      "isExternal": false
+    }
+  ],
+  "handle": null,
+  "publishingErrorCode": null,
+  "publishingDetailsFlags": [],
+  "hasDraft": false,
+  "isFreeShipping": false,
+  "publishingErrorDetails": null,
+  "productVideos": [],
+  "templateName": "",
+  "parentTemplateId": "",
+  "priceUpdatedAt": null,
+  "productVariantAttributes": [
+    {
+      "name": "Size",
+      "values": [
+        {
+          "value": "13x18 cm / 5x7\u2033",
+          "keys": [
+            {
+              "name": "formatsize",
+              "value": "13x18 cm / 5x7\u2033",
+              "type": "physical"
+            }
+          ]
+        },
+        {
+          "value": "21x29.7 cm / 8x12\"",
+          "keys": [
+            {
+              "name": "formatsize",
+              "value": "A4 21x29.7 cm / 8x12\u2033",
+              "type": "physical"
+            }
+          ]
+        },
+        {
+          "value": "25x60 cm / 10x24\u2033",
+          "keys": [
+            {
+              "name": "formatsize",
+              "value": "25x60 cm / 10x24\u2033",
+              "type": "physical"
+            }
+          ]
+        },
+        {
+          "value": "A3 (29.7 x 42  cm)",
+          "keys": [
+            {
+              "name": "formatsize",
+              "value": "A3 (29.7 x 42  cm)",
+              "type": "physical"
+            }
+          ]
+        },
+        {
+          "value": "A2 (42 x 59.4  cm)",
+          "keys": [
+            {
+              "name": "formatsize",
+              "value": "A2 (42 x 59.4  cm)",
+              "type": "physical"
+            }
+          ]
+        },
+        {
+          "value": "A1 (59.4 x 84.1  cm)",
+          "keys": [
+            {
+              "name": "formatsize",
+              "value": "A1 (59.4 x 84.1  cm)",
+              "type": "physical"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "personalizationSettings": "{\"isPersonalizable\":null,\"personalizationCharCountMax\":256,\"personalizationInstructions\":null,\"isPersonalizationRequired\":false}",
+  "productType": null,
+  "vendor": null,
+  "hasPersonalizableVariants": false,
+  "hasCustomSizeVariants": false,
+  "errors": [],
+  "publishingProgress": null
+}

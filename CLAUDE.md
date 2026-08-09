@@ -274,3 +274,17 @@ price table and per-size notes; prices below are final, not placeholders)
 - Before the first real M1 manual run: at minimum, the 8x12″ (primary)
   templates must be real. Before the M1 multi-size fan-out test: at
   minimum, one secondary size's templates must also be real.
+- **Dry-run changes what a call *does*, never which code path reaches it.**
+  A dry run that takes a different branch from live is not a rehearsal, it is
+  a different program — and it proves nothing about the branch it skipped.
+  GL-48: the 10x24 print crop was gated on `GELATO_LIVE_MODE`, so two soak
+  nights submitted the uncropped master and were structurally incapable of
+  observing the defect they were meant to catch. Gate the *side effect* (the
+  HTTP call, the write), not the value being computed.
+- **Verify a Gelato integration by measurement, not by status code.** GL-22a
+  Q2 proved Gelato returns `200` for changes it silently drops. After any live
+  create, run `python scripts/gelato_template_check.py <product_id>` — it
+  diffs `static_config.json` against the live templates and prints the placed
+  artwork aspect per variant. Note that `productImages[]` are 1000×1000 scene
+  previews, **not** the submitted print file: the file's own aspect is not
+  readable from the API, only the rectangle the artwork occupies on the paper.
