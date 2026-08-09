@@ -516,3 +516,50 @@ scene set instead of whatever Gelato happens to render.
     `group_product.py`) is deliberately left unchanged — the Addendum flags
     relaxing it (since Gelato's own images are no longer needed) as a
     separate, verify-first follow-up, not part of this build.
+
+---
+
+# 2026-08-06 — GL-11: Developer Mode reversion requested
+
+**Cause:** owner action, per the go-live plan's GL-11 row (a manual item on
+external lead time, unblocked since GL-13 passed on 2026-08-03).
+
+- **Email sent to `developer@etsy.com` on 2026-08-06** requesting that
+  Developer Mode be disabled for the shop. Draft and send-notes:
+  `docs/2026-08-06-gl11-developer-mode-email-draft.md`.
+- Recorded here because **GL-11's clock starts at the send**, and until now
+  the plan had no record of when that was. Reverting Developer Mode is not
+  self-service; it requires Etsy's approval on Etsy's schedule (SPEC v4.11
+  §5, and the 2026-07 entry that first noted the shop was switched in).
+- **Not yet reverted** — this entry records the request, not the outcome.
+  GL-11 stays open until the shop is confirmed out of Developer Mode.
+- Follow-up if no reply in ~10 business days: reply in the same thread rather
+  than opening a new one.
+- **One qualification on the sent text:** it states the test listings have
+  been deleted. Candidates 40/41's listings are gone; **candidate 42's draft
+  (`4549960823`) was deliberately still live at send time**, kept as the
+  negative control for GL-36's 404-reconcile on the GL-7 soak's live night.
+  It is to be deleted immediately after that run.
+- Sent in parallel with the GL-7 two-night soak, deliberately: the lead time
+  is the only thing on this project that cannot be compressed by working
+  harder, so it runs alongside rather than after.
+
+---
+
+# 2026-08-08 — GL-12 deferred to post-launch
+
+**Cause:** owner check of the actual registration flow, ahead of picking it
+up as a "quick parallel task."
+
+- Google Trends API alpha access is not a click-apply form. Registration
+  sits behind standing up a Google Cloud Console project first — a GCP
+  project, Workspace linkage, and billing attached to it — before the
+  application itself can even be submitted. That's real setup cost, not the
+  zero-cost, fire-and-forget item it was filed as (SPEC §7, CLAUDE.md's Track
+  D).
+- Moved off the go-live board: `.qops/issues.md` GL-12's milestone changed
+  `Go-live` → `Post-launch`; `docs/2026-07-22-go-live-plan-of-attack.md`'s
+  GL-12 row annotated and duplicated into the Post-launch table (row 1k);
+  removed from Track D's "now" list.
+- No code or spec changes — this is a scheduling decision only. Nothing else
+  on the go-live path depends on GL-12.

@@ -138,17 +138,28 @@ def test_get_primary_gallery_returns_empty_list_when_no_gallery(tmp_path):
     conn.close()
 
 
-def test_build_draft_prompt_includes_niche_disclosure_and_limits():
+def test_build_draft_prompt_includes_niche_and_limits():
     candidate = {"niche": "monstera line art"}
 
     prompt = compliance_draft.build_draft_prompt(candidate, ["flat_mockup", "lifestyle"])
 
     assert "monstera line art" in prompt
-    assert compliance_draft.DISCLOSURE_TEXT in prompt
     assert str(compliance_draft.MAX_TITLE_LENGTH) in prompt
     assert "13" in prompt
     assert "20" in prompt
     assert "flat_mockup, lifestyle" in prompt
+
+
+def test_build_draft_prompt_forbids_a_prose_disclosure(monkeypatch):
+    # GL-37 (2026-08-06): the AI disclosure moved off the description entirely and
+    # onto Etsy's structured "tools used" tick, which the owner sets by hand at
+    # publish. The prompt must actively tell the writer NOT to add a disclosure
+    # sentence - silence would let the model reintroduce one on its own, which is
+    # how the old text would creep back without anyone deciding to bring it back.
+    prompt = compliance_draft.build_draft_prompt({"niche": "fern study"}, ["flat_mockup"])
+
+    assert "Do NOT include any AI-disclosure" in prompt
+    assert compliance_draft.DISCLOSURE_TEXT == ""
 
 
 def test_generate_draft_text_returns_parsed_draft():
@@ -224,7 +235,10 @@ def test_write_listing_texts_inserts_row_with_json_encoded_lists(tmp_path):
     assert row["title"] == "Monstera Line Art Botanical Print"
     assert _json.loads(row["tags"]) == ["botanical", "wall art"]
     assert row["description"] == "A minimalist botanical print."
-    assert row["disclosure_text"] == compliance_draft.DISCLOSURE_TEXT
+    # Retained NOT NULL column, deliberately written empty since GL-37 - see the
+    # comment on DISCLOSURE_TEXT. Asserted as "" rather than against the constant
+    # so this test fails loudly if a prose disclosure is ever reintroduced.
+    assert row["disclosure_text"] == ""
     assert row["who_made"] == "i_did"
     assert _json.loads(row["production_partner_ids"]) == [5717252]
     assert row["taxonomy_id"] == "1027"

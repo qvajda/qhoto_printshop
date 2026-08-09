@@ -220,7 +220,38 @@ price table and per-size notes; prices below are final, not placeholders)
   disclosure stays via `who_made: i_did` + the written description text;
   the "What tools are used?" question is not API-settable (keep the
   description disclosure, don't drop it). Must be paired with
-  `is_supply: false` and `when_made: "made_to_order"`. Under v4.11 these are
+  `is_supply: false` and `when_made: "made_to_order"`.
+  **Re-verified 2026-08-06 (GL-37) — the answer stands, and now has a
+  tracking link and a consequence.** Both Creativity Standards questions —
+  "How does your shop produce this item?" (`production_process`) and "What
+  tools are used to make this item?" (`tools_used`, where "an AI generator"
+  lives) — are **absent from the v3 API entirely**: not on the listing
+  (verified by a full raw `GET /listings/{id}` dump on two live listings,
+  not a field-name grep), not among `taxonomy_id` 1027's 15 properties, and
+  **not settable as a shop-level default**. Upstream tracking:
+  **`etsy/open-api` GitHub Discussion #1630** (opened 2026-06-22, unactioned
+  as of 2026-08-06) requests exactly these two fields. Full evidence:
+  `docs/2026-08-06-gl37-findings.md`. **The operational consequence, which
+  matters more than the API answer:** the only way to set them is the web
+  listing editor, and **the editor's sole save action is "Activate with
+  changes" — there is no draft-save, so ticking the disclosure activates the
+  listing.** Owner decision 2026-08-06: **accept the manual per-listing
+  step — the owner is the publish gatekeeper, and ticks "an AI generator" as
+  part of the same editor save that takes the listing live.** This is the one
+  part of the pipeline that is not unattended, by Etsy's design and not ours.
+  **Two consequences that are now load-bearing, so do not undo either half
+  without re-reading the other:** (1) **the prose AI/production-partner
+  disclosure has been removed from listing descriptions**
+  (`compliance_draft.DISCLOSURE_TEXT` is `""` and the draft prompt forbids
+  reintroducing one) — that is only safe because the structured tick happens
+  at publish; and (2) **GL-29, programmatic draft→active activation, is
+  cancelled** (parked as GL-29b) — `etsy_client.update_listing_state` stays
+  `# DELIBERATELY UNWIRED` with its guard test intact. **Wiring up automated
+  activation while the description carries no disclosure would publish a
+  listing with neither the structured field nor the text.** If either half is
+  ever revisited, revisit both. Re-check quarterly (plan item GL-39) and start
+  from Discussion #1630 rather than re-deriving; if it ever looks shipped,
+  confirm with a full response dump, not a field lookup. Under v4.11 these are
   applied on the **listing patch** (`updateListing`), not at listing
   creation (Gelato creates the listing — see the integration constraint).
 - Etsy shop_section_id: **59380312** — manually created "Posters" section

@@ -5,11 +5,24 @@ import pipeline.anthropic_client as anthropic_client
 import pipeline.config as config
 
 
-DISCLOSURE_TEXT = (
-    "This design was created using AI image generation from the seller's own prompts, "
-    "then selected, edited, and prepared for print by the seller. Printed and shipped "
-    "by our production partner, Gelato."
-)
+# DISCLOSURE_TEXT removed 2026-08-06 (owner decision, GL-37). Both facts it
+# carried are disclosed structurally on the listing, not in prose:
+#   - AI generation -> the "What tools are used to make this item?" ->
+#     "an AI generator" tick, which is NOT API-settable (GL-37: absent from the
+#     listing, from taxonomy 1027's properties, and from any shop-level default;
+#     tracked upstream as etsy/open-api Discussion #1630). The owner sets it by
+#     hand in the web listing editor as part of the draft->publish action.
+#   - Gelato -> production_partner_ids, set on the listing patch and verified
+#     present live (GL-34).
+# THE PRECONDITION THIS RESTS ON: every listing is published by hand through
+# the editor, where the tick and the publish are the same save action. If a
+# listing is ever activated programmatically instead (the parked GL-29), it
+# would carry neither the structured tick nor this text - so re-read this
+# comment before wiring any automated activation.
+# The listing_texts.disclosure_text column is retained (NOT NULL) and written
+# empty rather than migrated away: dropping it means a table rebuild, and it
+# costs nothing to leave.
+DISCLOSURE_TEXT = ""
 
 MAX_TAGS = 13
 MAX_TAG_LENGTH = 20
@@ -18,9 +31,10 @@ MAX_TITLE_LENGTH = 140
 DRAFT_TEXT_PROMPT_TEMPLATE = (
     "You are writing an Etsy listing draft for an AI-generated botanical/minimalist wall "
     "art poster print, niche: {niche}. This listing must comply with Etsy's format limits: "
-    "the title must be at most {max_title_length} characters, there "
-    "must be at most 13 tags and each tag at most 20 characters, and the description must "
-    "mention the following AI disclosure: \"{disclosure}\"\n\n"
+    "the title must be at most {max_title_length} characters, and there "
+    "must be at most 13 tags and each tag at most 20 characters. Do NOT include any "
+    "AI-disclosure or production-partner sentence in the description - both are disclosed "
+    "through Etsy's own structured listing fields, not in prose.\n\n"
     "The product gallery has {image_count} images in this order: {image_types}. Write one "
     "short, descriptive alt text per image, in the same order, distinguishing a flat print "
     "mockup shot from a lifestyle/room-context shot.\n\n"
@@ -72,7 +86,6 @@ def get_primary_gallery(conn, candidate_id: int) -> list:
 def build_draft_prompt(candidate: dict, image_types: list) -> str:
     return DRAFT_TEXT_PROMPT_TEMPLATE.format(
         niche=candidate["niche"],
-        disclosure=DISCLOSURE_TEXT,
         image_count=len(image_types),
         image_types=", ".join(image_types),
         max_title_length=MAX_TITLE_LENGTH,
