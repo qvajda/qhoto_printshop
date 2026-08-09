@@ -10,6 +10,13 @@ import pipeline.config as config
 MASTER_ASPECT = 6656 / 9728   # db/base_artwork/39.png - the approved master
 
 
+@pytest.fixture(autouse=True)
+def allow_noncanonical_db(monkeypatch):
+    """GL-45: every test runs against a tmp_path database, which is by definition
+    not the canonical one. Tests that exercise the guard itself delete this."""
+    monkeypatch.setenv("QHOTO_ALLOW_NONCANONICAL_DB", "true")
+
+
 @pytest.fixture
 def stub_mockup_bundles(monkeypatch, tmp_path_factory):
     """Synthetic, aspect-correct scene bundles for the gallery-rendering tests.

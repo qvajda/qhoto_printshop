@@ -66,3 +66,6 @@ outputs/_f3_*.png
 outputs/gl6_p4a/
 outputs/gl6_p4a2/
 outputs/gl6_p4a3/
+
+# GL-45: raw getUpdates instrumentation (local evidence, not source)
+logs/

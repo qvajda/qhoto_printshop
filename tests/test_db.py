@@ -169,3 +169,75 @@ def test_candidates_accepts_compliance_failed_status(tmp_path):
     row = conn.execute("SELECT status FROM candidates WHERE id = 1").fetchone()
     assert row["status"] == "compliance_failed"
     conn.close()
+
+
+def _identified_db(tmp_path, name="qhoto.sqlite3"):
+    import migrate
+    db_path = tmp_path / name
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    conn.close()
+    migrate.migrate(db_path)
+    return db_path
+
+
+def test_assert_canonical_passes_for_the_file_that_recorded_its_identity(tmp_path, monkeypatch):
+    monkeypatch.delenv("QHOTO_ALLOW_NONCANONICAL_DB", raising=False)
+    conn = db.get_connection(_identified_db(tmp_path))
+
+    db.assert_canonical(conn)  # does not raise
+    conn.close()
+
+
+def test_assert_canonical_refuses_a_copy_of_the_canonical_database(tmp_path, monkeypatch):
+    # GL-45's root hazard: a run against a copy polls with the copy's offset,
+    # confirms the real pending updates (deleting them for every consumer) and
+    # writes the result where nobody reads it.
+    import shutil
+
+    monkeypatch.delenv("QHOTO_ALLOW_NONCANONICAL_DB", raising=False)
+    original = _identified_db(tmp_path)
+    copy_path = tmp_path / "throwaway.sqlite3"
+    shutil.copy(original, copy_path)
+    conn = db.get_connection(copy_path)
+
+    with pytest.raises(db.NonCanonicalDBError) as exc:
+        db.assert_canonical(conn)
+    assert "throwaway.sqlite3" in str(exc.value)
+    conn.close()
+
+
+def test_assert_canonical_refuses_a_database_with_no_identity_recorded(tmp_path, monkeypatch):
+    monkeypatch.delenv("QHOTO_ALLOW_NONCANONICAL_DB", raising=False)
+    conn = db.get_connection(tmp_path / "bare.sqlite3")
+    db.init_db(conn)
+
+    with pytest.raises(db.NonCanonicalDBError):
+        db.assert_canonical(conn)
+    conn.close()
+
+
+def test_assert_canonical_honours_the_explicit_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("QHOTO_ALLOW_NONCANONICAL_DB", "true")
+    conn = db.get_connection(tmp_path / "bare.sqlite3")
+    db.init_db(conn)
+
+    db.assert_canonical(conn)  # does not raise
+    conn.close()
+
+
+def test_bless_repoints_identity_after_a_deliberate_promote_and_swap(tmp_path, monkeypatch):
+    import shutil
+
+    import migrate_gl45_db_identity
+
+    monkeypatch.delenv("QHOTO_ALLOW_NONCANONICAL_DB", raising=False)
+    original = _identified_db(tmp_path)
+    promoted = tmp_path / "promoted.sqlite3"
+    shutil.copy(original, promoted)
+
+    migrate_gl45_db_identity.bless(promoted)
+
+    conn = db.get_connection(promoted)
+    db.assert_canonical(conn)  # does not raise
+    conn.close()

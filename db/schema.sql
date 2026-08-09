@@ -161,3 +161,12 @@ CREATE TABLE IF NOT EXISTS heartbeats (
   ok INTEGER NOT NULL,
   detail TEXT
 );
+
+-- GL-45: the absolute path this database considers itself to live at. Written
+-- by migrate_gl45_db_identity, re-pointed only by `migrate.py --bless`. A copy
+-- carries the original's path, which is what makes a run against a copy refuse
+-- to poll Telegram (one cursor per bot token, one offset row per file).
+CREATE TABLE IF NOT EXISTS db_identity (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  canonical_path TEXT NOT NULL
+);

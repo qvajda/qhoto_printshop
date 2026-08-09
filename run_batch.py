@@ -33,10 +33,6 @@ import pipeline.research as research
 import pipeline.telegram_client as telegram_client
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
-# Shared with run_hourly.py deliberately - see that file's comment. Same lock
-# file for both cadences is what guarantees only one process ever calls
-# Telegram getUpdates and neither cadence interleaves writes with the other.
-DEFAULT_LOCK_PATH = Path(__file__).resolve().parent / "db" / "gl7.lock"
 JOB_NAME = "batch"
 
 
@@ -85,7 +81,6 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         config.load_env()
 
     db_path = db_path or DEFAULT_DB_PATH
-    lock_path = lock_path or DEFAULT_LOCK_PATH
 
     # I2: TELEGRAM_ADMIN_CHAT_ID/TELEGRAM_BOT_TOKEN are resolved first and on
     # their own - if either is missing, no Telegram notification is possible,
@@ -97,6 +92,9 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     except config.MissingConfigError as exc:
         print(f"{JOB_NAME}: {exc}")
         return 1
+
+    # GL-45: shared with run_hourly.py, keyed on the bot token - see that file.
+    lock_path = lock_path or lock.token_lock_path(bot_token)
 
     try:
         replicate_api_token = config.require_env("REPLICATE_API_TOKEN")

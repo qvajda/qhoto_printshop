@@ -138,3 +138,40 @@ def test_bot_token_defaults_to_env_var(monkeypatch):
         telegram_client.send_message("123", "hi")
 
     assert "env-token" in captured["url"]
+
+
+def test_get_updates_asserts_allowed_updates_and_logs_the_raw_response(tmp_path):
+    # GL-45: Telegram keeps allowed_updates sticky from whatever last set it, so the
+    # property has to be asserted on every call rather than inherited. The raw
+    # response goes to a file, not the DB - a DB-write failure must not be able to
+    # hide the measurement that proves what Telegram did or did not send.
+    captured = {}
+    response = {"ok": True, "result": [{"update_id": 7}]}
+
+    def fake_send(request, timeout=30):
+        captured["body"] = json.loads(request.data)
+        return response
+
+    log_path = tmp_path / "logs" / "getupdates.log"
+    with patch("pipeline.telegram_client.http.send", side_effect=fake_send):
+        telegram_client.get_updates(offset=5, bot_token="test-token", raw_log_path=log_path)
+
+    assert captured["body"]["allowed_updates"] == ["message", "callback_query"]
+    assert captured["body"]["offset"] == 5
+    logged = json.loads(log_path.read_text().splitlines()[-1])
+    assert logged["offset"] == 5
+    assert logged["response"] == response
+
+
+def test_edit_message_reply_markup_sends_chat_message_and_markup():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["body"] = json.loads(request.data)
+        return {"ok": True, "result": True}
+
+    markup = {"inline_keyboard": [[{"text": "✅ Approved", "callback_data": "noop:12"}]]}
+    with patch("pipeline.telegram_client.http.send", side_effect=fake_send):
+        telegram_client.edit_message_reply_markup(123, 456, markup, bot_token="test-token")
+
+    assert captured["body"] == {"chat_id": 123, "message_id": 456, "reply_markup": markup}

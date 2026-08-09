@@ -676,6 +676,7 @@ def test_process_update_discards_non_admin_sender(tmp_path):
     update = _callback_update(user_id=111111111, data=f"approve:{group_id}", message_id=202, chat_id=987654321)
 
     with patch("pipeline.publish_primary_group.handle_decision") as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query") as mock_answer:
         result = publish_primary_group.process_update(
             conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 12, 13, 0, 0),
@@ -683,7 +684,9 @@ def test_process_update_discards_non_admin_sender(tmp_path):
 
     assert result is None
     mock_handle.assert_not_called()
-    mock_answer.assert_not_called()
+    # GL-45: a rejected tap is still answered. An unanswered callback leaves the
+    # owner's client spinning and is indistinguishable from a dropped one.
+    assert "Not authorised" in mock_answer.call_args.args[1]
     log_row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
     assert log_row["accepted"] == 0
     assert log_row["telegram_user_id"] == "111111111"
@@ -721,6 +724,7 @@ def test_process_update_accepts_tap_on_second_of_two_group_messages_rows(tmp_pat
     )
 
     with patch("pipeline.publish_primary_group.handle_decision", return_value={"action": "approve"}) as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
         result = publish_primary_group.process_update(
             conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 12, 13, 0, 0),
@@ -742,6 +746,7 @@ def test_process_update_accepts_admin_callback_and_calls_handle_decision(tmp_pat
 
     with patch("pipeline.publish_primary_group.handle_decision",
                return_value={"action": "approve", "results": {"8x12": "published"}}) as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query") as mock_answer:
         result = publish_primary_group.process_update(
             conn, update, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
@@ -752,7 +757,7 @@ def test_process_update_accepts_admin_callback_and_calls_handle_decision(tmp_pat
     mock_handle.assert_called_once()
     assert mock_handle.call_args.args[:3] == (conn, candidate_id, group_id)
     assert mock_handle.call_args.args[3] == "approve"
-    mock_answer.assert_called_once_with("cbq1", bot_token="tok1")
+    mock_answer.assert_called_once_with("cbq1", "Got it - approve...", bot_token="tok1")
 
     log_row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
     assert log_row["accepted"] == 1
@@ -778,6 +783,7 @@ def test_process_update_routes_5x7_group_to_publish_group_handle_decision(tmp_pa
     with patch("pipeline.publish_group.handle_decision",
                return_value={"action": "approve", "listing_id": "listing_999"}) as mock_group_handle, \
          patch("pipeline.publish_primary_group.handle_decision") as mock_primary_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
         result = publish_primary_group.process_update(
             conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 13, 13, 0, 0),
@@ -805,6 +811,7 @@ def test_process_update_still_routes_primary_group_to_own_handle_decision(tmp_pa
     with patch("pipeline.publish_group.handle_decision") as mock_group_handle, \
          patch("pipeline.publish_primary_group.handle_decision",
                return_value={"action": "approve", "results": {"8x12": "published"}}) as mock_primary_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
         result = publish_primary_group.process_update(
             conn, update, admin_chat_id="987654321", now=datetime(2026, 7, 13, 13, 0, 0),
@@ -817,14 +824,73 @@ def test_process_update_still_routes_primary_group_to_own_handle_decision(tmp_pa
     conn.close()
 
 
-def test_process_update_returns_none_for_non_callback_update(tmp_path):
+def test_process_update_logs_non_callback_update_instead_of_skipping_silently(tmp_path):
+    # GL-45: an update with no callback_query used to consume an update_id and leave
+    # no row, which made every gap in the logged sequence ambiguous - "an outside
+    # consumer ate it" and "it was an ordinary message" looked the same from the DB.
     conn = _fresh_conn(tmp_path)
-    update = {"update_id": 1, "message": {"text": "/research botanical"}}
+    update = {"update_id": 1, "message": {"from": {"id": 987654321}, "text": "/research botanical"}}
 
     result = publish_primary_group.process_update(conn, update, admin_chat_id="987654321")
 
     assert result is None
-    assert conn.execute("SELECT * FROM telegram_events_log").fetchall() == []
+    row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
+    assert row["accepted"] == 0
+    assert row["action_taken"] == "ignored: no callback_query"
+    conn.close()
+
+
+def test_process_update_ignores_a_second_tap_on_an_already_decided_message(tmp_path):
+    # GL-45: the decided keyboard carries a 'noop:<group_id>' button, so a re-tap has
+    # to be answered and dropped rather than raising "Unknown action".
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(user_id=987654321, data=f"noop:{group_id}", message_id=202,
+                               chat_id=987654321, callback_id="cbq9")
+
+    with patch("pipeline.publish_primary_group.handle_decision") as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query") as mock_answer:
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1",
+        )
+
+    assert result is None
+    mock_handle.assert_not_called()
+    assert "Already decided" in mock_answer.call_args.args[1]
+    conn.close()
+
+
+def test_process_update_acknowledges_before_dispatching_the_decision(tmp_path):
+    # GL-45 §5: handle_decision can spend minutes in Gelato/Etsy, and a callback query
+    # answered that late has usually expired. Ack first, then dispatch, then edit the
+    # keyboard so the acknowledgement outlives the toast.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(user_id=987654321, data=f"reject:{group_id}", message_id=202,
+                               chat_id=987654321, callback_id="cbq5")
+    calls = []
+
+    with patch("pipeline.publish_primary_group.telegram_client.answer_callback_query",
+               side_effect=lambda *a, **k: calls.append("ack")), \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup",
+               side_effect=lambda *a, **k: calls.append(("edit", a[0], a[1], a[2]))), \
+         patch("pipeline.publish_primary_group.handle_decision",
+               side_effect=lambda *a, **k: calls.append("decide") or {"action": "reject"}):
+        publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1",
+        )
+
+    assert calls[0] == "ack"
+    assert calls[1][0] == "edit" and calls[2] == "decide"
+    _, chat_id, message_id, markup = calls[1]
+    assert (chat_id, message_id) == (987654321, 202)
+    button = markup["inline_keyboard"][0][0]
+    assert "Rejected" in button["text"]
+    assert button["callback_data"] == f"noop:{group_id}"
     conn.close()
 
 
@@ -838,6 +904,7 @@ def test_run_publish_primary_group_cycle_processes_and_advances_offset(tmp_path)
 
     with patch("pipeline.publish_primary_group.telegram_client.get_updates",
                return_value=updates) as mock_get_updates, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"), \
          patch("pipeline.publish_primary_group.handle_decision",
                return_value={"action": "approve", "results": {"8x12": "published"}}):
@@ -874,6 +941,7 @@ def test_run_publish_primary_group_cycle_isolates_per_update_failures(tmp_path):
     ]
 
     with patch("pipeline.publish_primary_group.telegram_client.get_updates", return_value=updates), \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
          patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"), \
          patch("pipeline.publish_primary_group.handle_decision", side_effect=RuntimeError("boom")):
         processed = publish_primary_group.run_publish_primary_group_cycle(
@@ -1169,4 +1237,57 @@ def test_publish_gate_ages_out_a_secondary_group_that_never_got_a_row(monkeypatc
     )
     assert plan["ready"] is True
     assert plan["stalled"] == ["10x24"]
+    conn.close()
+
+
+def test_run_cycle_refuses_to_poll_from_a_non_canonical_database(tmp_path, monkeypatch):
+    # GL-45: the guard lives at the single point that consumes the bot's one
+    # server-side cursor, so every entrypoint routing through it inherits it.
+    monkeypatch.delenv("QHOTO_ALLOW_NONCANONICAL_DB", raising=False)
+    conn = _fresh_conn(tmp_path)
+
+    with patch("pipeline.publish_primary_group.telegram_client.get_updates") as mock_get_updates:
+        with pytest.raises(db.NonCanonicalDBError):
+            publish_primary_group.run_publish_primary_group_cycle(
+                conn, admin_chat_id="987654321", bot_token="tok1",
+            )
+
+    mock_get_updates.assert_not_called()
+    conn.close()
+
+
+def test_run_cycle_advances_the_offset_per_update_not_once_at_the_end(tmp_path):
+    # GL-45: a run killed mid-publish used to re-deliver everything it had already
+    # handled (update_ids 365-367 appear twice in the live log, ten minutes apart).
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    updates = [
+        _callback_update(update_id=700, user_id=987654321, data=f"approve:{group_id}",
+                          message_id=202, chat_id=987654321, callback_id="cbq_a"),
+        _callback_update(update_id=701, user_id=987654321, data=f"reject:{group_id}",
+                          message_id=202, chat_id=987654321, callback_id="cbq_b"),
+    ]
+    offsets_when_called = []
+
+    def crash_on_second(*args, **kwargs):
+        offsets_when_called.append(publish_primary_group.get_telegram_offset(conn))
+        if len(offsets_when_called) == 2:
+            raise KeyboardInterrupt("killed mid-publish")
+        return {"action": "approve"}
+
+    with patch("pipeline.publish_primary_group.telegram_client.get_updates", return_value=updates), \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"), \
+         patch("pipeline.publish_primary_group.handle_decision", side_effect=crash_on_second):
+        with pytest.raises(KeyboardInterrupt):
+            publish_primary_group.run_publish_primary_group_cycle(
+                conn, admin_chat_id="987654321", bot_token="tok1",
+            )
+
+    # The first update was fully handled and its offset committed before the second
+    # one started, so the kill costs at most the update in flight.
+    assert offsets_when_called == [None, 700]
+    assert publish_primary_group.get_telegram_offset(conn) == 700
     conn.close()

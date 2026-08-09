@@ -136,3 +136,16 @@ def test_acquire_steals_lock_older_than_stale_after_seconds(tmp_path):
         assert lock_path.exists()
 
     assert not lock_path.exists()
+
+
+def test_token_lock_path_is_per_token_and_outside_the_tree():
+    # GL-45: the cursor being protected is per bot token and global, so the lock
+    # must not be keyed on the checkout it was started from.
+    a = lock.token_lock_path("bot-token-a")
+    b = lock.token_lock_path("bot-token-b")
+
+    assert a == lock.token_lock_path("bot-token-a")
+    assert a != b
+    # The token itself never reaches the filesystem - lock files sit in a shared
+    # temp directory.
+    assert "bot-token-a" not in str(a)

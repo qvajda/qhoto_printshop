@@ -21,11 +21,6 @@ import pipeline.publish_primary_group as publish_primary_group
 import pipeline.telegram_client as telegram_client
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
-# Shared with run_batch.py deliberately - PRD success criterion 3: only one
-# process may ever call Telegram getUpdates, and hourly/batch must never
-# interleave writes to the same SQLite file. One lock file for both cadences
-# is what makes that true; separate lock files would let them run concurrently.
-DEFAULT_LOCK_PATH = Path(__file__).resolve().parent / "db" / "gl7.lock"
 JOB_NAME = "hourly"
 
 
@@ -41,7 +36,6 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         config.load_env()
 
     db_path = db_path or DEFAULT_DB_PATH
-    lock_path = lock_path or DEFAULT_LOCK_PATH
 
     # I2: TELEGRAM_ADMIN_CHAT_ID/TELEGRAM_BOT_TOKEN are resolved first and on
     # their own - if either is missing, no Telegram notification is possible,
@@ -53,6 +47,11 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     except config.MissingConfigError as exc:
         print(f"{JOB_NAME}: {exc}")
         return 1
+
+    # GL-45: shared with run_batch.py, and now keyed on the bot token rather than on
+    # this file's directory - the cursor being protected is per-token and global, so a
+    # per-tree lock let a second checkout poll straight past it.
+    lock_path = lock_path or lock.token_lock_path(bot_token)
 
     try:
         replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
