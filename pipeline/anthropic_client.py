@@ -125,7 +125,10 @@ def _send_message(client, **params) -> dict:
     return {"text": "\n".join(text_blocks), "raw": message}
 
 
-def research_web_search(prompt: str, *, api_key: str = None, max_tokens: int = 2048) -> dict:
+# 4096, not 2048 (GL-13 precedent, critic_pass): web_search tool results eat
+# into the token budget before the model emits its final JSON, so 2048
+# truncated real responses mid-string (confirmed live, GL-7 soak).
+def research_web_search(prompt: str, *, api_key: str = None, max_tokens: int = 4096) -> dict:
     client = _client(api_key)
     return _send_message(
         client,

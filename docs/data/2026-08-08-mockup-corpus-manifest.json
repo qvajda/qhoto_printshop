@@ -1,0 +1,3551 @@
+{
+  "key_scheme": "mockup-corpus/<path relative to repo root>, write-once, sha256 per file",
+  "bucket": "qhoto-base-artwork",
+  "dry_run": false,
+  "files": [
+    {
+      "path": "outputs/gl6_author/a_flat_clips_windowlight.png",
+      "size": 22762,
+      "sha256": "18c08005d09cefc579f63e7d7ca7ff7851e47006ffbf2c007c27dbfb21cf6aee",
+      "key": "mockup-corpus/outputs/gl6_author/a_flat_clips_windowlight.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/a_flat_leaning_bookstack.png",
+      "size": 24008,
+      "sha256": "2608529c9a398f5440204a1a49145dd857a3428ddf31cbd8c836a70d83cc20c3",
+      "key": "mockup-corpus/outputs/gl6_author/a_flat_leaning_bookstack.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/c_flat_clips_windowlight.png",
+      "size": 179467,
+      "sha256": "f398a2034b7660f15f31707d1ce3338467638577c67bc6b3b87c09151b833685",
+      "key": "mockup-corpus/outputs/gl6_author/c_flat_clips_windowlight.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/c_flat_leaning_bookstack.png",
+      "size": 290678,
+      "sha256": "faf1be58b66b7d6d03bd408fba929606d4f1a7d9aa2570c58133c6fff1c79883",
+      "key": "mockup-corpus/outputs/gl6_author/c_flat_leaning_bookstack.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/c_lifestyle_bedroom_console.png",
+      "size": 355558,
+      "sha256": "131ae0686c36e1104cc4662a362bb50b30328e4a0649d01d99894bc014db7edd",
+      "key": "mockup-corpus/outputs/gl6_author/c_lifestyle_bedroom_console.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/c_lifestyle_sage_terracotta.png",
+      "size": 368575,
+      "sha256": "52cb26abce3e6db4df514c5a99031eba227b7767c834eda582b5960872e98755",
+      "key": "mockup-corpus/outputs/gl6_author/c_lifestyle_sage_terracotta.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/cmp_book_BL.png",
+      "size": 400092,
+      "sha256": "dece28a52859e308723ed3021c7555abc686d93a8e1a5d654ce507e64d6d2ca7",
+      "key": "mockup-corpus/outputs/gl6_author/cmp_book_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/contact_sheet.png",
+      "size": 2086580,
+      "sha256": "fcac88a0a5817b747e4dbd32247d2d1167796d6ff706ba718ed62ec9bd53c31e",
+      "key": "mockup-corpus/outputs/gl6_author/contact_sheet.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/flat_clips_windowlight_grid.png",
+      "size": 688256,
+      "sha256": "e0355ff26ab081e0b9e0acb80fcb9bcd86fc3c2d0dedda6c53ee87cc38ac31d8",
+      "key": "mockup-corpus/outputs/gl6_author/flat_clips_windowlight_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/flat_clips_windowlight_quad.png",
+      "size": 461618,
+      "sha256": "387f50e415549018096644376c3d41c82ceca8421c85762059fb8c14acae95da",
+      "key": "mockup-corpus/outputs/gl6_author/flat_clips_windowlight_quad.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/flat_leaning_bookstack_grid.png",
+      "size": 967818,
+      "sha256": "ba03f9d2bdabcfab0f45fe618311b4fb760e50e2ff1b50ad66dbc6f636933fec",
+      "key": "mockup-corpus/outputs/gl6_author/flat_leaning_bookstack_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/flat_leaning_bookstack_quad.png",
+      "size": 749298,
+      "sha256": "063b557588891abf860906d7210752b0f87e0e205682d7651f88322bf7878727",
+      "key": "mockup-corpus/outputs/gl6_author/flat_leaning_bookstack_quad.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/lifestyle_bedroom_console_grid.png",
+      "size": 1147268,
+      "sha256": "8f370dfde62dd762e4215c4fa94766f132afce44c794a8c84a002a64e3b0ab89",
+      "key": "mockup-corpus/outputs/gl6_author/lifestyle_bedroom_console_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/lifestyle_bedroom_console_quad.png",
+      "size": 973597,
+      "sha256": "bd004082419bdd68d829933ecd6fa28df189d18b95dcf48c02d82275bb43a894",
+      "key": "mockup-corpus/outputs/gl6_author/lifestyle_bedroom_console_quad.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/lifestyle_sage_terracotta_grid.png",
+      "size": 1700989,
+      "sha256": "5aec56b1e35817e36131a969eeb9297fc6e15dc291cca8607df0645635e93ede",
+      "key": "mockup-corpus/outputs/gl6_author/lifestyle_sage_terracotta_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/lifestyle_sage_terracotta_quad.png",
+      "size": 1572189,
+      "sha256": "4d28e21cad330772dfaa79efce29f2b780659bdd09aec87c7dff03ca331adc97",
+      "key": "mockup-corpus/outputs/gl6_author/lifestyle_sage_terracotta_quad.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_bed_Redge.png",
+      "size": 186951,
+      "sha256": "0ea823e5f0cf22ad9eadcfadeef29524576370e94f751a36922d8d15688fbab1",
+      "key": "mockup-corpus/outputs/gl6_author/r_bed_Redge.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_book_BL.png",
+      "size": 275328,
+      "sha256": "2dd786441df678c8f167733f9e287af7b9b3248c4f1fc1fd152ee8759de9ed2b",
+      "key": "mockup-corpus/outputs/gl6_author/r_book_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_book_BL2.png",
+      "size": 229476,
+      "sha256": "4dccc48d4a8cb300cee6ffeb57de8a5e27711566cb5119db0a8b060e31c6c5b0",
+      "key": "mockup-corpus/outputs/gl6_author/r_book_BL2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_book_R2.png",
+      "size": 61895,
+      "sha256": "1665a0347a338b1e875fbee8dcc25330ecdacef20040ad1a8e4f2f98f1251dcb",
+      "key": "mockup-corpus/outputs/gl6_author/r_book_R2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_book_Redge.png",
+      "size": 84502,
+      "sha256": "c5ff3f5fc94a39106d9ec66a3a5abfe16461206a393139223f8282bc26c48ed5",
+      "key": "mockup-corpus/outputs/gl6_author/r_book_Redge.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_clips_TR.png",
+      "size": 49773,
+      "sha256": "5fa2a60732b2aed910170459865a592cf850313371742c2861c0fb7c34c29258",
+      "key": "mockup-corpus/outputs/gl6_author/r_clips_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_sage_BL2.png",
+      "size": 158363,
+      "sha256": "238c7b2e547446ef11647fe814ad0066f00c3c80aeaab65776f4c0ca54420b40",
+      "key": "mockup-corpus/outputs/gl6_author/r_sage_BL2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_sage_R2.png",
+      "size": 100840,
+      "sha256": "9f7b19af93c85551d2ebb9033ac68936fef9e888692bba8bb47685b4aac7c133",
+      "key": "mockup-corpus/outputs/gl6_author/r_sage_R2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_sage_Redge.png",
+      "size": 103213,
+      "sha256": "917c91cb3ed05b2ac5e7829a818c5fe88dd47bc16fe6348f1f4de1d8f9ab9ca4",
+      "key": "mockup-corpus/outputs/gl6_author/r_sage_Redge.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/r_sage_TL.png",
+      "size": 130025,
+      "sha256": "8c87e6088242842d5a2b5e01102d770204ed79e15e4077f23d80db38ce571ca8",
+      "key": "mockup-corpus/outputs/gl6_author/r_sage_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/sbs_book_right.png",
+      "size": 318122,
+      "sha256": "a12053e8d7270aec5c2f7de1498fedc4127a24109416771b5a9ed00ca3a2a0d7",
+      "key": "mockup-corpus/outputs/gl6_author/sbs_book_right.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/sbs_clips_right.png",
+      "size": 85721,
+      "sha256": "f50061defbed93c921fc52210a0b567c3728034130f822c822aa8e6c1c1c57a0",
+      "key": "mockup-corpus/outputs/gl6_author/sbs_clips_right.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_book_Bmid.png",
+      "size": 244819,
+      "sha256": "981452adf6bc92adac150a6c43ea08af656e389f5bf75070c2924380ab13408c",
+      "key": "mockup-corpus/outputs/gl6_author/z_book_Bmid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_book_TL.png",
+      "size": 64096,
+      "sha256": "1c37ea61e71acfba3aa1a6fc310c46d24e54753be79abf7072642f0ccec29277",
+      "key": "mockup-corpus/outputs/gl6_author/z_book_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_book_TR.png",
+      "size": 56162,
+      "sha256": "555be5ad06c3bc9f296d8dd55597fd38707efa11f836f19fb10246fb503d7db0",
+      "key": "mockup-corpus/outputs/gl6_author/z_book_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_clips_BL.png",
+      "size": 95185,
+      "sha256": "233e6beeb7ce4cd6fdc3f1c80e1e879f5b5cadf84664c59cc92ca3ecd97956db",
+      "key": "mockup-corpus/outputs/gl6_author/z_clips_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_clips_BR.png",
+      "size": 87876,
+      "sha256": "e560236fd128cca4237cdf918fdb7f594c2b9e25baf0dcf43a84f487023a9f21",
+      "key": "mockup-corpus/outputs/gl6_author/z_clips_BR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_clips_TL.png",
+      "size": 86011,
+      "sha256": "e0aa27e71972c82e4318d09b5b95ab246e0c2c08bfc02d5b1c24dddac8c46a1a",
+      "key": "mockup-corpus/outputs/gl6_author/z_clips_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_clips_TR.png",
+      "size": 80178,
+      "sha256": "48d554b235eea0f0e69519765a5f0289713bb4e5aceceeba32f847d1b36cf40a",
+      "key": "mockup-corpus/outputs/gl6_author/z_clips_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_sage_BL.png",
+      "size": 163093,
+      "sha256": "2147cc40c3879f57cab141858cd12c66112ba8e0ac1897970a7d95b6f7881cb6",
+      "key": "mockup-corpus/outputs/gl6_author/z_sage_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_sage_BR.png",
+      "size": 154230,
+      "sha256": "e8b05f25ffa38dc56518ede2fb3091f226fe86e8f6c0141b84a3b4e7c34d0b6c",
+      "key": "mockup-corpus/outputs/gl6_author/z_sage_BR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_sage_TL.png",
+      "size": 178688,
+      "sha256": "5e43f4cb441e1d2fc25b5a1b2314a5cac87359792fef41c657d6f42a760c4ac4",
+      "key": "mockup-corpus/outputs/gl6_author/z_sage_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_author/z_sage_TR.png",
+      "size": 156069,
+      "sha256": "b87a15b514780b2380fee4366d7ab99c6843ca3c1e491b58bf005b95a7f3335b",
+      "key": "mockup-corpus/outputs/gl6_author/z_sage_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/artwork_leftthird.png",
+      "size": 13629309,
+      "sha256": "1f23ec263879fad685cc143a3d5ece79439505f68f4d3f6cd59d57f70f5b2bf5",
+      "key": "mockup-corpus/outputs/gl6_debug/artwork_leftthird.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_BL_grid.png",
+      "size": 135729,
+      "sha256": "12654d991d94c973ca8c021fc84e9ad08f2e41059836d87d79d06d4e8cc7bed2",
+      "key": "mockup-corpus/outputs/gl6_debug/book_BL_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_BLedge_fine.png",
+      "size": 13888,
+      "sha256": "3ead354db17c6b15b9f067a79f8edcf0040a74f3fae8c517d055d060061d5007",
+      "key": "mockup-corpus/outputs/gl6_debug/book_BLedge_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_BR_grid.png",
+      "size": 149954,
+      "sha256": "b9d2476c80f520606f1cd44a69172cefaf6d2caeabf8b0ecfdda0813805d5497",
+      "key": "mockup-corpus/outputs/gl6_debug/book_BR_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_BRedge_fine.png",
+      "size": 34722,
+      "sha256": "afba4980f135960feaba9e573592dc83ea676bd387c7d8fa33fe3803ccbb1e0e",
+      "key": "mockup-corpus/outputs/gl6_debug/book_BRedge_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_full_grid.png",
+      "size": 1215576,
+      "sha256": "2eb3bbfc327f944566176e86e3cb567059f83b07485ab38be63c5dd87bbc7a15",
+      "key": "mockup-corpus/outputs/gl6_debug/book_full_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_TL_fine.png",
+      "size": 7470,
+      "sha256": "e332a09b28a274b1bc4558c1faf13be0d10a5f71423c3aac5793dedaa6f18897",
+      "key": "mockup-corpus/outputs/gl6_debug/book_TL_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_TL_grid.png",
+      "size": 17392,
+      "sha256": "c782f3128fe5170d3a894cf7df689cf56f481ae324e6eac1859f685d3062866e",
+      "key": "mockup-corpus/outputs/gl6_debug/book_TL_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_TR_fine.png",
+      "size": 15928,
+      "sha256": "73045d77bc67decdfe7c2b9cea52464597ffcd62efd452c97aed7c03de8d8e5f",
+      "key": "mockup-corpus/outputs/gl6_debug/book_TR_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_TR_grid.png",
+      "size": 20937,
+      "sha256": "e75ad159d07e01b5b1eedac77173d971403d664ea082a83d491be70fbada91fb",
+      "key": "mockup-corpus/outputs/gl6_debug/book_TR_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v2.png",
+      "size": 1022308,
+      "sha256": "11de85c78a2c1d06a288c5463f7112f9cf1eb26020fc0d278d7fb58ba6b1257f",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v2_bottom.png",
+      "size": 113715,
+      "sha256": "3131cd4b424e6784967e5967160af812a45b76efeb1b74088e8920f90971143f",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v2_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v2_left.png",
+      "size": 92823,
+      "sha256": "9e3a2fb12007441899828f1eda94cacf7926dffb31939c5d45684b39c0abfd73",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v2_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v2_right.png",
+      "size": 108135,
+      "sha256": "94136163bd2d38ce548452349ceed39196c6ff522c6cbcde2ed76edde007cb76",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v2_right.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v2_top.png",
+      "size": 11668,
+      "sha256": "a07b6ba3db1ae63eb098067e89590293a4218a7fa41f3ca8b7dbb55f9ac4f167",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v2_top.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v3_bottom.png",
+      "size": 402342,
+      "sha256": "b05d4a66fd9e7d262776cc83bfd4561c2d041621cfb1343d4314d975282ceec7",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v3_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v3_full.png",
+      "size": 1007598,
+      "sha256": "8aaf049d4effb3659e60f4a731d57974d8cd321d1771e947e5cd5694e1acecb8",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v3_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v3_left.png",
+      "size": 341628,
+      "sha256": "54b1fad998b369d2eaf81d06ed9ee3aa71eaf85e2e209a3fd45c668504bc8135",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v3_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v3_right.png",
+      "size": 383850,
+      "sha256": "4cb880850a99ff7688bbc98cbc0b2633930e2c87a1129a720572914d90e02cfa",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v3_right.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/book_v4_right.png",
+      "size": 367304,
+      "sha256": "aa037c90705c194e97403e82dcc2be338d8d6060ff01deedc89699b2f173533a",
+      "key": "mockup-corpus/outputs/gl6_debug/book_v4_right.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_bookstack_bottom.png",
+      "size": 207367,
+      "sha256": "8f73269bbd0ac6361601e94f9717db6e2e15b0716a11834e2ee088cebce3826b",
+      "key": "mockup-corpus/outputs/gl6_debug/check_bookstack_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_bookstack_bottom2.png",
+      "size": 204639,
+      "sha256": "d1650ed6a02c0ac4f648e9cc649f5d94f562d3e20783eb31af45380f89c03306",
+      "key": "mockup-corpus/outputs/gl6_debug/check_bookstack_bottom2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_bookstack_bottom3.png",
+      "size": 249550,
+      "sha256": "e7928dd16dc2246d297ae42738705afa111650159510eeed9c68c7c0dff1e70a",
+      "key": "mockup-corpus/outputs/gl6_debug/check_bookstack_bottom3.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_bookstack_rightedge.png",
+      "size": 111044,
+      "sha256": "3230d531525acec3e8ece4eec4eb1a2bf752f397058c775cba4acb99e49087e6",
+      "key": "mockup-corpus/outputs/gl6_debug/check_bookstack_rightedge.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_bookstack_rightedge2.png",
+      "size": 109519,
+      "sha256": "7e7b8c4280dc904bd5ff5f69e57c4a5ad6d18155135d3b950ff21e95c627b741",
+      "key": "mockup-corpus/outputs/gl6_debug/check_bookstack_rightedge2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_clips_bottom.png",
+      "size": 82887,
+      "sha256": "4dcb85f3bce272cae9f5f163817c9b7838c7f8016681094e775e7b053d9d9e0a",
+      "key": "mockup-corpus/outputs/gl6_debug/check_clips_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_clips_top.png",
+      "size": 36177,
+      "sha256": "2fa1a72142c21ccd1583577c04d2ff3080d3710420a162f1cb044ec4123be8c2",
+      "key": "mockup-corpus/outputs/gl6_debug/check_clips_top.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_console_bottom.png",
+      "size": 100948,
+      "sha256": "b2849b6906cabe46a63fb7496c35022b1a66a66ea28f558c46aa13e309c1f688",
+      "key": "mockup-corpus/outputs/gl6_debug/check_console_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_console_top.png",
+      "size": 37321,
+      "sha256": "f560e58eee2e89d470d0341ab808978455e9e4b503dc87c0d6b98db2b909efde",
+      "key": "mockup-corpus/outputs/gl6_debug/check_console_top.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/check_sage_bottom2.png",
+      "size": 184878,
+      "sha256": "cfc8891ebb47f01b46fb633896165c1b4eb8c79a4934078284fb98b3666441d7",
+      "key": "mockup-corpus/outputs/gl6_debug/check_sage_bottom2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_BL_grid.png",
+      "size": 25819,
+      "sha256": "4ffb036ee8a6837a466c348e294c30807d9011e0a34b1112e41e6bad36d16a3b",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_BL_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_bottom_full_native.png",
+      "size": 65217,
+      "sha256": "a0b957964eac5a028f3154d5a28d21f7c03580b47411c3526c6915e46e75abde",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_bottom_full_native.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_bottom_grid.png",
+      "size": 72484,
+      "sha256": "e510ccd4980dfee7155451ebb936da344c41d555608734ff3c8917e2a58d9f13",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_bottom_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_BR_grid.png",
+      "size": 41624,
+      "sha256": "2d05989627d12b29dac36dcfac72dd4d48da852a09a6b85a4a128b6238acc80a",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_BR_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_TL_grid.png",
+      "size": 51358,
+      "sha256": "a45677d4bba5911778b493718588814b0feb13cef6a711f32f096c18b96e26a1",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_TL_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_top_full_native.png",
+      "size": 104249,
+      "sha256": "322c910b2ff8f9f2ae89eb38f06d162ebb391bba16083523cb303dae61553bab",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_top_full_native.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_top_grid.png",
+      "size": 114296,
+      "sha256": "032e6115c9004b77892cd38ad936c1800f15076c14744eb2f3bf6d5550340cc9",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_top_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_TR_grid.png",
+      "size": 57167,
+      "sha256": "cbe829479531d279cede39f24044446901643a44ac12cb8d9a95c63f9c68d0ce",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_TR_grid.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_v2.png",
+      "size": 684693,
+      "sha256": "541a9776251b56c471e0b0cd6eb4dad70b42576803fcbe395f25efc16c686112",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_v2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_v2_bottom.png",
+      "size": 66517,
+      "sha256": "15b07335c4953a16f2f8daf4c1ddc3e1a509acd15952db03dcf46f16ddaa2b3f",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_v2_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_v2_TLclip.png",
+      "size": 6298,
+      "sha256": "6ceb256f1b11858566dcc6111b0fda5d4d92285eacab922fb520a755e7033874",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_v2_TLclip.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_v2_TRclip.png",
+      "size": 6525,
+      "sha256": "0e7847e4802d33a823852dfab38701e43371c16ff0769aca458b224a3f196dae",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_v2_TRclip.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/clips_v3_clips.png",
+      "size": 14107,
+      "sha256": "42b4b2e428827ba1fcabaf0108b0b86491e0799be43d0799a2afa85f7ff2146a",
+      "key": "mockup-corpus/outputs/gl6_debug/clips_v3_clips.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/console_v2.png",
+      "size": 1175477,
+      "sha256": "1252f2caf4d210bde8a56019981f92dd250766e7e2dd0e15160bb7b3b65bc9b8",
+      "key": "mockup-corpus/outputs/gl6_debug/console_v2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/console_v2_bottom.png",
+      "size": 40115,
+      "sha256": "8c926234ad8411824cda143e4e24f0292978ba3db1128cf25703e6a5395a6d1f",
+      "key": "mockup-corpus/outputs/gl6_debug/console_v2_bottom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/console_v2_left.png",
+      "size": 65806,
+      "sha256": "3c26f7a182454c1ef9ae53063d939b5de149424bd899b323d2261d0f5ca21781",
+      "key": "mockup-corpus/outputs/gl6_debug/console_v2_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/console_v2_right.png",
+      "size": 65806,
+      "sha256": "b22fe380103348f5fa7b9c8556ea33500cfa9bc647bac24554af8846267daca9",
+      "key": "mockup-corpus/outputs/gl6_debug/console_v2_right.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/console_v2_top.png",
+      "size": 18134,
+      "sha256": "7f6ad08603323d8895215a6336c17f2b441cb48a8e61ca74e56c6b172caa99f8",
+      "key": "mockup-corpus/outputs/gl6_debug/console_v2_top.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_alpha.png",
+      "size": 26934,
+      "sha256": "4677e434b596d879338cf34fd4de70a2b66a6dce45a38dcf91f507fbc0b12881",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_BL.png",
+      "size": 11687,
+      "sha256": "c097c99877f45ef840ca94b618df7ad4e6798035c26a443ba784262d1362c38d",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_BR.png",
+      "size": 14894,
+      "sha256": "af4f3d867bdc204324bcf0a98bf66c9d8db3aa4036612735594d11587a2f20d4",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_BR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_overlay_fixed.png",
+      "size": 83565,
+      "sha256": "8eb7bea4eaeda5a627667d3c2094c7ba6e06b560688adb6273c2ac2d7970bc60",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_overlay_fixed.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_overlay_fixed_alpha.png",
+      "size": 28230,
+      "sha256": "4559de3891399f8fc135b6193d664ac1b352e32531068d277bf5272fe0da38e4",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_overlay_fixed_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_quad_full.png",
+      "size": 404511,
+      "sha256": "4ade0cb84aa511fc37bcb54ac0876874633e997301b96e7b82a52ed8bef62f48",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_quad_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_refine.png",
+      "size": 403307,
+      "sha256": "d657de263f962df8c0007ea5712968f8a9fd3308f6711a58dabe3080780e1bd5",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_refine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_TL.png",
+      "size": 13655,
+      "sha256": "88a9b23121871e2b6e90ac76c418093bb300b14fef502e710f94688e4f43d482",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_clips_windowlight_TR.png",
+      "size": 15209,
+      "sha256": "3111d1248c57e5ecb910c91c758d307f7b5d50763d27e69969852fea2ee86365",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_clips_windowlight_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_alpha.png",
+      "size": 52651,
+      "sha256": "43ada151cbf26ebe6dcda5979f811501183ca7008ad266116f9dbc89d13e41da",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_BL.png",
+      "size": 34667,
+      "sha256": "ebf0e9bf7b07a6dac1339678a904c3a71d19062b38c15f6b1c38e13d1fafd924",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_bottom_zoom.png",
+      "size": 150874,
+      "sha256": "8ef9ede2dd0fdd3604d052be9b550ba8b1fee1d110f19a61940c164a3320fd02",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_bottom_zoom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_BR.png",
+      "size": 36664,
+      "sha256": "b3663788705cd459e50b877d26697b698bab534cd1dabaaf0709c1a93f8eb494",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_BR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_overlay_fixed.png",
+      "size": 160161,
+      "sha256": "9e08ae7ddf1ff7842b392d913b97336ae38d6afa50b9f3f4a4901c3d29c1f4db",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_overlay_fixed.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_overlay_fixed_alpha.png",
+      "size": 55876,
+      "sha256": "1ce4ed9da17586af8578ef0d7f5f5212725bb9c833922c0b030b99053f6f79f1",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_overlay_fixed_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_quad_full.png",
+      "size": 658631,
+      "sha256": "cf6b8830a0679bebc8bb98bdcdcceaa13f4a3a07380cad39d267fb90ac1f179c",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_quad_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_refine.png",
+      "size": 657475,
+      "sha256": "728c0c01976c7e6ca668801aaafbe92d89c6dc884c276d8c1abf899b61394f9a",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_refine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_TL.png",
+      "size": 9964,
+      "sha256": "76ba3c9e3e888bff8940f677b8e932273ebad3dd8a8347c31b763d439bb8f695",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/flat_leaning_bookstack_TR.png",
+      "size": 11633,
+      "sha256": "0fc20e862068c9a8cbfb6af53e2196c50f727bc0d3970b72b591ce5b43947d11",
+      "key": "mockup-corpus/outputs/gl6_debug/flat_leaning_bookstack_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_alpha.png",
+      "size": 13078,
+      "sha256": "7efa91350ac32e86b478a2cbd67ff658f5fa7701ccc9c842af5df73766549230",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_BL.png",
+      "size": 22268,
+      "sha256": "9e5e67f7c3a3c7a1c0bf1aaef0ec4cfcfd047aabac724d0fd17b0f33cc3b6e33",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_BR.png",
+      "size": 18078,
+      "sha256": "e9c7b7c743d880a9d2cc2d3ec5a64f3a21cee35acb4a238940eee54ee295d0fc",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_BR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_overlay_fixed.png",
+      "size": 76286,
+      "sha256": "35df2d2d8faaa5e1c6159ce2cf53c976a04dd9da4f5b8f6bb740a847d9636ab1",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_overlay_fixed.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_overlay_fixed_alpha.png",
+      "size": 13066,
+      "sha256": "b751f3fe56d97bde1d22706f9770462ea40ca9ce615697fdb0fde2e67a833976",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_overlay_fixed_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_quad_full.png",
+      "size": 894415,
+      "sha256": "fc678f07e497a2ad45e5c527545ef70e7a3a64d39fe94d88d6d7df5c011251f4",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_quad_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_refine.png",
+      "size": 891926,
+      "sha256": "ded319b9d7f301ed0bdfefedeca7deaac836b5eb50ba243974f5419048322a96",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_refine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_TL.png",
+      "size": 22472,
+      "sha256": "c98cb6fc61df2727d95d4e33d9e977b09ea6bf7a2552752f216325e6222d31a7",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_bedroom_console_TR.png",
+      "size": 21718,
+      "sha256": "bb0f92f320eaa04d52403f43149e113c29ac77090d98e8ed70b17d1d3dad9353",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_bedroom_console_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_alpha.png",
+      "size": 56744,
+      "sha256": "604e01f0987c558bf0f8e98c1e27777927285fa59ffe5d1b9c0117ba4f96c7f3",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_BL.png",
+      "size": 23879,
+      "sha256": "06cf7f13697fdd0593e1d3e18a0ede256b632ae73fc113401e55797e3bf4bafa",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_BL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_bottom_zoom.png",
+      "size": 73490,
+      "sha256": "a8504781624f77a74ee124a3036763322d5a2fd7a09cae4d3df2f9653c81d39b",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_bottom_zoom.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_BR.png",
+      "size": 27868,
+      "sha256": "d3c05b5d03ab679f9f3f0ba24abb60610cfbed99879b85953cf974fe6edcaea6",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_BR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_overlay_fixed.png",
+      "size": 171101,
+      "sha256": "e37745ea4ecc06e2867eba276f1fe5c83b286e14bec45a177bbe9ba749115eae",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_overlay_fixed.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_overlay_fixed_alpha.png",
+      "size": 59854,
+      "sha256": "71378e3d0ab49a046cfa77ef4e913d681f7121733da74826d3d46b591e7a61ec",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_overlay_fixed_alpha.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_quad_full.png",
+      "size": 1289331,
+      "sha256": "ebe8de3f50ec10dcd06d20ffd6f93dba00b17caa5a8a882085662ce479a4ed94",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_quad_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_refine.png",
+      "size": 1289023,
+      "sha256": "2e4108fd93a6188ffa158182f422b68c7435b75b7f0cb1478b349cf5349930a4",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_refine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_TL.png",
+      "size": 29199,
+      "sha256": "b95a01caa3134d9ffb4988f91e1c775d9b999dd8b165cd148246beccc4b46881",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_TL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/lifestyle_sage_terracotta_TR.png",
+      "size": 33496,
+      "sha256": "b22a8f55f5130c82518ef159773fe77ce9c80e8912da05dbc5100bf26191bb20",
+      "key": "mockup-corpus/outputs/gl6_debug/lifestyle_sage_terracotta_TR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/orig/overlay.png",
+      "size": 77240,
+      "sha256": "ae193656fb4153342ad0cdfef1eaa5e39dae188de6ba3dd8f5e67fc19f9affeb",
+      "key": "mockup-corpus/outputs/gl6_debug/orig/overlay.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/orig/sage_overlay.png",
+      "size": 77987,
+      "sha256": "bcf922d9764121b4de46f7974f59bebd97683faab67527b9327f3c9c52543164",
+      "key": "mockup-corpus/outputs/gl6_debug/orig/sage_overlay.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_alpha_full.png",
+      "size": 56744,
+      "sha256": "604e01f0987c558bf0f8e98c1e27777927285fa59ffe5d1b9c0117ba4f96c7f3",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_alpha_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_bg_dashcheck.png",
+      "size": 169746,
+      "sha256": "28e7af5149a8ea59c51b60e9052d950d2759a0df8ee01592e50908d4c3dee3cd",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_bg_dashcheck.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_BL_fine.png",
+      "size": 108487,
+      "sha256": "06584ad13bed9f6f631bf7dd0c673faadd96d91b4dc202eb606753d6ca6c2c9c",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_BL_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_BR_fine.png",
+      "size": 148705,
+      "sha256": "73415925480e53be2ddb7365478c90d65d7208eb5de406abd780bfa750871e6e",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_BR_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_TL_fine.png",
+      "size": 90444,
+      "sha256": "f31478b356bb118551574a27fa035d69a5dce124a4e521d586852c6098675b42",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_TL_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_TR_fine.png",
+      "size": 108168,
+      "sha256": "45e3b1b74c0ad9590b53cc420d3dd52a0d433869a89ba2ea3198a7d3b1f3d366",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_TR_fine.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v2.png",
+      "size": 1536923,
+      "sha256": "7e7fe4470b867ee33e4a1348b9147c93cac4db56be5af467dbf939192402d908",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v2.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v2_leftstrip.png",
+      "size": 1229378,
+      "sha256": "03a4b85cce77e739212b946f1c6fe904a3352798596a998e736cf7f5fc23a611",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v2_leftstrip.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v3.png",
+      "size": 1520702,
+      "sha256": "93576875c3b9b0b81261c24f46dfd791d0fbd25d87426e2fdd4305012a2e66df",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v3.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v4.png",
+      "size": 1515650,
+      "sha256": "6b37792c9a6ac3b5b6b3e30349a01b90983bd467b35208156da270b91ee49b59",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v4.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v5.png",
+      "size": 1522900,
+      "sha256": "0a142daceaf3c992a3dd87e57d254c5245c7915d4d4331821ea4557f601e0480",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v5.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v5_left.png",
+      "size": 478987,
+      "sha256": "6da63b50c4f4504d20fae967a799bab7c31afa987e5a24d404d11091dabb94f5",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v5_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v6.png",
+      "size": 1515650,
+      "sha256": "6b37792c9a6ac3b5b6b3e30349a01b90983bd467b35208156da270b91ee49b59",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v6.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v6_left.png",
+      "size": 478138,
+      "sha256": "2c96fd47a15a924d371ecd04c60cd5ce5b464ef3ff6f599b8ecf364d060a56d3",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v6_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v7.png",
+      "size": 1519476,
+      "sha256": "038ca52c3339462dbd4f6f3393b293ebca3350ec8793cf0b1fb42d2a1a34ac52",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v7.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v7_left.png",
+      "size": 482944,
+      "sha256": "863588c9524d83f042f8988ff799ae4c6a401b42955125483c537ea00117e03d",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v7_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v8_full.png",
+      "size": 1519370,
+      "sha256": "49a2c95c67ad517a100b663de81e8ae4c0319f4d19d89428abd87dd44cc7b38f",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v8_full.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_v8_left.png",
+      "size": 484016,
+      "sha256": "fa03727ffad5bf6dfb2834c6ab3a91d34f4b72daa22565620beba20d9c551a11",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_v8_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_debug/sage_warp_only_left.png",
+      "size": 162261,
+      "sha256": "b128c4eb82d58b7a086cee08a8719c9cf3145650cb7cecea52d4e8079b7430da",
+      "key": "mockup-corpus/outputs/gl6_debug/sage_warp_only_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p0_probe_bundle/background.png",
+      "size": 654925,
+      "sha256": "79002940879f051b04f4082231de045edec5d68d52b7c84c8003a7f20720323e",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/background.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/meta.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p0_probe_bundle/matte.png",
+      "size": 5336,
+      "sha256": "6d2efd1dadd375e857b36fe4351554ca73516674c36b9e16a4720020386ff84e",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/matte.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/meta.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p0_probe_bundle/meta.json",
+      "size": 361,
+      "sha256": "329b6b72eb2eaf3374a04c9656bae6fe9ea7bc279e74234a06377d111b6f8b26",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/meta.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p0_probe_bundle/overlay.png",
+      "size": 51629,
+      "sha256": "0bd9a6c8e30f95ff4004f9926c4be241e25d97b6d2e364ebe1a8f32223126560",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/overlay.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/meta.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p0_probe_bundle/scene.json",
+      "size": 1019,
+      "sha256": "864db58707885e640666e3abe5f50742c8f9322d50b1acb30946ada14fd9b816",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p0_probe_bundle/scene.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p2_seeded_bundle/background.png",
+      "size": 660497,
+      "sha256": "7a010ad20e56e0718204d7b9d558ad0650cde7a5ae6f3b0aa00c527bec600b4e",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/background.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/meta.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p2_seeded_bundle/matte.png",
+      "size": 4344,
+      "sha256": "9197ce426a8b2d96f108996dbd1c0ba67576e58026bfbb29298be139081d9456",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/matte.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/meta.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p2_seeded_bundle/meta.json",
+      "size": 366,
+      "sha256": "254cc323729013139f16d417b8a05adb7387d425468f0643084e00bcd7b659ac",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/meta.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p2_seeded_bundle/overlay.png",
+      "size": 36426,
+      "sha256": "1763dc8a36557d8134ef5d61a5b50ecca8bba563d46416a44b03a1d5f807a6c9",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/overlay.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/meta.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/_p2_seeded_bundle/scene.json",
+      "size": 477,
+      "sha256": "05dc7130a7165f2a9e09d6b5b6ecff6f9c8f56e72c3377632529b9206259ad95",
+      "key": "mockup-corpus/outputs/gl6_keyed/_p2_seeded_bundle/scene.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v1_magenta_s11.png",
+      "size": 893739,
+      "sha256": "5825f4e66250d5ababd467d2edcb499c91a1293dd07b4019647e6c8b34233058",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v1_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v2_emerald_s11.png",
+      "size": 1027450,
+      "sha256": "67ce6859af93a74a21e36cb21aa794206daa5f67d4e3e96620aa9c0bf8097bd0",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v2_emerald_s22.png",
+      "size": 813145,
+      "sha256": "8fb67b91a69dedbc4b47adeecbf7b33742ca7480a78f0fe7e0b0c19327844e45",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v2_magenta_s11.png",
+      "size": 940964,
+      "sha256": "570285336c0c35c688b619db1ba2225efdf3c8f8813a5614df82c12340160911",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v2_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v3_emerald_s11.png",
+      "size": 982439,
+      "sha256": "d75a67ec6f973cd4cf1dc0508769c1b737bf939dd9415d97768ba96db31607ea",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v3_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v3_emerald_s22.png",
+      "size": 551248,
+      "sha256": "86e080beb7829dd455206333341fac234c6f1f3adf9af687a940408316de92cc",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v3_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v3_magenta_s11.png",
+      "size": 755637,
+      "sha256": "2c0ef5b2069505288ac9a45496d1b4c6bd80ee1c717a432f09c863dc6b3610e5",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v3_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/clips_v3_magenta_s22.png",
+      "size": 643553,
+      "sha256": "7684129133dcb3496fcfe35a632111fbaf3d66553e9033c460cd920bf738e919",
+      "key": "mockup-corpus/outputs/gl6_keyed/clips_v3_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/contact_sheet.png",
+      "size": 1335717,
+      "sha256": "15470897a016283c7e2c44a9bf1accb5988ed671ca3c776c200be099e8023f2b",
+      "key": "mockup-corpus/outputs/gl6_keyed/contact_sheet.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v1_emerald_s11.png",
+      "size": 1067781,
+      "sha256": "d7985dfb373e54d1e1bccd439ae7151e7f7080551f9ebca0beac7e11c06b8139",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v1_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v1_emerald_s22.png",
+      "size": 838042,
+      "sha256": "1aec7fbebb0ddb43933628bbf2b74f5b3c8ce24d2e6e21e6bd5ba8adc8d9f9b4",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v1_magenta_s11.png",
+      "size": 1080627,
+      "sha256": "0b2f014bab6adeda2d481d31eb6e563d7d2bf111831cf4ed9efd45d39b3dff51",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v1_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v1_magenta_s22.png",
+      "size": 887747,
+      "sha256": "5e40dad900e85b89ca87fce800206d7441d1118bf1358ff331202856a89e4373",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v1_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v2_emerald_s11.png",
+      "size": 732015,
+      "sha256": "6a88fb10dc763268a31995fa4e8b82f89011302f40a00c7860052fc5bd2a5bc2",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v2_emerald_s22.png",
+      "size": 650066,
+      "sha256": "0b45a54595da76919d574796717cc9cac6863d65b22532274a796283648d0a9d",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v2_magenta_s22.png",
+      "size": 654449,
+      "sha256": "9b5df74c995fb43bf41ad49b262bb72139826e38644db424000d191f1fc384f5",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v2_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/framed_v3_emerald_s11.png",
+      "size": 808701,
+      "sha256": "3d59b0e99f1d38547a441562937f12fabfd9fce017b27275e34dee5d8e8fa306",
+      "key": "mockup-corpus/outputs/gl6_keyed/framed_v3_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v1_emerald_s11.png",
+      "size": 968200,
+      "sha256": "e032cb0e6bfaba8e68dbfb692ccd741cf1700fda09d4b2a47757586c9e6be9e9",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v1_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v1_emerald_s22.png",
+      "size": 757269,
+      "sha256": "eff8fcc00f3e674276bf02030e8647a110d514236fa5bf8e378f2fc3831846d8",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v1_magenta_s11.png",
+      "size": 1009061,
+      "sha256": "d435fe9b755502871deefd1cd15daed34daaa0a9ad54a2ae7ee0880d9d517021",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v1_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v1_magenta_s22.png",
+      "size": 862765,
+      "sha256": "b7b00a069da41df407fff0e1310072e82e8f0c5c2d6e17c2f9433acd16dc6e6b",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v1_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v2_emerald_s22.png",
+      "size": 1251455,
+      "sha256": "5609196ba7718a1695a9579d0d91f036b8ccb210c40dcfd8ddb9d07e72925607",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v2_magenta_s11.png",
+      "size": 1427034,
+      "sha256": "12139e430b3e82a75c37781584ce4dae8d841333a6a2ed04854eb51e180e1874",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v2_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v2_magenta_s22.png",
+      "size": 1236655,
+      "sha256": "200ac059ac4e1b87de36fe7148755ee9a8c68e317a9f4ac9f6ccfcde936d81af",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v2_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v3_emerald_s11.png",
+      "size": 1074538,
+      "sha256": "37716989a51f6f2bdd3a7ad02e872451d7a37bddc4bd1d84f8d93af473a739f5",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v3_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v3_emerald_s22.png",
+      "size": 859543,
+      "sha256": "9858e4e7a28d7d3441df4c2322d7f2310c8b5b45f406e40857d04c4b517dd0f8",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v3_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v3_magenta_s11.png",
+      "size": 1097740,
+      "sha256": "f9c28f6d102d95db4cb434f175c741cc5ef9255b187b83071d7ae1e3eda39f36",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v3_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/leaning_v3_magenta_s22.png",
+      "size": 931818,
+      "sha256": "722ef065c01e85df412e8ae8456a7a82675d1a3903364b44787aab521c02a2ba",
+      "key": "mockup-corpus/outputs/gl6_keyed/leaning_v3_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/manifest.json",
+      "size": 46057,
+      "sha256": "fd175187e44f3bad7c31409ffb9132bbae1c6cc91802b2f07efdad87fb26a5d0",
+      "key": "mockup-corpus/outputs/gl6_keyed/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/screen.json",
+      "size": 23515,
+      "sha256": "1d9eeeb4f879e43c06fed0cdebb807d29f8152d8706ae889447eb1754e5f201a",
+      "key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v1_emerald_s22.png",
+      "size": 849039,
+      "sha256": "92efbb6b480cd1249a5b1e85bba5307984803e761c94e2b89a7ad86a676ea00b",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v1_magenta_s22.png",
+      "size": 815224,
+      "sha256": "4d53d6f6e351cec0ed3280e7c8bb1cbbb7f23be1972ee13aeaa9ecc322cc95e6",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v1_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v2_emerald_s11.png",
+      "size": 835118,
+      "sha256": "44c617ce45de1704771a6ddccdf9973478a1c269321860c63d3c7c9e30c65aa8",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v2_emerald_s22.png",
+      "size": 614420,
+      "sha256": "a388401e1dd12d4a4718808df3615d546bb699e21d9e2169f8629944c5d38d22",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v2_magenta_s11.png",
+      "size": 899941,
+      "sha256": "69efb1f7d1eeb07ae8be9713b2d5b87ec0b9131852a1899c0a08014eb1e23e3d",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v2_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v2_magenta_s22.png",
+      "size": 496816,
+      "sha256": "626c03d8133809f1a98dc8e2b73d93f4177eb35d1c8de9dc039b076828431195",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v2_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v3_emerald_s11.png",
+      "size": 860921,
+      "sha256": "e554272f7fdba468a8dd073568307db691745fef5d7cb884fe0bd0208fcd7c59",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v3_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v3_emerald_s22.png",
+      "size": 610234,
+      "sha256": "d2c5f326a557c73aff4e04c698971df56399e7d3ba3dd515fd3db4174c7ed90a",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v3_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v3_magenta_s11.png",
+      "size": 878438,
+      "sha256": "86aba12c2d20918aaf95119f114e86a1742fbd7d33e20301457d9d247392bef7",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v3_magenta_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed/shelf_v3_magenta_s22.png",
+      "size": 778708,
+      "sha256": "72cb3a81bacb8f525cb4136977d58b8a07eaa944a3b5b95699a54178175a6caf",
+      "key": "mockup-corpus/outputs/gl6_keyed/shelf_v3_magenta_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/contact_sheet.png",
+      "size": 330346,
+      "sha256": "cdb9ac854f7658f685a0ed30275ee6a3a98b76c503888fe13056afab0069aa29",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/contact_sheet.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v1_emerald_s11.png",
+      "size": 1044239,
+      "sha256": "d36de9416419d09a3f68f3727a1c49aeae01ad11aff58527c38e7accccc16a76",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v1_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v1_emerald_s33.png",
+      "size": 786595,
+      "sha256": "5b52d32b9718149a99b07b6aca18a3f3092100dc02f7665d1636b6bcba0d9b12",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v1_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v1_emerald_s44.png",
+      "size": 1000405,
+      "sha256": "5c0a7f809105bccb87a4791f723ec3f5be303ab7fe9837c89d13820d7c45c2d6",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v1_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v2_emerald_s11.png",
+      "size": 637502,
+      "sha256": "0ce6f998c49c07bb3e214702c51c924d319ff1827aa07d9fdfec41bc99008cf7",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v2_emerald_s22.png",
+      "size": 653173,
+      "sha256": "86c0d710dc937ee51e8161a87f5dfd46a4a315f082e969e019c64609cacb2d8a",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v2_emerald_s33.png",
+      "size": 658721,
+      "sha256": "74677e30edfa1e44077dd437f53a4ff3e96f2e58bf09d6b9f390dc0544011bf3",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v2_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v2_emerald_s44.png",
+      "size": 725982,
+      "sha256": "a1ec32d4ed6e1e111c0415c8e96f71c3137713eafbb5e25487c3e18dd5cc11bb",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v2_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v3_emerald_s22.png",
+      "size": 556547,
+      "sha256": "37e04ebc8819588c18359abaeb957627c0aacec4718d6782d6038392e030ee17",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v3_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v3_emerald_s33.png",
+      "size": 759709,
+      "sha256": "c9fc4e47ff40212e8f8404fb48d0d0f6e3fcf24f737017ae16c4919626e1871e",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v3_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/framed_v3_emerald_s44.png",
+      "size": 689495,
+      "sha256": "fa7fe7522238f8c82db6e84d1d59f2ddd84f92951edba1e3d4b9c68033e14433",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/framed_v3_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/manifest.json",
+      "size": 12174,
+      "sha256": "410c8195681edbf4c5c2eb49049cdc857a236056aaf8e930474c30b0e77be8b2",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_framed/screen.json",
+      "size": 6548,
+      "sha256": "b615a9213e4c6d0b18bca5fa018818005f255cc2a2e54270fd5a5edcc1eeebb6",
+      "key": "mockup-corpus/outputs/gl6_keyed_framed/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/contact_sheet.png",
+      "size": 280560,
+      "sha256": "27154c8872ee506572dd3d6e223605941f3f744094328c6d79fde08d2d2725f7",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/contact_sheet.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/manifest.json",
+      "size": 13112,
+      "sha256": "69406868748717116c2f44fe18fc3f92efc70df4ed8324d9f3bc96a9d15a892d",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/screen.json",
+      "size": 5170,
+      "sha256": "e96419c66dc370309d04750895975637d4c401e0bc6824e808aaa096b98aeda0",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v1_emerald_s22.png",
+      "size": 873799,
+      "sha256": "6d3fb3ea6a4c3f3b8b2e2b6eb3b65d1a49bd8bf653f6cf0847196252e5236037",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v2_emerald_s11.png",
+      "size": 870006,
+      "sha256": "18dd2e9f94fe647f0d23df45e1c9a8ccf9e346787eb63104c3e1d4cd4ff94637",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v2_emerald_s22.png",
+      "size": 625187,
+      "sha256": "f90dba0ecfa87a51ab3bb8aef2eeac2dcd2718f3232fe6713dc04c2caa2c8033",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v2_emerald_s33.png",
+      "size": 650902,
+      "sha256": "8ea4f106f716383cb99d3007ad23a597de03bf6d5339d1d1bd6b3668231ac8e4",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v2_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v2_emerald_s44.png",
+      "size": 847699,
+      "sha256": "5e72f592049385e7a9f5461b88ff9c7a36dabe478eb4761e7cea4b1cb7760514",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v2_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v3_emerald_s22.png",
+      "size": 639016,
+      "sha256": "7ba7ab37f826ba71212be256fad4cd88676be7b44f6459bb483c85bc61566e2e",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v3_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v3_emerald_s33.png",
+      "size": 794676,
+      "sha256": "4360fea56aec23ec49e8941322f29a59dff2a7661c72acb137b8a58fc7727585",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v3_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_shelf2/shelf_v3_emerald_s44.png",
+      "size": 858423,
+      "sha256": "a89951c1607a033d35e48fa01141a0796bd8c7dae6bfb9bdfa75374864aa5b7d",
+      "key": "mockup-corpus/outputs/gl6_keyed_shelf2/shelf_v3_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_keyed_shelf2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_stale/clips_v1_emerald_s11.png",
+      "size": 938898,
+      "sha256": "debbad7d4c9edf0d5b59b113d0ef7929272ed0dbbd6f91e82b1fad41679de346",
+      "key": "mockup-corpus/outputs/gl6_keyed_stale/clips_v1_emerald_s11.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_keyed_stale/clips_v1_emerald_s22.png",
+      "size": 573684,
+      "sha256": "4ceabe9cfe054d9a72771058822f08e6221a5964d5cc2dde9b163dc734730176",
+      "key": "mockup-corpus/outputs/gl6_keyed_stale/clips_v1_emerald_s22.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v1_emerald_s11.png",
+      "size": 1073705,
+      "sha256": "eb82ec4c1bb375ba3b32542a60cd9d3e22bd7bd9fa22cde94599656e7bd2cf00",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v1_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v1_emerald_s22.png",
+      "size": 741715,
+      "sha256": "49c7b4e4ba86153c56bc95c5cddc808be2ba180f43a1e97cb70ee45a93d5179c",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v1_emerald_s33.png",
+      "size": 878383,
+      "sha256": "60ff1be6dd791826d98dfd7e27a43d4d5ed9e05f01b953e8ddf8b4fb97dcf4b9",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v1_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v1_emerald_s44.png",
+      "size": 973824,
+      "sha256": "6a35ddb9c323404ebb82a0017fe9ec7ab69d1c04f71b0bdfbe0af25f9e627972",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v1_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v2_emerald_s11.png",
+      "size": 1118687,
+      "sha256": "485292d69790ba7642bb4e2781aa98040d164f6c5cc75f2a482285790fa5f00d",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v2_emerald_s22.png",
+      "size": 942092,
+      "sha256": "c3708f1f244e9bc511ffb4e541bc11cd7988a5de3014c7ac0ca3b41bc771ac4c",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v2_emerald_s33.png",
+      "size": 855919,
+      "sha256": "229739a7377c4d933ff660d633587fdb6290d175a2a11690680c8f98ff34d5b7",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v2_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/clipsheet_v2_emerald_s44.png",
+      "size": 1068532,
+      "sha256": "6aee313020f4e2c7301a249bb6ea2e2ae6f46c56b3b516b8f890b6fef7e711c0",
+      "key": "mockup-corpus/outputs/gl6_p4a/clipsheet_v2_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/contact_sheet.png",
+      "size": 962703,
+      "sha256": "390258269b209856b3c58c22bd95ad82382a7924cf5256a6d2e712828e3a9759",
+      "key": "mockup-corpus/outputs/gl6_p4a/contact_sheet.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v1_emerald_s11.png",
+      "size": 1002001,
+      "sha256": "341b74aafdf3ad5a3d21e1c82cfd8cc71b14f29ffba1d856bf5e8bca9365872a",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v1_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v1_emerald_s22.png",
+      "size": 774597,
+      "sha256": "39904efa501dcbab7eeeacf5d9741068e4bbfe500622006dc35c94204891ed4e",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v1_emerald_s33.png",
+      "size": 752831,
+      "sha256": "67bf49c172acdbb4f0c62078249257ac7d8fbbe460193ad1c40857bb7cf343cb",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v1_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v1_emerald_s44.png",
+      "size": 1092700,
+      "sha256": "f2c6f30606f1f3b5a3e097a46b582db4a5d634ecf6fff9e9694888b918e03fbd",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v1_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v2_emerald_s11.png",
+      "size": 734189,
+      "sha256": "38b9e1dc439c2dc7bd8f5f0323096180b74d530c7628c7e1859a612f76fb02e7",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v2_emerald_s22.png",
+      "size": 673599,
+      "sha256": "71f15eab8ffa1c08aed5429a0dc618403ec96f0c75b9f8573c62bd4342f4f64c",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v2_emerald_s33.png",
+      "size": 636558,
+      "sha256": "5497b8289356a3c02b86a90debe3a73b0843a24681ac023ed093b16db5b2da04",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v2_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v2_emerald_s44.png",
+      "size": 729074,
+      "sha256": "4657433ddcd5c60ebeb14643c3c0d5a9d595da09975ad8cbc99ac558bed9f643",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v2_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v3_emerald_s11.png",
+      "size": 751071,
+      "sha256": "53b6ce81a19583c6e5625982b0445a17c84bcd560dfccb4abf30dee59d50970b",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v3_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v3_emerald_s22.png",
+      "size": 588444,
+      "sha256": "396657fce57c80b52d23defd2aa83fdc6e2228e06925950de7db0056b60a2249",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v3_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v3_emerald_s33.png",
+      "size": 784880,
+      "sha256": "cd8dab0c4b8ee25a7210af16823985b0d40514556bfcaa6ce4fe3ed0f063ce75",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v3_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/framed_v3_emerald_s44.png",
+      "size": 748960,
+      "sha256": "e305e9d3a9e318312b3f54b995d1c7c281757026e32590bac54673db08ca638f",
+      "key": "mockup-corpus/outputs/gl6_p4a/framed_v3_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/manifest.json",
+      "size": 33438,
+      "sha256": "7faebcfd3eed38c0b5f13b0b8a98e5bc56a97de97122ed8e49200f96d88bcea3",
+      "key": "mockup-corpus/outputs/gl6_p4a/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/screen.json",
+      "size": 18010,
+      "sha256": "e933e5d1ca2184b0f4d5b46bd130d64f7a84f19a624478b7fdfbd8cc3385c4b7",
+      "key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v1_emerald_s11.png",
+      "size": 952433,
+      "sha256": "1e209f269a0768fc5d8a80720982537dab63b6f7ac08ca08435b99352510cdd7",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v1_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v1_emerald_s22.png",
+      "size": 608379,
+      "sha256": "6f87a47977af615e2833cb13b0edad465eb25eb2f42141b2b4adb874ccbb4d45",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v1_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v1_emerald_s33.png",
+      "size": 640784,
+      "sha256": "caebdabe5eba1a71cb5a3a439aed5bda4e5df527a9464a4505fc6ca55b84eea8",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v1_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v1_emerald_s44.png",
+      "size": 855476,
+      "sha256": "dd9516a995562b72ddd87a2072bfb60540544c1208eb721c7f35f708fba1023f",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v1_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v2_emerald_s11.png",
+      "size": 1043606,
+      "sha256": "2be1c1defe361712a877dba140c4c04b4647dbf70059f64330a95422aa7e2456",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v2_emerald_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v2_emerald_s22.png",
+      "size": 898744,
+      "sha256": "7bb1759fbf9c087858fddd03502c90c88b3501b78aa257ccf5f0ffb5da9315ef",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v2_emerald_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v2_emerald_s33.png",
+      "size": 841838,
+      "sha256": "f58bcb25b415e8aeeed9f8cb67df1422480ca3d107ae67ed60ee13c62d467587",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v2_emerald_s33.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a/shelfsheet_v2_emerald_s44.png",
+      "size": 891286,
+      "sha256": "9722949ae6af819037957f13c8ca37cd20952748e612193df6592fd55e4dc825",
+      "key": "mockup-corpus/outputs/gl6_p4a/shelfsheet_v2_emerald_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/contact_sheet.png",
+      "size": 483450,
+      "sha256": "19f9f71f2079fd7db0460f512d83edc3f956e0695ba3c9e235e556e819823f28",
+      "key": "mockup-corpus/outputs/gl6_p4a2/contact_sheet.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s110.png",
+      "size": 872704,
+      "sha256": "caed90d5afdee3cdb1a361b3036155c80e76086acd6c0123e095c923e45aeb0b",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s110.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s121.png",
+      "size": 1032970,
+      "sha256": "47a64d2454bea8a505099b5e5d522740f1f646dd461f6dfa197474c7c15ab71e",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s121.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s132.png",
+      "size": 879188,
+      "sha256": "1f16e812cd07f36d8e3d462d6cdc0d034a4c8ee051739e5a1fd95de8c846651e",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s132.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s143.png",
+      "size": 934356,
+      "sha256": "42a0700094f757cbe30a2fa0e6bcfbb5c55f5cfde0f697d798c64c71be307308",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s143.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s154.png",
+      "size": 1090654,
+      "sha256": "945993948a6b480ac882cf2487ecb900b7a7de064c08bef784e55ec52ed68f4d",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s154.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s165.png",
+      "size": 954088,
+      "sha256": "923606897667328bc663ce87d1c76bdfc15c9455df4467b6c8526e2c4c6a1848",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s165.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s176.png",
+      "size": 866370,
+      "sha256": "a46c8bd5c1a7246d7c6d021284aeeea209d35b917ebc46089e692fba240a5fec",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s176.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s198.png",
+      "size": 660285,
+      "sha256": "837ba65e56bdf217d38e3a909efd92323027a3c13783dfd06b17ae4bd59fc12b",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s198.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s209.png",
+      "size": 963025,
+      "sha256": "3dc185ac9c1db3be5bb24887424e26a23010dbc3ba18a9de951889ecabb0d8c2",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s209.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s55.png",
+      "size": 982670,
+      "sha256": "85004ca3a6d4e2be1a3f0f908f38f6ad5d93f37861e56388372aa06b062c1d70",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s55.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s66.png",
+      "size": 725426,
+      "sha256": "dc000b9f95c88d3a341c9cd9963b0bf041571e3daf0643aa61f890183509f253",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s66.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s77.png",
+      "size": 736665,
+      "sha256": "61b88cb2b324b8176cd4fe153bec284e58be7a1a3a73066beea7ebf928281f29",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s77.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s88.png",
+      "size": 857771,
+      "sha256": "c550b4de27fce1ac313fdb1e07f15211943951b788d70a80a026e625fc508d1f",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s88.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/framed_v1_emerald_s99.png",
+      "size": 635259,
+      "sha256": "d5b3f83a2cd81054d89194d79420120d7f6bc3d7ace1de6960389207f4f74cdc",
+      "key": "mockup-corpus/outputs/gl6_p4a2/framed_v1_emerald_s99.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/manifest.json",
+      "size": 19758,
+      "sha256": "a7f7246a0d9c72d0f577e6c48f496f4869ef2f7535e827379dfdf3a69ae34e89",
+      "key": "mockup-corpus/outputs/gl6_p4a2/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a2/screen.json",
+      "size": 8993,
+      "sha256": "3178877567805e56446737d85d1c723f4ced3e7d0631c9d4217c7a58c3270beb",
+      "key": "mockup-corpus/outputs/gl6_p4a2/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/contact_sheet.png",
+      "size": 497909,
+      "sha256": "209922723a774830d1d288528b5fa271bb8eb4eb6ee56158b4562bb505af9490",
+      "key": "mockup-corpus/outputs/gl6_p4a3/contact_sheet.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/manifest.json",
+      "size": 19850,
+      "sha256": "d3e955fafa3bc9bff8757f4c8755acd7d67658897910bd1fdb221283463b5e5d",
+      "key": "mockup-corpus/outputs/gl6_p4a3/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/screen.json",
+      "size": 8577,
+      "sha256": "1a8925d5a45fdfb4b405e5a3e88efb2b88d3887f2339a2169c72d2f39cbaa834",
+      "key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s231.png",
+      "size": 652937,
+      "sha256": "e628f7d95f1ed32312768136fb43934b8fd7c46756bd76ae391a0427c264a966",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s231.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s242.png",
+      "size": 966669,
+      "sha256": "3a15b0d6cdf54b50558c6da3b5dc2c80c71ca36a227e580f6fdd0b8d465f43ae",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s242.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s253.png",
+      "size": 870858,
+      "sha256": "2e2c6bc26af8a49dc92817b40e1d0fed64be988961aadac3cb947f003f0f4776",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s253.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s264.png",
+      "size": 642673,
+      "sha256": "5aa552e100b9080e64dea02687d3023abaa0a090958538f14a770a3f660872c1",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s264.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s275.png",
+      "size": 771594,
+      "sha256": "f15807eaac65b5fe9a7317cf5c1f78e30934b08a140f819ae7f4589543775438",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s275.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s286.png",
+      "size": 809174,
+      "sha256": "8c4ed3061498118ea6dd8e2081e89aad9b78dce7974b6b1d7e9afda82e7d7ff6",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s286.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v1_emerald_s297.png",
+      "size": 956896,
+      "sha256": "3099fd9a3ccfa91851c7f3a38f1043c7c936d641c83b03d7e4bd377f6bdee96e",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v1_emerald_s297.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v2_emerald_s231.png",
+      "size": 877265,
+      "sha256": "22befa580f9f8669721f5c831f475033d583c350f1f32e2213ea54957a9cf3a4",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v2_emerald_s231.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v2_emerald_s253.png",
+      "size": 1129899,
+      "sha256": "7dffaa7e93d6168d9626348fb584a433eb2adc1359c467c346c6245b86305d4a",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v2_emerald_s253.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v2_emerald_s264.png",
+      "size": 962492,
+      "sha256": "29b1363813707f6154e0b29091f02055755b08c9e37c4391891e222b609a51fb",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v2_emerald_s264.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v2_emerald_s286.png",
+      "size": 952537,
+      "sha256": "f6fe4cf4d8c1a36c7931a2e2506dc255fd670dea5acc2ea251dbd9b98a6e44c8",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v2_emerald_s286.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v2_emerald_s297.png",
+      "size": 1191454,
+      "sha256": "8e2b7a42d6c169d8ea63ad36ca25b133ce789a05738262e8e38a7f020758bea8",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v2_emerald_s297.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4a3/shelfsheet_v2_emerald_s308.png",
+      "size": 972683,
+      "sha256": "d628f75684b9a4ef5448d9ef4fbade2e20469a5fe0ea87c009850d05884a46f2",
+      "key": "mockup-corpus/outputs/gl6_p4a3/shelfsheet_v2_emerald_s308.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4a3/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/_bookstack_full.png",
+      "size": 1171281,
+      "sha256": "73bf5dcae8a5c7eda4237ae9bfbf56a0aacb8a712333665064553b761ea10797",
+      "key": "mockup-corpus/outputs/gl6_p4b1/_bookstack_full.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/_z_br.png",
+      "size": 126678,
+      "sha256": "cd298524d4114194b7f9c7b320b5aac9ce74c0c577370168d66f9cd635e58f73",
+      "key": "mockup-corpus/outputs/gl6_p4b1/_z_br.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/_z_tl.png",
+      "size": 69132,
+      "sha256": "eebfc9a435576d766b3bb45897d25ca5fe76ee0430f9e2ef255d202131e8bcb1",
+      "key": "mockup-corpus/outputs/gl6_p4b1/_z_tl.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/lifestyle_small_bookstack.png",
+      "size": 1318454,
+      "sha256": "12cbb9d7e267afe45bcf27041c171289dc66a82698f73beeb35e7e520bdd5b53",
+      "key": "mockup-corpus/outputs/gl6_p4b1/lifestyle_small_bookstack.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/manifest.json",
+      "size": 92416,
+      "sha256": "c7a14e662e0f694f56454f7f7e8b0d43d9fc0ff4d804596b690585a50744af8d",
+      "key": "mockup-corpus/outputs/gl6_p4b1/manifest.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_bed_v1_emerald_s319.png",
+      "size": 719029,
+      "sha256": "6d5f0f363ca53b970041541a2b71d136156685cd44b9adb229d0e299ac47cd2a",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_bed_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_bed_v1_emerald_s330.png",
+      "size": 778111,
+      "sha256": "5493e215be4f50b072a36122d6f341216ed99e193672ae56c75427820170538f",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_bed_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_bed_v1_emerald_s341.png",
+      "size": 747354,
+      "sha256": "7670bfbada3ddc04c9ca7a95b0bd6b7f3301967143968efedaadea615b9973b5",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_bed_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_bed_v1_emerald_s352.png",
+      "size": 730350,
+      "sha256": "14413854b9b92f74e9350b35aced9645cd382f3321bac57c11ee9728b335adf6",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_bed_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_desk_v1_emerald_s319.png",
+      "size": 831471,
+      "sha256": "ba8fcef9e3b85565f4c2bc85b23d09ad89e1b1ba7ef25270ff97d1e63b2e4f18",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_desk_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_desk_v1_emerald_s341.png",
+      "size": 930706,
+      "sha256": "e570f29a886837436090b687ce98078acf2ac6511ca0495b40e35f0ae2c5d394",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_desk_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_desk_v1_emerald_s352.png",
+      "size": 919529,
+      "sha256": "9a264ab60cd4b6e270f2a36360b36487e9899e99bbce7abf151b3209f5324459",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_desk_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_easel_v1_emerald_s319.png",
+      "size": 906695,
+      "sha256": "2eaee34e9f19327bff475077a74fdcafb080c7bde6852e706bf642c77cd508c6",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_easel_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_easel_v1_emerald_s330.png",
+      "size": 1152648,
+      "sha256": "1b6a5adceb3197a17797b55bbedaab85c328b363df7befe97e48342895a1506b",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_easel_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_easel_v1_emerald_s341.png",
+      "size": 1077780,
+      "sha256": "126001aefdb0cc501e12138ff5eed1f294ba2a1e1c5401baa8a107706409c6c7",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_easel_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_easel_v1_emerald_s352.png",
+      "size": 1199690,
+      "sha256": "8b330efa7b19b8e60a801fb4fad37da1551cc9c0ec08fbce5025e33466e14296",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_easel_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_hallway_v1_emerald_s319.png",
+      "size": 784320,
+      "sha256": "05a23fa95320854d37b4085e252dc1b612db6e8d19afc95e4b1f45a095a04d50",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_hallway_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_hallway_v1_emerald_s330.png",
+      "size": 869324,
+      "sha256": "d5b3e8ed1a6f1a03d926503cd7000d95ce955a71ee2eb09b0a49c3a508317dbb",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_hallway_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_hallway_v1_emerald_s352.png",
+      "size": 814218,
+      "sha256": "7e405ad094c1d2c82fa5b7b5cd45da02e34de6dfb2fb0b8c1425623c93c6c9e0",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_hallway_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_kitchen_v1_emerald_s319.png",
+      "size": 927073,
+      "sha256": "2b9a39a6807f4f244f7389dece163bba73e42c1d85ae79d8cca3b55fe330bdaf",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_kitchen_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_kitchen_v1_emerald_s341.png",
+      "size": 1004957,
+      "sha256": "16ef0f87ee388ea166edccc091e864c74c14151526260a091c051e22101869b8",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_kitchen_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_kitchen_v1_emerald_s352.png",
+      "size": 987326,
+      "sha256": "6fa2e1a5fab3b52cdb04af77cdf0bb5c368890218276022065d3ed3d9f664490",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_kitchen_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_sofa_v1_emerald_s330.png",
+      "size": 965725,
+      "sha256": "a27df943b46b78448bb68c3f6e6437ede2edaa245e398f3826ad304de23bff47",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_sofa_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_sofa_v1_emerald_s341.png",
+      "size": 807504,
+      "sha256": "58391ec7cd7aa533425436a7901479275253e3356dffc3df6ccca944137b9644",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_sofa_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/pri_sofa_v1_emerald_s352.png",
+      "size": 972260,
+      "sha256": "927833e6e4f2e61f74cf06954c506957635a6e68df7db68e5f407273cec5884c",
+      "key": "mockup-corpus/outputs/gl6_p4b1/pri_sofa_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_books_v1_emerald_s319.png",
+      "size": 923699,
+      "sha256": "f70602aa6ea7b55947200e1fbac65bdc8273da99e6e6f867a09b564e3185d4b5",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_books_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_books_v1_emerald_s330.png",
+      "size": 1242077,
+      "sha256": "6eaadf84c7451beb966b96616ea9289412c8806aee2e27f3cded6cb9431958ef",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_books_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_books_v1_emerald_s341.png",
+      "size": 1160337,
+      "sha256": "8aa5422a5c1b0f015df391b0e98319b60cfadbe9525b2c310d5a00b0b45b44e7",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_books_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_desk_v1_emerald_s319.png",
+      "size": 988627,
+      "sha256": "fd6d6364d9ca192af33d3a48bf75624087ec7202f24f330629f800e0dcbfba86",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_desk_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_desk_v1_emerald_s330.png",
+      "size": 1157908,
+      "sha256": "b415c40905fdf9f78de6077da9fd9f45370f4bbb92c49e62051614d602065d73",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_desk_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_desk_v1_emerald_s341.png",
+      "size": 879959,
+      "sha256": "f6579e19ecb1ab722453d7ea59f3c253a96bbc07455ff4fce30f7ab5ad54df20",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_desk_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_desk_v1_emerald_s352.png",
+      "size": 1115273,
+      "sha256": "501a21e851e4151f2d925a62537b1f7ba67775ceb66be6cc4f30f072c6670d1e",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_desk_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_easel_v1_emerald_s319.png",
+      "size": 902525,
+      "sha256": "c37df50b86880479b7602854f2ab382a8a6762e9b4d185ce334aba215eb599a3",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_easel_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_easel_v1_emerald_s330.png",
+      "size": 1043455,
+      "sha256": "ce29c4c369b74dc7ec1d4190b89a22ea6605916c545639dd2d1bf7d9de68312e",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_easel_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_easel_v1_emerald_s341.png",
+      "size": 971312,
+      "sha256": "53c35e9a6a4128a80a3e2018ef7d17a938f165036eea9d9dfb98b7bbe589cae5",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_easel_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_easel_v1_emerald_s352.png",
+      "size": 1158496,
+      "sha256": "1883c27812f25bca2646d00e5e4aca412a0ad46ed6b8004fbacb9d1b3758db54",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_easel_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s319.png",
+      "size": 677495,
+      "sha256": "573534b760ca14e5df3ef3c25d91d47ec0eaeeaa3204255186fcbd4685b1d28c",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s330.png",
+      "size": 817452,
+      "sha256": "1140eb7c94e23cc1aa2bcd739e1744ec76d8408ede444c96c797b579a7e13c29",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s341.png",
+      "size": 859819,
+      "sha256": "3ce9b870ebedfa5b066b03018f90f755711b77528ee55362181b397d70e86aa3",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s352.png",
+      "size": 914128,
+      "sha256": "d2097c492bae792df2bb7ddaaf571c31df1de001dc0202f1665c3b70278d8648",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_kitchenshelf_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_nightstand_v1_emerald_s319.png",
+      "size": 887895,
+      "sha256": "bfbee7b09cfa4ee8625d3b8f954a27bc4b33e24f182b9cced9af32b12edb8ad2",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_nightstand_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_nightstand_v1_emerald_s330.png",
+      "size": 1145807,
+      "sha256": "9779844c6e4bee352a540bc356ce2a4d2c9702dca1cd10c1a69640e121208672",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_nightstand_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_nightstand_v1_emerald_s341.png",
+      "size": 852983,
+      "sha256": "8e429d6f094d2fc6ddc8d27f4de2c84a72dd01e21338a230112f8282fe58c451",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_nightstand_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_nightstand_v1_emerald_s352.png",
+      "size": 1079901,
+      "sha256": "fd73a9ccced45d1ce6c0a1a0378f3b859b6a2cb72c9583a07c3bff5be293dc70",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_nightstand_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_windowsill_v1_emerald_s319.png",
+      "size": 1038066,
+      "sha256": "20272f3ff3b09a58329a7b8692aca206f72c096ccf83259f2d718b1d10555cff",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_windowsill_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_windowsill_v1_emerald_s330.png",
+      "size": 1011138,
+      "sha256": "b2b49271a61dc8272c1aaea19b10ff340a95133db983707406e4820646cb1202",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_windowsill_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_windowsill_v1_emerald_s341.png",
+      "size": 943538,
+      "sha256": "2ccfe26cf79d4f5580ff03818a5c3acd4d5865e5ebda65b8fd9822d3ed429911",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_windowsill_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/s57_windowsill_v1_emerald_s352.png",
+      "size": 1101476,
+      "sha256": "c2ae7ab4b02f9fd4552617fcfcda4dba4141c206548ae0a513d4c7b75bf8a205",
+      "key": "mockup-corpus/outputs/gl6_p4b1/s57_windowsill_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/screen.json",
+      "size": 40344,
+      "sha256": "0b6e26144090f2164a8298b81b37db616af846b0ed3bd71e570c7cd7b5e9fafc",
+      "key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/screen_10x24.json",
+      "size": 40344,
+      "sha256": "0b6e26144090f2164a8298b81b37db616af846b0ed3bd71e570c7cd7b5e9fafc",
+      "key": "mockup-corpus/outputs/gl6_p4b1/screen_10x24.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/screen_5x7.json",
+      "size": 40247,
+      "sha256": "709ba5032d7c2998c183ee2d72dd0d3589463030b280c2e7d8503f7e0b2a830b",
+      "key": "mockup-corpus/outputs/gl6_p4b1/screen_5x7.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/screen_primary.json",
+      "size": 40208,
+      "sha256": "85d128091a3c9ac394271af83629c61a6fdc7d9d2e59c4fadb29eecb0e51e890",
+      "key": "mockup-corpus/outputs/gl6_p4b1/screen_primary.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/sheet_10x24.png",
+      "size": 599533,
+      "sha256": "92e3fe54c51b7bdd3440c7b88295f6a87ca70a1d1ad9d611916f3aa4f09fcf63",
+      "key": "mockup-corpus/outputs/gl6_p4b1/sheet_10x24.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/sheet_5x7.png",
+      "size": 1000504,
+      "sha256": "f1e566bab9c54ade89590219930a4bf6833f2e1220e3dedfd169b2e28fa193f0",
+      "key": "mockup-corpus/outputs/gl6_p4b1/sheet_5x7.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/sheet_primary.png",
+      "size": 781151,
+      "sha256": "6967ba0e2e6ae23245c52ad39886f0da8a05ae7394e5308f98b7f41625e74682",
+      "key": "mockup-corpus/outputs/gl6_p4b1/sheet_primary.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_clips_v1_emerald_s352.png",
+      "size": 760551,
+      "sha256": "1c9aeebaaae34a994a058745ca98b53830d7aacaadd7c1c431dae87f37da5f6e",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_clips_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_console_v1_emerald_s319.png",
+      "size": 564577,
+      "sha256": "9388fce6b4b6128b7c87d7e2088440ee583524a28e6aa0c3483469a5fb8447ab",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_console_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_console_v1_emerald_s330.png",
+      "size": 685343,
+      "sha256": "26bf42f87f2be89924541796e10ff2b76bb5a5ad9f70f32a784a4dd35b445742",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_console_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_console_v1_emerald_s341.png",
+      "size": 633970,
+      "sha256": "b441557042de48e8eec057af7f9b3f96d703e51a3b289e4886b59822de2046c6",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_console_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_doors_v1_emerald_s319.png",
+      "size": 663516,
+      "sha256": "b46ee094c38f80e6cee66bead9bd1df961034c7bcd48d9c39ee76c115c14135f",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_doors_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_doors_v1_emerald_s330.png",
+      "size": 514917,
+      "sha256": "462432287ad2974171d5ed32b3fb34be720aaae0499a7ed68681a475499791c8",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_doors_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_doors_v1_emerald_s341.png",
+      "size": 604582,
+      "sha256": "0ea609048772d58510359dda5a1f08539e85220abe7e908e08185b0ab47af513",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_doors_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_doors_v1_emerald_s352.png",
+      "size": 642864,
+      "sha256": "714e9a2a46a4b9d56b2dea32f55a3a70792a456062090e19a392c93cffa575a6",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_doors_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_floorlean_v1_emerald_s319.png",
+      "size": 835716,
+      "sha256": "e1620ce2ac2967b99a10d1e33359ea60d4ae579d4753b58c62b660079a90e3f1",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_floorlean_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_floorlean_v1_emerald_s330.png",
+      "size": 885991,
+      "sha256": "01596d4cf01ebc75bf0d05ccf6aa689d2cadefd9e46e36b41bc8711c7498fc86",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_floorlean_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_floorlean_v1_emerald_s341.png",
+      "size": 930155,
+      "sha256": "5194781f3eff571e336839e6a5ff04b8709d8d52f8b4f98ea2842c0e6233a6ba",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_floorlean_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_floorlean_v1_emerald_s352.png",
+      "size": 955858,
+      "sha256": "fe5086c7726f86c7a1da7408a29f205952e2ad9f18c246279afadd64ee2ccd62",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_floorlean_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_hanger_v1_emerald_s319.png",
+      "size": 564641,
+      "sha256": "dbb342d5ae3d336d610386964ef2092e89b4fe69ac6d61f92bb09e344b713808",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_hanger_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_hanger_v1_emerald_s330.png",
+      "size": 886896,
+      "sha256": "bec8f970077040d9c977ce6fc17e8c19504e45ba470e9270da98d9918a0d2b77",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_hanger_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_stairwell_v1_emerald_s319.png",
+      "size": 604679,
+      "sha256": "4fc6d3befaf6d1ca1168cdbde071d98a475be4716220893e68e58d517183bb70",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_stairwell_v1_emerald_s319.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_stairwell_v1_emerald_s330.png",
+      "size": 606115,
+      "sha256": "1cf3d471467957cea35d92c1655da9e614c95eebafa111f44ad7bf8a01b0cbd8",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_stairwell_v1_emerald_s330.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_stairwell_v1_emerald_s341.png",
+      "size": 495580,
+      "sha256": "34ea452db4b0fc90f3bb58efc5b94256f17630e62eb2250a0fcf88ad2b2f2d4c",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_stairwell_v1_emerald_s341.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4b1/t24_stairwell_v1_emerald_s352.png",
+      "size": 583356,
+      "sha256": "e85d4701a6c0c6040c74bf42194c590196484686173d1541f865b77733deab0e",
+      "key": "mockup-corpus/outputs/gl6_p4b1/t24_stairwell_v1_emerald_s352.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_p4b1/screen.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/10x24__lifestyle_stairs_tall.png",
+      "size": 6760616,
+      "sha256": "0c332329c869f0245f0e146673d1fa5f39f438c9d94622ed62d87a2e3ea12b3d",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/10x24__lifestyle_stairs_tall.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/5x7__lifestyle_easel_shelf.png",
+      "size": 6459124,
+      "sha256": "14f94e9d18d0baf7410a41120781c8cac63ccc6554c3c667d06447a8ae175ef7",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/5x7__lifestyle_easel_shelf.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/5x7__lifestyle_held_small_a.png",
+      "size": 5804417,
+      "sha256": "f74da7f866d9f7fd6c6bbf69e06df75b55ab30739a5a9be663359bc7a525f1c8",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/5x7__lifestyle_held_small_a.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/5x7__lifestyle_held_small_b.png",
+      "size": 5800692,
+      "sha256": "04e542f9b1b3a2520f35518b1f25e25134dc4d54aef0a46611ce1a7a5dcfc988",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/5x7__lifestyle_held_small_b.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/GATE-FAIL__10x24__lifestyle_reading_nook.png",
+      "size": 6705734,
+      "sha256": "79b434b8d66a7f67f84dc790f83a45c636fff82397bf60a41ae0621802d151fb",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/GATE-FAIL__10x24__lifestyle_reading_nook.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/primary__lifestyle_sofa_goldenhour.png",
+      "size": 7797411,
+      "sha256": "2d71aaa780af43fb5675a6a3ccdc55dac6917db64cd8f99e41324a9b11b4be43",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/primary__lifestyle_sofa_goldenhour.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_p4c_review/primary__lifestyle_stairs_landing.png",
+      "size": 7070049,
+      "sha256": "e6ee0e8c8aa9ec06665433e82b9498f82fa6519d283e65f92461dffba6f22633",
+      "key": "mockup-corpus/outputs/gl6_p4c_review/primary__lifestyle_stairs_landing.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/candidates.png",
+      "size": 776974,
+      "sha256": "1787b72832907aef5aadb36e46383e75346fa0dba2850a606ded4fe2570a9da1",
+      "key": "mockup-corpus/outputs/gl6_rescreen/candidates.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/committed.png",
+      "size": 582258,
+      "sha256": "76a0f15c9efbeca6ebdfa5b54354a5ff46c27bc9ec7b8300a2c6b3f5b7e0bf69",
+      "key": "mockup-corpus/outputs/gl6_rescreen/committed.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/composites.png",
+      "size": 1110814,
+      "sha256": "ed3b9845cbb335ecd0c3fec18d1543cff4fdc8a8d452fdc4babff92fa67aed8f",
+      "key": "mockup-corpus/outputs/gl6_rescreen/composites.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/mask_gl6_keyed_framed_v1_emerald_s11.png",
+      "size": 455267,
+      "sha256": "79c841c062a057f47b30b3a65a7a66531c044087e61388b1c18d5aefc5832abf",
+      "key": "mockup-corpus/outputs/gl6_rescreen/mask_gl6_keyed_framed_v1_emerald_s11.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/mask_gl6_p4a2_framed_v1_emerald_s121.png",
+      "size": 459974,
+      "sha256": "56d26f2650276699567c8d63adda7a9db9c652de5e350a5e619df1e09ae573af",
+      "key": "mockup-corpus/outputs/gl6_rescreen/mask_gl6_p4a2_framed_v1_emerald_s121.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/mask_gl6_p4a3_shelfsheet_v2_emerald_s286.png",
+      "size": 389943,
+      "sha256": "4b01d799887c52757711624bc1ad8591972dd0dbe54e5b92a649a4781ba7e2cb",
+      "key": "mockup-corpus/outputs/gl6_rescreen/mask_gl6_p4a3_shelfsheet_v2_emerald_s286.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/mask_gl6_p4a_framed_v3_emerald_s11.png",
+      "size": 269138,
+      "sha256": "f9c2243c5a160fb0ae5dc91dc8d66f7faa0505dc00ed0bdc472f9dcf1c91230e",
+      "key": "mockup-corpus/outputs/gl6_rescreen/mask_gl6_p4a_framed_v3_emerald_s11.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/outside_gl6_keyed_framed_v1_emerald_s11.png",
+      "size": 1054596,
+      "sha256": "4db7bd6d0b993aa92b52b3def8b67f5e2f0b2e6b532c38dc74bf65ac7e1a5df6",
+      "key": "mockup-corpus/outputs/gl6_rescreen/outside_gl6_keyed_framed_v1_emerald_s11.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/outside_gl6_p4a2_framed_v1_emerald_s121.png",
+      "size": 1019915,
+      "sha256": "84579e34469b97aad13c432340f7000c4643168d5d743f07d270e14d5b4c5f56",
+      "key": "mockup-corpus/outputs/gl6_rescreen/outside_gl6_p4a2_framed_v1_emerald_s121.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/outside_gl6_p4a3_shelfsheet_v2_emerald_s286.png",
+      "size": 939763,
+      "sha256": "7c97508a10a0f713fc30527a6b637306211d18d859086439e32481b922ee25c8",
+      "key": "mockup-corpus/outputs/gl6_rescreen/outside_gl6_p4a3_shelfsheet_v2_emerald_s286.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/outside_gl6_p4a_framed_v3_emerald_s11.png",
+      "size": 742213,
+      "sha256": "345441d04befc6eedc9e782bebcd9f10eb9d73299d3e6d105f16303e0c3b8f5d",
+      "key": "mockup-corpus/outputs/gl6_rescreen/outside_gl6_p4a_framed_v3_emerald_s11.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/probe_outside.py",
+      "size": 2619,
+      "sha256": "e822a5f9f1320a46d2f21a394b9f38540537c0dafcc288b76581cfc6479d6f1c",
+      "key": "mockup-corpus/outputs/gl6_rescreen/probe_outside.py",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_clips_v3_s11.json",
+      "size": 1699,
+      "sha256": "f478b6f45617d376116eb80be9957a98f3c8579ade0ed194c55ac46485a3decc",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clips_v3_s11.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_clips_v3_s11.png",
+      "size": 982439,
+      "sha256": "d75a67ec6f973cd4cf1dc0508769c1b737bf939dd9415d97768ba96db31607ea",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clips_v3_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clips_v3_s11.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_clipsheet_v1_s44.json",
+      "size": 1951,
+      "sha256": "c2e910ed206f9d076a2e5f014328284e4eb44a30a38d2da6293124bd9e854dce",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clipsheet_v1_s44.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_clipsheet_v1_s44.png",
+      "size": 973824,
+      "sha256": "6a35ddb9c323404ebb82a0017fe9ec7ab69d1c04f71b0bdfbe0af25f9e627972",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clipsheet_v1_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clipsheet_v1_s44.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_clipsheet_v2_s44.json",
+      "size": 1916,
+      "sha256": "e9f117ff3dba16e4b34390568adca17bee459cb82d2f75a12f4839712588dcf4",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clipsheet_v2_s44.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_clipsheet_v2_s44.png",
+      "size": 1068532,
+      "sha256": "6aee313020f4e2c7301a249bb6ea2e2ae6f46c56b3b516b8f890b6fef7e711c0",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clipsheet_v2_s44.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_clipsheet_v2_s44.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_framed_v1_s88.json",
+      "size": 2007,
+      "sha256": "f6c1d2bf1ab694c44f63f939d42dd8e9a76526d22a715a4b75e13ca669d74388",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_framed_v1_s88.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_framed_v1_s88.png",
+      "size": 857771,
+      "sha256": "c550b4de27fce1ac313fdb1e07f15211943951b788d70a80a026e625fc508d1f",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_framed_v1_s88.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_framed_v1_s88.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_framed_v3_s11.json",
+      "size": 1758,
+      "sha256": "95bd12586c7b6af49ab1cfffc17e9c1e17daa2d80cf082d8c7b905dabd3f770c",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_framed_v3_s11.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_framed_v3_s11.png",
+      "size": 808701,
+      "sha256": "3d59b0e99f1d38547a441562937f12fabfd9fce017b27275e34dee5d8e8fa306",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_framed_v3_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_framed_v3_s11.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_leaning_v1_s11.json",
+      "size": 1782,
+      "sha256": "f5c29e2a314c0f415d4b75ab48f5265b3b6c65bea9a71a74db60836711a885b3",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v1_s11.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_leaning_v1_s11.png",
+      "size": 968200,
+      "sha256": "e032cb0e6bfaba8e68dbfb692ccd741cf1700fda09d4b2a47757586c9e6be9e9",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v1_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v1_s11.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_leaning_v1_s22.json",
+      "size": 1782,
+      "sha256": "88e3b08b83b1cd6246c43795b6294b66568cb647f12cb285e7c435fcec1117b1",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v1_s22.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_leaning_v1_s22.png",
+      "size": 757269,
+      "sha256": "eff8fcc00f3e674276bf02030e8647a110d514236fa5bf8e378f2fc3831846d8",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v1_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v1_s22.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_leaning_v3_s11.json",
+      "size": 1713,
+      "sha256": "d5089a20d1eb38304da352801e055ec1ff2e49ca03f89d13bdf585a38f972cc7",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v3_s11.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_leaning_v3_s11.png",
+      "size": 1074538,
+      "sha256": "37716989a51f6f2bdd3a7ad02e872451d7a37bddc4bd1d84f8d93af473a739f5",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v3_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_leaning_v3_s11.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_shelf_v3_s11.json",
+      "size": 1737,
+      "sha256": "b2208caaa9c7ed1460fd63391d60398462bb5157970a65141ed87322c932e250",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_shelf_v3_s11.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_shelf_v3_s11.png",
+      "size": 860921,
+      "sha256": "e554272f7fdba468a8dd073568307db691745fef5d7cb884fe0bd0208fcd7c59",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_shelf_v3_s11.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_shelf_v3_s11.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_shelf_v3_s22.json",
+      "size": 1737,
+      "sha256": "23e0674ce8b51ff7f23d06288b49684efef4771911fe83531293f98a3f1a2073",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_shelf_v3_s22.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage/h_shelf_v3_s22.png",
+      "size": 610234,
+      "sha256": "d2c5f326a557c73aff4e04c698971df56399e7d3ba3dd515fd3db4174c7ed90a",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage/h_shelf_v3_s22.png",
+      "verdict_key": "mockup-corpus/outputs/gl6_rescreen/stage/h_shelf_v3_s22.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_rescreen/stage.py",
+      "size": 2579,
+      "sha256": "f1c477a9dc2d569ec577a44f80e9cfdf019a6a08f1d17e7305a4bcb10add4194",
+      "key": "mockup-corpus/outputs/gl6_rescreen/stage.py",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_edge_pampas_left.png",
+      "size": 73590,
+      "sha256": "674065888f6d0416521539878cef483458622ab4a829edadba26e256b5eab2c1",
+      "key": "mockup-corpus/outputs/gl6_review/_edge_pampas_left.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_edge_pampas_left_FIXED.png",
+      "size": 73915,
+      "sha256": "2ebf32eff2a0416ea742c671a6cfc1be14795a196f9ed5c5b5870cd0e0d069de",
+      "key": "mockup-corpus/outputs/gl6_review/_edge_pampas_left_FIXED.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_new_A_person.png",
+      "size": 509038,
+      "sha256": "f435d1be0e99b80b81f071926986704e8b2166173ed14bad819e5706913fc57a",
+      "key": "mockup-corpus/outputs/gl6_review/_new_A_person.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_new_B_woman.png",
+      "size": 405796,
+      "sha256": "3a4cc34fac459cea4bdf7297f50d0d66c645416e13727a4a6e95234d8dda94df",
+      "key": "mockup-corpus/outputs/gl6_review/_new_B_woman.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_zoom/lifestyle_held_creamtee_gripL.png",
+      "size": 849215,
+      "sha256": "2f85f8360f3acc40124deff2d179677b45d427e8697349a2ad15a5ec2c82ab21",
+      "key": "mockup-corpus/outputs/gl6_review/_zoom/lifestyle_held_creamtee_gripL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_zoom/lifestyle_held_creamtee_gripR.png",
+      "size": 938756,
+      "sha256": "2c72649b6ec7b139c53ab1c21ced6a7cb0244ce5633f9a45b654f25f0f6acf78",
+      "key": "mockup-corpus/outputs/gl6_review/_zoom/lifestyle_held_creamtee_gripR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_zoom/lifestyle_held_greytee_gripL.png",
+      "size": 824108,
+      "sha256": "4ce1249391b379dcd811d666960dfd8cbd6653358cb366eb61c8db57fbb94f44",
+      "key": "mockup-corpus/outputs/gl6_review/_zoom/lifestyle_held_greytee_gripL.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/_zoom/lifestyle_held_greytee_gripR.png",
+      "size": 815001,
+      "sha256": "40eb0ad1f606904b52a219dca692b51c85caf73be2c44d4bdb80de82c2559e7e",
+      "key": "mockup-corpus/outputs/gl6_review/_zoom/lifestyle_held_greytee_gripR.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/_INDEX.png",
+      "size": 1910075,
+      "sha256": "04e53dbad5729dceb1ee576798fafff21d6e59d0f122d152cf85a6cb46b00353",
+      "key": "mockup-corpus/outputs/gl6_review/primary/_INDEX.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/flat_clips_shadowband.png",
+      "size": 1066172,
+      "sha256": "647c8d92ae9d2f78c7e9a1dc121562c8785893bc1fcb772f3f57cfbf8e35dccc",
+      "key": "mockup-corpus/outputs/gl6_review/primary/flat_clips_shadowband.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/flat_clips_windowlight.png",
+      "size": 910062,
+      "sha256": "00ce9ed8c4b8f3ad186cb6f4856a3d4829ce8500dac97546d26d08e63f1c5875",
+      "key": "mockup-corpus/outputs/gl6_review/primary/flat_clips_windowlight.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/flat_console_vase.png",
+      "size": 3854586,
+      "sha256": "92272701d7ada84bbed13957f1626ac3727bafc9f039af01bd3d9e898c4ddd3e",
+      "key": "mockup-corpus/outputs/gl6_review/primary/flat_console_vase.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/flat_leaning_bookstack.png",
+      "size": 1015330,
+      "sha256": "88e04a8c7d27489b8f3e09d95aef634c4a06f8395afa6d0029793bc576335c97",
+      "key": "mockup-corpus/outputs/gl6_review/primary/flat_leaning_bookstack.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/flat_pegs_windowsill.png",
+      "size": 1202137,
+      "sha256": "7a8bce94c0a08918379782c3202f695e7ef15e0d784dc2aaeac6a4c0a28f2bef",
+      "key": "mockup-corpus/outputs/gl6_review/primary/flat_pegs_windowsill.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/flat_shelf_books.png",
+      "size": 715508,
+      "sha256": "3219ae64700b8c0ee2fd8d25be475a2f4ebd1fa9b20f1e7c20e397dd834be1cb",
+      "key": "mockup-corpus/outputs/gl6_review/primary/flat_shelf_books.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_console_pampas.png",
+      "size": 1028237,
+      "sha256": "5f826bc30b24afe9f9508311371fcbb9ed9de0b4c5b27922350d3bcc1c64b00a",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_console_pampas.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_console_vase.png",
+      "size": 6061427,
+      "sha256": "1c09582a2d5713ca8e2204feba323fe0252afe8584fb47c9bae19c8c94e9e493",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_console_vase.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_floor_leaning.png",
+      "size": 1080535,
+      "sha256": "777859f92df574ec458665ec62a4ab7669605731e3f093e18e9eed86cfffa835",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_floor_leaning.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_floor_terracotta.png",
+      "size": 1282491,
+      "sha256": "34653389de3568556c54a8ae96f31aef0c9d56a9f2e1e94693f83f03951c5158",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_floor_terracotta.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_framed_wall_plant.png",
+      "size": 924950,
+      "sha256": "2525bd5225ec48e68b3d9c16e12ab3393f329d51c7809db50fadac0371e33b90",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_framed_wall_plant.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_held_creamtee.png",
+      "size": 5450065,
+      "sha256": "4cb6be9476528dafd2985d41513e77a3a405d561c4af949ab723c3eee48c1ac8",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_held_creamtee.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_held_greytee.png",
+      "size": 5225713,
+      "sha256": "ec8e06073bf083476701dd9bbc266a516d4ae305f8c6c7fde2ab51be13c4fbf7",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_held_greytee.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_shelf_books.png",
+      "size": 829179,
+      "sha256": "977aabbd1cb2497a0cb15acc5014f9e69e47ebc3bb79885860043b0ae31f89f7",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_shelf_books.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "outputs/gl6_review/primary/lifestyle_studio_held.png",
+      "size": 6642690,
+      "sha256": "2d4dfa82707f608f9af9fcef7a2eb7761057471bab7c44846165bf92e6fdd563",
+      "key": "mockup-corpus/outputs/gl6_review/primary/lifestyle_studio_held.png",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/10x24/replicate-prediction-0k0yj19w3xrmr0czpkxagmw0sc.json",
+      "size": 2306,
+      "sha256": "3ec20a012a120d105425ea6feeef7c2324e00471fd8c1f245458fae32980bbac",
+      "key": "mockup-corpus/assets/mockups/inflow/10x24/replicate-prediction-0k0yj19w3xrmr0czpkxagmw0sc.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/10x24/replicate-prediction-0k0yj19w3xrmr0czpkxagmw0sc.png",
+      "size": 6486524,
+      "sha256": "f1a6be7bf15f5f7357108dff01a22a5667841c9cc7022f92556a27a3a6a349e7",
+      "key": "mockup-corpus/assets/mockups/inflow/10x24/replicate-prediction-0k0yj19w3xrmr0czpkxagmw0sc.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/10x24/replicate-prediction-0k0yj19w3xrmr0czpkxagmw0sc.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/10x24/replicate-prediction-hcvrh6wzv9rmw0czq3krd4ypcg.json",
+      "size": 2459,
+      "sha256": "8d1d51657ad4fb838d1083adc2be7452ad410307e3834ce68378ac2516995d2c",
+      "key": "mockup-corpus/assets/mockups/inflow/10x24/replicate-prediction-hcvrh6wzv9rmw0czq3krd4ypcg.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/10x24/replicate-prediction-hcvrh6wzv9rmw0czq3krd4ypcg.png",
+      "size": 6799747,
+      "sha256": "2090eeff74eb8c2230106c312e00c2fc49e79392158b728e955421452985bc68",
+      "key": "mockup-corpus/assets/mockups/inflow/10x24/replicate-prediction-hcvrh6wzv9rmw0czq3krd4ypcg.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/10x24/replicate-prediction-hcvrh6wzv9rmw0czq3krd4ypcg.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/desktop.ini",
+      "size": 47,
+      "sha256": "a1edc277e4762553755e848e57a9b9b1f7ead7433e87b9fdd491f465c0bef87e",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/desktop.ini",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-1acwf4fq39rmr0czpkys0jbx9g.json",
+      "size": 2700,
+      "sha256": "7b63b8e332935f5f7fd817fb2d5752ce9cf338edb52d21558d42b3e74c6442dd",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-1acwf4fq39rmr0czpkys0jbx9g.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-1acwf4fq39rmr0czpkys0jbx9g.png",
+      "size": 5368388,
+      "sha256": "0f09a8cd64ebbb95f69c1b904f1deaeaf45b502d24bc6a58566e2ab026639e19",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-1acwf4fq39rmr0czpkys0jbx9g.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-1acwf4fq39rmr0czpkys0jbx9g.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-2s0c4n9nsdrmr0czq62bx7tp6r.json",
+      "size": 2638,
+      "sha256": "9835d1b5951dbc6a3042b24b34dd00dbdcf95ac46422c4456b39da9eabdf5067",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-2s0c4n9nsdrmr0czq62bx7tp6r.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-2s0c4n9nsdrmr0czq62bx7tp6r.png",
+      "size": 5510430,
+      "sha256": "55d9602f239d94b7f0892239c92a5d19a46a7d9ff31b154d3fd77604762e3f34",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-2s0c4n9nsdrmr0czq62bx7tp6r.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-2s0c4n9nsdrmr0czq62bx7tp6r.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-4b0atrfbb1rmr0czq3e9awehem.json",
+      "size": 2825,
+      "sha256": "e0ddbc07f410a0491befd754522165487cf25055d88cbc255e780bef4d12c645",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-4b0atrfbb1rmr0czq3e9awehem.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-4b0atrfbb1rmr0czq3e9awehem.png",
+      "size": 5790516,
+      "sha256": "45f8266939ce47293915f3b6bd78b12a2d2d9f6c8c39237bc2a5ae38f8b5e7a3",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-4b0atrfbb1rmr0czq3e9awehem.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-4b0atrfbb1rmr0czq3e9awehem.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-4k12e4e9jnrmy0czq5vs9b1epm.json",
+      "size": 2829,
+      "sha256": "20ad8467e33d34000c7caea1d96cffd543e716e536c29ed506aa9cf04af14cd4",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-4k12e4e9jnrmy0czq5vs9b1epm.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-4k12e4e9jnrmy0czq5vs9b1epm.png",
+      "size": 5167411,
+      "sha256": "caffcad42b15ae76eee731df456bf7294a1606334a5f699c5bda809262629c6b",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-4k12e4e9jnrmy0czq5vs9b1epm.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-4k12e4e9jnrmy0czq5vs9b1epm.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-ykdf1pjd0drmt0czq5tvy1gk5r.json",
+      "size": 2832,
+      "sha256": "ff514aae11aa9d27980b435ecad173dd57b35f4809b766efeb915c90d3ca2195",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-ykdf1pjd0drmt0czq5tvy1gk5r.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/5x7/replicate-prediction-ykdf1pjd0drmt0czq5tvy1gk5r.png",
+      "size": 5528086,
+      "sha256": "e20994cbb48d3fdd56c596379313df0cc274ae85acb9680f91801b07b5776984",
+      "key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-ykdf1pjd0drmt0czq5tvy1gk5r.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/5x7/replicate-prediction-ykdf1pjd0drmt0czq5tvy1gk5r.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/primary/replicate-prediction-9gebkptjs9rmr0czpktbjh9evm.json",
+      "size": 2541,
+      "sha256": "ab42b4671e2964207abbf4cf1d8ed34d8cecad3a489fee5df486950dd4d78088",
+      "key": "mockup-corpus/assets/mockups/inflow/primary/replicate-prediction-9gebkptjs9rmr0czpktbjh9evm.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/primary/replicate-prediction-9gebkptjs9rmr0czpktbjh9evm.png",
+      "size": 6662915,
+      "sha256": "c985cacc991cd274c5d04774f03c1d18fe562d3fe14e5491594354a8eb3423d0",
+      "key": "mockup-corpus/assets/mockups/inflow/primary/replicate-prediction-9gebkptjs9rmr0czpktbjh9evm.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/primary/replicate-prediction-9gebkptjs9rmr0czpktbjh9evm.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/primary/replicate-prediction-wzat0kb3mhrmr0czq3fs3zy39m.json",
+      "size": 2792,
+      "sha256": "cf0efa2d28dd7d705713d9c5db77de0cb3196d1e5f1c6febb9c708b92a9da0cf",
+      "key": "mockup-corpus/assets/mockups/inflow/primary/replicate-prediction-wzat0kb3mhrmr0czq3fs3zy39m.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/primary/replicate-prediction-wzat0kb3mhrmr0czq3fs3zy39m.png",
+      "size": 6929823,
+      "sha256": "f5919b23a14724b6e7b535045f0a5405fd758b7e457501bf5ed7b90dfb86fd2e",
+      "key": "mockup-corpus/assets/mockups/inflow/primary/replicate-prediction-wzat0kb3mhrmr0czq3fs3zy39m.png",
+      "verdict_key": "mockup-corpus/assets/mockups/inflow/primary/replicate-prediction-wzat0kb3mhrmr0czq3fs3zy39m.json",
+      "status": "uploaded"
+    },
+    {
+      "path": "assets/mockups/inflow/primary/screen.json",
+      "size": 7576,
+      "sha256": "1a58cc1cd678c1bd761aee7369af3a46d5cd82f6c770719317c5a2cde6680025",
+      "key": "mockup-corpus/assets/mockups/inflow/primary/screen.json",
+      "verdict_key": null,
+      "status": "uploaded"
+    }
+  ]
+}

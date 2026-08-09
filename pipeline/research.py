@@ -154,8 +154,12 @@ def _classify_by_demand(raw: dict) -> dict:
 
 def _build_demand_checked_candidate(keyword: str, rationale: str, source_label: str, *,
                                      etsy_api_key=None, etsy_api_secret=None) -> dict:
+    # "favorites" is not a real sort_on value - Etsy's findAllListingsActive
+    # enum is created/price/updated/score only (confirmed live, HTTP 400 on
+    # "favorites"). "score" is Etsy's own relevance/popularity ranking, the
+    # closest real proxy for "trending".
     demand = etsy_client.find_all_listings_active(
-        keyword, limit=10, sort_on="favorites", sort_order="desc",
+        keyword, limit=10, sort_on="score", sort_order="desc",
         api_key=etsy_api_key, api_secret=etsy_api_secret,
     )
     listing_count = demand["count"]
