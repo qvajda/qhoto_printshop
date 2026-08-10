@@ -107,6 +107,55 @@ def test_classify_event_candidate_holds_when_inside_window_but_too_close_to_clos
     assert result["go_hold_kill"] == "hold"
 
 
+def test_classify_event_windows_today_only_one_goes():
+    """GL-47. Frozen at 2026-08-10, only fall_cozy_aesthetic (opens in 22 days)
+    is inside the lead-time band; the other five open 90-144 days out and were
+    all classifying `go`, which is why holiday art generated in August."""
+    verdicts = {}
+    for window in research.EVENT_WINDOWS_2026:
+        raw = {
+            "niche": "x", "trend_source": f"event_lookahead:{window['name']}", "rationale": "r",
+            "window_start": window["start"], "window_end": window["end"],
+            "demand_ratio": None, "listing_count": None,
+        }
+        verdicts[window["name"]] = research.classify(raw, now=date(2026, 8, 10))["go_hold_kill"]
+
+    assert verdicts == {
+        "fall_cozy_aesthetic": "go",
+        "holiday_peak": "hold",
+        "diwali": "hold",
+        "black_friday_cyber_monday": "hold",
+        "engagement_season": "hold",
+        "new_year_refresh": "hold",
+    }
+
+
+def test_classify_too_early_window_rechecks_when_it_enters_the_lead_band():
+    raw = {
+        "niche": "x", "trend_source": "event_lookahead:holiday_peak", "rationale": "r",
+        "window_start": date(2026, 11, 10), "window_end": date(2026, 12, 20),
+        "demand_ratio": None, "listing_count": None,
+    }
+
+    result = research.classify(raw, now=date(2026, 8, 10))
+
+    assert result["go_hold_kill"] == "hold"
+    assert result["hold_recheck_date"] == "2026-09-26"  # window_start - MAX_EVENT_LEAD_DAYS
+
+
+def test_classify_currently_open_window_still_goes():
+    """days_until_open is negative inside an open window; abs() would reject it."""
+    raw = {
+        "niche": "x", "trend_source": "event_lookahead:engagement_season", "rationale": "r",
+        "window_start": date(2026, 11, 21), "window_end": date(2027, 2, 14),
+        "demand_ratio": None, "listing_count": None,
+    }
+
+    result = research.classify(raw, now=date(2026, 12, 15))
+
+    assert result["go_hold_kill"] == "go"
+
+
 def test_classify_demand_candidate_goes_when_ratio_above_threshold():
     raw = {
         "niche": "x", "trend_source": "trending_now:x", "rationale": "r",
@@ -294,6 +343,51 @@ def test_run_research_cycle_falls_back_to_safe_evergreen_when_nothing_goes(tmp_p
     assert len(rows) == 1
     assert rows[0]["trend_source"].startswith("safe_evergreen_fallback:")
     assert len(inserted_ids) == len(research.EVENT_WINDOWS_2026) + 1  # events (all hold) + 1 fallback
+    conn.close()
+
+
+def test_run_research_cycle_does_not_re_propose_a_live_candidate(tmp_path):
+    """GL-47. Two batch runs close together produced near-duplicate candidates
+    for all six event niches. The dedup is by trend_source in the caller."""
+    conn = _fresh_conn(tmp_path)
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": "[]", "raw": {}}
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search):
+        first_ids = research.run_research_cycle(conn, {}, now=date(2026, 8, 10))
+        second_ids = research.run_research_cycle(conn, {}, now=date(2026, 8, 10))
+
+    # Run 1: 6 events (5 hold -> abandoned, 1 go -> pending). Only the pending
+    # one is non-terminal, so run 2 re-proposes the five holds and skips it.
+    assert len(first_ids) == len(research.EVENT_WINDOWS_2026)
+    assert len(second_ids) == len(research.EVENT_WINDOWS_2026) - 1
+    rows = conn.execute(
+        "SELECT trend_source FROM candidates WHERE trend_source = 'event_lookahead:fall_cozy_aesthetic'"
+    ).fetchall()
+    assert len(rows) == 1
+    conn.close()
+
+
+def test_run_research_cycle_skips_fallback_when_everything_was_deduped(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    conn.execute(
+        "INSERT INTO candidates (created_at, niche, trend_source, go_hold_kill, status, updated_at) "
+        "VALUES ('2026-08-10T09:00:00', 'x', 'event_lookahead:fall_cozy_aesthetic', 'go', "
+        "'generating', '2026-08-10T09:00:00')"
+    )
+    conn.commit()
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": "[]", "raw": {}}
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search):
+        research.run_research_cycle(conn, {}, now=date(2026, 8, 10))
+
+    fallbacks = conn.execute(
+        "SELECT 1 FROM candidates WHERE trend_source LIKE 'safe_evergreen_fallback:%'"
+    ).fetchall()
+    assert fallbacks == []
     conn.close()
 
 

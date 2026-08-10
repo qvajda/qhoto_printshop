@@ -95,6 +95,30 @@ def test_main_returns_1_when_one_stage_fails_but_runs_the_rest(tmp_path, monkeyp
     assert any("gen boom" in str(call) for call in mock_send.call_args_list)
 
 
+def test_per_candidate_generate_failure_reaches_the_telegram_path(tmp_path, monkeypatch):
+    """GL-46: a swallowed per-candidate exception never reached _run_stage, so
+    nothing was ever sent. Assert on the mock - send nothing."""
+    from contextlib import ExitStack
+
+    import pipeline.generate as generate
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        _patch_all_stages_ok(stack)
+        stack.enter_context(patch(
+            "run_batch.generate.run_generate_cycle",
+            side_effect=generate.GenerateCycleError("1 of 2 candidate(s) failed to generate - 7: boom"),
+        ))
+        mock_send = stack.enter_context(patch("run_batch.telegram_client.send_message"))
+
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "batch.lock", load_dotenv=False)
+
+    assert exit_code == 1
+    assert any("failed to generate" in str(call) for call in mock_send.call_args_list)
+
+
 def test_main_calls_research_before_generate(tmp_path, monkeypatch):
     # Regression: research.run_research_cycle (the only stage that inserts
     # new 'pending' candidates) was missing from run_batch's stage sequence

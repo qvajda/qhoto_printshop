@@ -357,21 +357,95 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
-        processed_ids = generate.run_generate_cycle(
-            conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
-        )
+        # GL-46: the loop still finishes, but the cycle now raises once at the
+        # end so run_batch's _run_stage sees it and the Telegram path fires.
+        with pytest.raises(generate.GenerateCycleError) as excinfo:
+            generate.run_generate_cycle(
+                conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
+            )
 
-    assert processed_ids == [succeeding_id]
+    assert "Replicate throttled" in str(excinfo.value)
 
     failing_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (failing_id,)).fetchone()
     succeeding_row = conn.execute("SELECT * FROM candidates WHERE id = ?", (succeeding_id,)).fetchone()
 
-    assert failing_row["status"] == "pending"
+    assert failing_row["status"] == "failed"
+    assert failing_row["failed_reason"].startswith(generate.GENERATE_FAILED_REASON_PREFIX)
+    assert "Replicate throttled" in failing_row["failed_reason"]
     assert failing_row["base_image_url"] is None
 
     assert succeeding_row["status"] == "generating"
     assert succeeding_row["base_image_url"] == f"https://durable.example/{succeeding_id}.png"
     conn.close()
+
+
+def _run_cycle_with_failing_replicate(conn, message="Replicate throttled"):
+    def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
+        return f"A dense brief for {candidate['niche']}."
+
+    def fake_generate_image(prompt, *, api_token=None):
+        raise RuntimeError(message)
+
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image):
+        try:
+            generate.run_generate_cycle(
+                conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
+            )
+        except generate.GenerateCycleError:
+            pass
+
+
+def test_run_generate_cycle_retries_a_failed_candidate_until_the_budget_runs_out(tmp_path):
+    """GL-46. A transient failure must still self-heal, so a `failed` row this
+    stage marked is re-queued while its generation_attempts budget lasts."""
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
+
+    for _ in range(generate.MAX_GENERATE_ATTEMPTS):
+        _run_cycle_with_failing_replicate(conn)
+
+    assert generate._attempt_count(conn, candidate_id) == generate.MAX_GENERATE_ATTEMPTS
+    row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["status"] == "failed"
+
+    # Budget spent: the next cycle must not pick it up again.
+    _run_cycle_with_failing_replicate(conn)
+    assert generate._attempt_count(conn, candidate_id) == generate.MAX_GENERATE_ATTEMPTS
+
+
+def test_run_generate_cycle_does_not_retry_another_stages_failure(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn, status="failed")
+    conn.execute(
+        "UPDATE candidates SET failed_reason = 'primary group rejected' WHERE id = ?", (candidate_id,)
+    )
+    conn.commit()
+
+    _run_cycle_with_failing_replicate(conn)
+
+    assert generate._attempt_count(conn, candidate_id) == 0
+
+
+def test_run_generate_cycle_counts_a_pre_flux_failure_against_the_budget(tmp_path):
+    """A brief-writer failure logs no FLUX attempt of its own; without a marker
+    row the retry budget would never count down and the row would loop forever."""
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn)
+
+    def boom(candidate, *, api_key=None, sibling_briefs=None):
+        raise RuntimeError("anthropic down")
+
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=boom):
+        with pytest.raises(generate.GenerateCycleError):
+            generate.run_generate_cycle(
+                conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
+            )
+
+    assert generate._attempt_count(conn, candidate_id) == 1
+    row = conn.execute("SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["status"] == "failed"
+    assert "anthropic down" in row["failed_reason"]
 
 
 def test_run_generate_cycle_returns_empty_list_when_no_pending_candidates(tmp_path):
