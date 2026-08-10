@@ -287,7 +287,11 @@ price table and per-size notes; prices below are final, not placeholders)
   diffs `static_config.json` against the live templates and prints the placed
   artwork aspect per variant. Note that `productImages[]` are 1000×1000 scene
   previews, **not** the submitted print file: the file's own aspect is not
-  readable from the API, only the rectangle the artwork occupies on the paper.- **A swallowed per-item exception must always leave a state change behind.**
+  readable from the API, only the rectangle the artwork occupies on the paper.
+  The script does print the submitted file's own dimensions and aspect next to
+  the placed one (GL-53 rider), so "what we sent" vs "what the template did
+  with it" is one line of output rather than a trip to the Design editor.
+- **A swallowed per-item exception must always leave a state change behind.**
   GL-7's per-stage isolation stops one stage's crash killing a whole run, and
   in exchange it made per-item failures invisible at *both* levels: a
   `try/except: continue` inside a stage loop leaves the row exactly as it was,
@@ -298,3 +302,12 @@ price table and per-size notes; prices below are final, not placeholders)
   (b) let the stage still fail once at the end, after the loop has given the
   other items their turn. Self-healing on the next cycle is not a substitute:
   it hides a persistent failure behind a transient one's recovery.
+- **An instruction in a prompt is a preference, not a control.** If a decision
+  says the copy must never contain something, an assertion has to say so too, in
+  code, next to the decision and cross-referenced from it. GL-53: `DISCLOSURE_TEXT`
+  was emptied on 08-06 and 27 of 27 drafts kept the AI-disclosure sentence,
+  because the prompt was the only thing enforcing it — and the same prompt's
+  opening line handed the model the vocabulary it then asked it not to use.
+  Also: when auditing one field, read the whole row. Drift class (c), the
+  digital-download wording on a physical product, was the most serious of the
+  three and nobody was looking for it.

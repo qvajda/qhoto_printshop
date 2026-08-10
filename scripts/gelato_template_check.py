@@ -8,9 +8,11 @@ Two read-only checks, both born out of GL-48:
                because the template was edited in the dashboard and nothing here
                re-read it.
   product ID - download each variant's preview and measure the placed artwork
-               rectangle inside it. GL-22a Q2 proved Gelato returns 200 for changes
-               it silently drops, so "the create succeeded" is not evidence that the
-               right file landed in the right variant.
+               rectangle inside it, alongside the dimensions and aspect of the file
+               we submitted (GL-53 rider). GL-22a Q2 proved Gelato returns 200 for
+               changes it silently drops, so "the create succeeded" is not evidence
+               that the right file landed in the right variant - and until the two
+               numbers sat on one line, a template-side re-crop was unobservable.
 
 Usage:
     python scripts/gelato_template_check.py                 # templates only
@@ -73,14 +75,43 @@ def _placed_artwork_aspect(png_bytes: bytes) -> float:
     return (xs.max() - xs.min() + 1) / (ys.max() - ys.min() + 1)
 
 
+def _submitted_file_size(url: str) -> tuple:
+    """(width, height) of the file we submitted for a placeholder.
+
+    GL-53/GL-52 rider: observability only. Nothing in the pipeline ever compared
+    what we sent to what the template did with it, so a template-side re-crop was
+    invisible - the same failure shape as GL-53 (a decision with no assertion
+    behind it). Printing both numbers on one line makes a mismatch visible without
+    opening the Design editor. It does NOT detect the crop-within-rect defect
+    itself; that needs the dashboard answer first (GL-52 kickoff).
+    """
+    # ponytail: reads the whole file to get two integers out of its header. Print
+    # masters are ~20MB and this is a hand-run script; switch to a ranged GET if
+    # it ever runs per-variant in a loop that matters.
+    with urllib.request.urlopen(url, timeout=120) as response:
+        return Image.open(io.BytesIO(response.read())).size
+
+
 def measure_product(product_id: str) -> None:
     product = gelato_client.get_product(product_id)
-    titles = {variant["id"]: variant["title"] for variant in product.get("variants", [])}
+    titles, submitted = {}, {}
+    for variant in product.get("variants", []):
+        titles[variant["id"]] = variant["title"]
+        for placeholder in variant.get("imagePlaceholders", []) or []:
+            if placeholder.get("fileUrl"):
+                submitted[variant["id"]] = placeholder["fileUrl"]
     for image in product.get("productImages", []):
-        label = ", ".join(titles.get(i, i) for i in image.get("productVariantIds", []))
+        variant_ids = image.get("productVariantIds", [])
+        label = ", ".join(titles.get(i, i) for i in variant_ids)
         with urllib.request.urlopen(image["fileUrl"], timeout=60) as response:
             aspect = _placed_artwork_aspect(response.read())
-        print(f"  {label}: placed artwork aspect {aspect:.4f}")
+        line = f"  {label}: placed artwork aspect {aspect:.4f}"
+        url = next((submitted[i] for i in variant_ids if i in submitted), None)
+        if url is None:
+            print(f"{line}, submitted file: not returned by the API for this variant")
+            continue
+        width, height = _submitted_file_size(url)
+        print(f"{line}, submitted {width}x{height} aspect {width / height:.4f}")
 
 
 def main() -> int:

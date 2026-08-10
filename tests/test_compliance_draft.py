@@ -115,6 +115,86 @@ def test_validate_listing_text_rejects_tag_over_20_chars():
         compliance_draft.validate_listing_text("A short title", [long_tag])
 
 
+# GL-53, one test per drift class found in the 2026-08-10 listing_texts audit.
+def test_validate_listing_text_rejects_prose_ai_disclosure_in_description():
+    # Class (a), 27 of 27: the verbatim sentence the model kept writing after
+    # GL-37 emptied DISCLOSURE_TEXT. It contains no 'AI generated' / 'AI art',
+    # which is exactly why FORBIDDEN_WORDS' bare word-boundary 'ai' exists.
+    description = (
+        "This design was created using AI image generation from the seller's own "
+        "prompts, then selected, edited, and prepared for print by the seller."
+    )
+
+    with pytest.raises(ValueError, match="description contains the forbidden term"):
+        compliance_draft.validate_listing_text("Botanical Wall Art Print", ["botanical"], description)
+
+
+def test_validate_listing_text_rejects_ai_disclosure_in_title_and_in_a_tag():
+    # Class (b), 13 of 27 (the kickoff said 10; the re-run on the canonical DB says 13).
+    with pytest.raises(ValueError, match="title contains the forbidden term"):
+        compliance_draft.validate_listing_text(
+            "Sage Branch Print | AI Generated Art | Modern Home Decor", ["botanical"], "A print."
+        )
+
+    with pytest.raises(ValueError, match="tags contains the forbidden term"):
+        compliance_draft.validate_listing_text(
+            "Sage Branch Print", ["botanical", "ai generated art"], "A print."
+        )
+
+
+def test_validate_listing_text_rejects_digital_download_wording():
+    # Class (c), 25 of 27 - the serious one: it advertises a product we do not sell.
+    with pytest.raises(ValueError, match="title contains the forbidden term 'Instant Digital'"):
+        compliance_draft.validate_listing_text(
+            "Sage Branch Wall Art | Instant Digital Download", ["botanical"], "A print."
+        )
+
+    with pytest.raises(ValueError, match="tags contains the forbidden term 'printable'"):
+        compliance_draft.validate_listing_text(
+            "Sage Branch Wall Art", ["printable wall art"], "A print."
+        )
+
+
+def test_validate_listing_text_rejects_production_partner_prose():
+    # Same GL-37 decision, other half: Gelato is disclosed through
+    # production_partner_ids, not in the description.
+    with pytest.raises(ValueError, match="description contains the forbidden term"):
+        compliance_draft.validate_listing_text(
+            "Sage Branch Wall Art", ["botanical"],
+            "Printed and shipped by our production partner, Gelato.",
+        )
+
+
+def test_validate_listing_text_accepts_clean_physical_poster_copy():
+    # The false-positive guard for the bare word-boundary 'ai' rule: 'air',
+    # 'detail' and 'painted' must not match, or a 200-word description would
+    # loop the retry budget away.
+    compliance_draft.validate_listing_text(
+        "Sage Green Branch Wall Art Print | Minimalist Botanical Poster",
+        ["sage green wall art", "botanical print", "nature poster"],
+        "A made-to-order poster on premium matte paper. Every detail of the hand-painted "
+        "branch stays crisp, and the airy neutral palette suits most rooms. Ships flat.",
+    )
+
+
+def test_forbidden_terms_list_is_not_empty():
+    # If this list is emptied, GL-37's decision is unenforced again and nothing
+    # else in the suite would notice. See the comment above FORBIDDEN_TERMS.
+    assert compliance_draft.FORBIDDEN_TERMS
+    assert compliance_draft.FORBIDDEN_WORDS
+
+
+def test_draft_prompt_does_not_hand_the_model_the_forbidden_vocabulary():
+    # The template used to open with "an AI-generated botanical/minimalist wall
+    # art poster print" and then ask the model not to mention AI.
+    prompt = compliance_draft.build_draft_prompt(
+        {"niche": "sage green branch"}, ["flat_mockup", "lifestyle"]
+    )
+
+    assert "AI-generated botanical" not in prompt
+    assert "made-to-order poster" in prompt
+
+
 def test_get_primary_gallery_returns_images_in_order(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(
@@ -434,6 +514,68 @@ def test_build_compliance_draft_retries_after_over_limit_title_then_succeeds(tmp
     conn.close()
 
 
+def test_build_compliance_draft_feeds_a_forbidden_term_back_as_retry_feedback(tmp_path):
+    # GL-53 wires into the retry that already existed rather than adding one:
+    # validation fails -> the failure message becomes the retry feedback.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+    bad_response = {
+        "text": _json.dumps({
+            "title": "Sage Branch Wall Art | Printable Download",
+            "tags": ["botanical"], "description": "A print.",
+            "alt_texts": ["alt one", "alt two"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=[bad_response, _fake_draft_response(2)]) as mock_complete:
+        compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    assert mock_complete.call_count == 2
+    retry_prompt = mock_complete.call_args_list[1].args[0]
+    assert "previous attempt failed validation" in retry_prompt
+    assert "forbidden term 'Printable'" in retry_prompt
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
+    conn.close()
+
+
+def test_build_compliance_draft_fails_the_candidate_when_every_attempt_carries_a_forbidden_term(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+    bad_response = {
+        "text": _json.dumps({
+            "title": "Sage Branch Wall Art Print",
+            "tags": ["botanical"],
+            "description": "Created using AI image generation.",
+            "alt_texts": ["alt one", "alt two"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               return_value=bad_response) as mock_complete:
+        with pytest.raises(ValueError, match="description contains the forbidden term"):
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    assert mock_complete.call_count == 3
+    candidate_row = conn.execute(
+        "SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["status"] == "compliance_failed"
+    assert "forbidden term" in candidate_row["failed_reason"]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()[0] == 0
+    conn.close()
+
+
 def test_build_compliance_draft_marks_compliance_failed_on_alt_text_mismatch_but_keeps_listing_text(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
@@ -503,10 +645,12 @@ def test_run_compliance_draft_cycle_skips_already_failed_candidates_on_next_run(
 
     with patch("pipeline.compliance_draft.anthropic_client.complete",
                side_effect=RuntimeError("Anthropic 500")):
-        first_run = compliance_draft.run_compliance_draft_cycle(
-            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
-            now=datetime(2026, 7, 10, 10, 0, 0),
-        )
+        # GL-53/GL-46: the stage itself fails once at the end of the loop.
+        with pytest.raises(compliance_draft.ComplianceDraftCycleError):
+            compliance_draft.run_compliance_draft_cycle(
+                conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
 
     with patch("pipeline.compliance_draft.anthropic_client.complete",
                return_value=_fake_draft_response(2)):
@@ -515,7 +659,6 @@ def test_run_compliance_draft_cycle_skips_already_failed_candidates_on_next_run(
             now=datetime(2026, 7, 10, 11, 0, 0),
         )
 
-    assert first_run == []
     assert second_run == []  # candidate stayed 'compliance_failed', not auto-retried
     candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert candidate_row["status"] == "compliance_failed"
@@ -533,15 +676,20 @@ def test_run_compliance_draft_cycle_isolates_per_candidate_failures(tmp_path):
         return _fake_draft_response(2)
 
     with patch("pipeline.compliance_draft.anthropic_client.complete", side_effect=fake_complete):
-        processed_ids = compliance_draft.run_compliance_draft_cycle(
-            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
-            now=datetime(2026, 7, 10, 10, 0, 0),
-        )
-
-    assert processed_ids == [succeeding_id]
+        # The failure is isolated (the good candidate still gets its turn) *and*
+        # the stage still reports it - both halves of the GL-46 rule.
+        with pytest.raises(compliance_draft.ComplianceDraftCycleError, match=f"{failing_id}: "):
+            compliance_draft.run_compliance_draft_cycle(
+                conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
 
     failing_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (failing_id,)).fetchone()
     assert failing_row["status"] == "compliance_failed"
+    succeeded_row = conn.execute(
+        "SELECT COUNT(*) FROM listing_texts WHERE candidate_id = ?", (succeeding_id,)
+    ).fetchone()[0]
+    assert succeeded_row == 1
     conn.close()
 
 
