@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
 import pipeline.critic_pass as critic_pass
+import pipeline.db as db
 import pipeline.generate as generate
 import pipeline.group_product as group_product
 import pipeline.primary_mockup as primary_mockup
@@ -25,6 +26,37 @@ def resolve_callback(update: dict) -> dict | None:
         "message_id": callback_query["message"]["message_id"],
         "chat_id": callback_query["message"]["chat"]["id"],
     }
+
+
+# GL-45: a tap that lands must look like it landed. The toast is transient, so the
+# keyboard is edited to a single non-actionable label carrying the decision - which
+# also makes a second tap on an already-decided message harmless (action 'noop').
+NOOP_ACTION = "noop"
+_DECIDED_LABELS = {"approve": "✅ Approved", "edit": "✏️ Edit requested",
+                   "reject": "\U0001f6ab Rejected"}
+
+
+def _ack(callback_query_id, text, *, bot_token) -> None:
+    """Acknowledge a tap. Never raises: the decision is already durably recorded by
+    the time this is called, so a stale/expired callback query is a lost spinner,
+    not a lost decision."""
+    try:
+        telegram_client.answer_callback_query(callback_query_id, text, bot_token=bot_token)
+    except Exception as exc:
+        print(f"answer_callback_query failed for {callback_query_id}: {exc}")
+
+
+def _mark_decided(parsed, *, bot_token) -> None:
+    label = _DECIDED_LABELS.get(parsed["action"], parsed["action"])
+    markup = {"inline_keyboard": [[
+        {"text": label, "callback_data": f"{NOOP_ACTION}:{parsed['group_id']}"}
+    ]]}
+    try:
+        telegram_client.edit_message_reply_markup(
+            parsed["chat_id"], parsed["message_id"], markup, bot_token=bot_token,
+        )
+    except Exception as exc:
+        print(f"edit_message_reply_markup failed for group {parsed['group_id']}: {exc}")
 
 
 def is_admin(telegram_user_id, admin_chat_id) -> bool:
@@ -287,11 +319,25 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     admin_chat_id = admin_chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")
     parsed = resolve_callback(update)
     if parsed is None:
+        # GL-45: this was the one path that consumed an update_id and left no row.
+        # It made every gap in the logged update_id sequence ambiguous - "an outside
+        # consumer ate it" and "it was an ordinary message" looked identical. Log it,
+        # and a gap becomes proof.
+        sender = (update.get("message") or {}).get("from") or {}
+        log_telegram_event(conn, sender.get("id"), update, False,
+                            "ignored: no callback_query", now=now)
         return None
 
     if not is_admin(parsed["telegram_user_id"], admin_chat_id):
         log_telegram_event(conn, parsed["telegram_user_id"], update, False,
                             "discarded: not admin", now=now)
+        _ack(parsed["callback_query_id"], "Not authorised.", bot_token=bot_token)
+        return None
+
+    if parsed["action"] == NOOP_ACTION:
+        log_telegram_event(conn, parsed["telegram_user_id"], update, False,
+                            "ignored: already decided", now=now)
+        _ack(parsed["callback_query_id"], "Already decided.", bot_token=bot_token)
         return None
 
     # Match the callback against ANY group_messages row for this group, not just the
@@ -310,6 +356,8 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     if not match:
         log_telegram_event(conn, parsed["telegram_user_id"], update, False,
                             "discarded: callback does not match a known group_messages row", now=now)
+        _ack(parsed["callback_query_id"], "This message is no longer tracked - tap a current one.",
+             bot_token=bot_token)
         return None
 
     group_row = conn.execute(
@@ -318,6 +366,12 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     candidate_id = group_row["candidate_id"]
 
     log_telegram_event(conn, parsed["telegram_user_id"], update, True, parsed["action"], now=now)
+
+    # Acknowledge BEFORE dispatching: handle_decision can spend minutes in Gelato and
+    # Etsy, and a callback query the bot answers that late has usually expired - which
+    # is how a decision that landed still looked dropped for two days (GL-45 §5).
+    _ack(parsed["callback_query_id"], f"Got it - {parsed['action']}...", bot_token=bot_token)
+    _mark_decided(parsed, bot_token=bot_token)
 
     if group_row["group_type"] == "primary":
         result = handle_decision(
@@ -334,14 +388,6 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
             etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
             dry_run=dry_run, now=now,
         )
-
-    # The decision is already durably recorded above - a failure here (e.g. a stale/expired
-    # callback query) is just a lost "loading spinner" on the admin's tap, not a lost decision,
-    # so it must not raise past this point and roll back the offset advance.
-    try:
-        telegram_client.answer_callback_query(parsed["callback_query_id"], bot_token=bot_token)
-    except Exception as exc:
-        print(f"answer_callback_query failed for {parsed['callback_query_id']}: {exc}")
 
     return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
 
@@ -385,15 +431,19 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
                                      etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
                                      replicate_api_token=None, anthropic_api_key=None,
                                      dry_run=None, now=None) -> list:
+    # GL-45: this is the only place in the pipeline that consumes the bot's single,
+    # server-side update cursor. A poll from a copy of the database deletes updates
+    # the canonical database will never see, so the identity check belongs here,
+    # ahead of the call, not in each of the three entrypoints that route through it.
+    db.assert_canonical(conn)
+
     last_offset = get_telegram_offset(conn)
     offset = last_offset + 1 if last_offset is not None else None
     updates = telegram_client.get_updates(offset=offset, bot_token=bot_token)
 
     processed = []
-    max_update_id = last_offset
     for update in updates:
         update_id = update["update_id"]
-        max_update_id = update_id if max_update_id is None else max(max_update_id, update_id)
         try:
             result = process_update(
                 conn, update, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config,
@@ -411,12 +461,15 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
             telegram_user_id = update.get("callback_query", {}).get("from", {}).get("id")
             log_telegram_event(conn, telegram_user_id, update, True, f"error: {exc}", now=now)
             print(f"process_update failed for update {update_id}: {exc}")
-            continue
-        if result is not None:
-            processed.append(result)
-
-    if max_update_id is not None:
-        set_telegram_offset(conn, max_update_id)
+        else:
+            if result is not None:
+                processed.append(result)
+        # GL-45: advance per update, not once after the loop. A run killed mid-publish
+        # used to re-deliver everything it had already handled on the next poll -
+        # update_ids 365-367 appear twice in the log, ten minutes apart, the second time
+        # as an error. Either the update is handled or its outcome is logged; both mean
+        # it must not come back.
+        set_telegram_offset(conn, update_id)
 
     # Once per poll cycle, re-attempt any group stuck at publish_failed after an
     # approved decision - a transient patch failure shouldn't strand it forever (H1).

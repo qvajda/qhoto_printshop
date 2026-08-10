@@ -309,6 +309,7 @@ def test_stall_predicate_fires_through_run_batch_when_constant_lowered(tmp_path,
             patch("pipeline.telegram_client.get_updates", side_effect=[[approve_update], []])
         )
         stack.enter_context(patch("pipeline.telegram_client.answer_callback_query"))
+        stack.enter_context(patch("pipeline.telegram_client.edit_message_reply_markup"))
         stack.enter_context(
             patch(
                 "pipeline.publish_primary_group.publish_candidate",

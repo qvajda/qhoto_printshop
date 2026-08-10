@@ -1,13 +1,27 @@
 import json
 import mimetypes
 import os
+import time
 import uuid
 import urllib.request
+from pathlib import Path
 
 import pipeline.config as config
 import pipeline.http as http
 
 TELEGRAM_API_BASE = "https://api.telegram.org/bot"
+
+# GL-45: Telegram makes allowed_updates STICKY - it persists from whatever was
+# last passed to setWebhook/getUpdates until explicitly changed, across
+# restarts. get_updates never passed it, so the effective list was whatever
+# any tool had last set, possibly years ago. Assert it on every call rather
+# than inherit it from Telegram's memory of something we did not do.
+ALLOWED_UPDATES = ["message", "callback_query"]
+
+# GL-45 H3 instrumentation: the raw getUpdates response, verbatim, to a file
+# and not to the DB - a DB-write failure must not be able to hide the one
+# measurement that discriminates "Telegram never sent it" from "we lost it".
+RAW_LOG_PATH = Path(__file__).resolve().parent.parent / "logs" / "telegram_getupdates.log"
 
 
 class TelegramAPIError(Exception):
@@ -86,13 +100,46 @@ def send_message(chat_id: str, text: str, reply_markup: dict = None, *, bot_toke
     return _post("sendMessage", payload, bot_token)
 
 
-def get_updates(offset: int = None, timeout: int = 0, *, bot_token: str = None) -> list:
+def _log_raw_updates(offset, result, raw_log_path) -> None:
+    """One JSON line per poll. Never raises - instrumentation must not be able
+    to fail a run."""
+    try:
+        path = Path(raw_log_path or RAW_LOG_PATH)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "pid": os.getpid(),
+            "cwd": os.getcwd(),
+            "offset": offset,
+            "response": result,
+        })
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"failed to write getUpdates raw log: {exc}")
+
+
+def get_updates(offset: int = None, timeout: int = 0, *, bot_token: str = None,
+                raw_log_path=None) -> list:
     bot_token = bot_token or config.require_env("TELEGRAM_BOT_TOKEN")
-    payload = {"timeout": timeout}
+    payload = {"timeout": timeout, "allowed_updates": ALLOWED_UPDATES}
     if offset is not None:
         payload["offset"] = offset
     result = _post("getUpdates", payload, bot_token)
+    _log_raw_updates(offset, result, raw_log_path)
     return result["result"]
+
+
+def edit_message_reply_markup(chat_id, message_id: int, reply_markup: dict = None, *,
+                              bot_token: str = None) -> dict:
+    """Replace (or clear, with None) a message's inline keyboard. GL-45: this is
+    what makes a tap visibly land - the answerCallbackQuery toast disappears,
+    the edited keyboard does not."""
+    bot_token = bot_token or config.require_env("TELEGRAM_BOT_TOKEN")
+    payload = {"chat_id": chat_id, "message_id": message_id}
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    return _post("editMessageReplyMarkup", payload, bot_token)
 
 
 def answer_callback_query(callback_query_id: str, text: str = None, *, bot_token: str = None) -> dict:

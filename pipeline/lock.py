@@ -14,14 +14,30 @@ regardless of PID liveness (covers PID reuse by an unrelated process). Either
 one being true means the lock is stolen, not respected.
 """
 import contextlib
+import hashlib
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 
 class LockHeldError(Exception):
     pass
+
+
+def token_lock_path(bot_token: str) -> Path:
+    """GL-45: key the lock on the bot token, not on the script's directory.
+
+    The original <tree>/db/gl7.lock satisfied "one poller" within a tree and
+    violated it between trees - two checkouts took two different locks and both
+    consumed from the same, single, server-side cursor. A path derived from the
+    token puts every process using that token behind one lock, whatever
+    directory or database it was started from. The token is hashed, never
+    written: lock files are world-readable on a shared temp dir.
+    """
+    digest = hashlib.sha256(bot_token.encode("utf-8")).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / f"qhoto-telegram-{digest}.lock"
 
 
 def _pid_alive(pid: int) -> bool:

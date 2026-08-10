@@ -21,6 +21,7 @@ import migrate_candidates_art_brief
 import migrate_critic_pass_attempts_columns
 import migrate_generation_attempts_table
 import migrate_gl36_listing_missing
+import migrate_gl45_db_identity
 import migrate_group_products_candidate_id
 import migrate_v412_gallery
 
@@ -39,6 +40,7 @@ MIGRATIONS = [
     (5, "group_products_candidate_id", migrate_group_products_candidate_id.migrate),
     (6, "v412_gallery", migrate_v412_gallery.migrate),
     (7, "gl36_listing_missing", migrate_gl36_listing_missing.migrate),
+    (8, "gl45_db_identity", migrate_gl45_db_identity.migrate),
 ]
 
 
@@ -103,7 +105,11 @@ def check(db_path) -> int:
 
 
 def main():
-    db_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DB_PATH
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    db_path = Path(args[0]) if args else DEFAULT_DB_PATH
+    if "--bless" in sys.argv:
+        print(f"canonical_path={migrate_gl45_db_identity.bless(db_path)}")
+        return
     check_only = "--check" in sys.argv
     if check_only:
         version = check(db_path)
