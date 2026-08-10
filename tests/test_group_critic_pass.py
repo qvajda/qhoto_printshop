@@ -478,12 +478,18 @@ def test_run_group_critic_pass_cycle_isolates_per_group_operational_failures(tmp
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=fake_complete_with_images):
-        processed = group_critic_pass.run_group_critic_pass_cycle(
-            conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
-            now=datetime(2026, 7, 13, 20, 0, 0),
-        )
+        # GL-54: the loop still finishes (the succeeding group still gets
+        # processed), but the cycle now raises once at the end.
+        with pytest.raises(group_critic_pass.GroupCriticPassCycleError, match="Anthropic throttled"):
+            group_critic_pass.run_group_critic_pass_cycle(
+                conn, anthropic_api_key="key1", store_id="store1", gelato_api_key="key2",
+                now=datetime(2026, 7, 13, 20, 0, 0),
+            )
 
-    assert processed == [{"candidate_id": succeeding_id, "group_type": "10x24", "passed": True}]
+    succeeding_group_row = conn.execute(
+        "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '10x24'", (succeeding_id,)
+    ).fetchone()
+    assert succeeding_group_row["status"] == "pending_review"
 
     failing_group_row = conn.execute(
         "SELECT status FROM groups WHERE candidate_id = ? AND group_type = '5x7'", (failing_id,)
@@ -493,9 +499,21 @@ def test_run_group_critic_pass_cycle_isolates_per_group_operational_failures(tmp
 
 
 def test_run_group_critic_pass_cycle_returns_empty_list_when_nothing_ready(tmp_path):
+    # GL-54: the previous version of this test inserted a gallery with no listing_texts
+    # row, which the cycle's select query does NOT filter out (it only checks
+    # groups.status/product_images/prior pass, not group_products.status) - so it was
+    # actually picked up and crashed on the missing listing_texts, and the crash was
+    # silently swallowed into an empty processed list that happened to match this
+    # test's name for the wrong reason. A genuinely "nothing ready" group is one the
+    # select query itself excludes - here, no gallery has been rendered yet.
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
-    _insert_group_gallery(conn, candidate_id, "5x7", "5x7", group_product_status="mockup_failed")
+    conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (?, '5x7', 'pending_generation', '2026-07-13T09:00:00', '2026-07-13T09:00:00')",
+        (candidate_id,),
+    )
+    conn.commit()
 
     processed = group_critic_pass.run_group_critic_pass_cycle(conn)
 

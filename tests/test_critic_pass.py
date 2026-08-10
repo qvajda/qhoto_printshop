@@ -1101,12 +1101,17 @@ def test_run_critic_pass_cycle_isolates_per_candidate_operational_failures(tmp_p
 
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
                side_effect=fake_complete_with_images):
-        processed_ids = critic_pass.run_critic_pass_cycle(
-            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
-            store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 12, 0, 0),
-        )
+        # GL-54: the loop still finishes (the succeeding candidate still gets
+        # processed), but the cycle now raises once at the end so run_batch's
+        # _run_stage sees it instead of the failure being printed and swallowed.
+        with pytest.raises(critic_pass.CriticPassCycleError, match="Anthropic throttled"):
+            critic_pass.run_critic_pass_cycle(
+                conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                store_id="store1", gelato_api_key="key2", now=datetime(2026, 7, 10, 12, 0, 0),
+            )
 
-    assert processed_ids == [succeeding_id]
+    succeeding_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (succeeding_id,)).fetchone()
+    assert succeeding_row["status"] == "primary_review"
 
     failing_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (failing_id,)).fetchone()
     assert failing_row["status"] == "generating"  # exception happened before any status write

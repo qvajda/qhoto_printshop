@@ -2,6 +2,8 @@ import copy
 from datetime import datetime
 from unittest.mock import patch
 
+import pytest
+
 import pipeline.config as config
 import pipeline.db as db
 import pipeline.group_mockup as group_mockup
@@ -425,12 +427,20 @@ def test_run_group_mockup_cycle_isolates_per_group_type_failures(tmp_path):
         "pipeline.group_mockup.group_product.render_group_mockups",
         side_effect=fake_render,
     ):
-        processed = group_mockup.run_group_mockup_cycle(
-            conn, static_config=static_config, poll_interval=0, poll_timeout=10,
-            now=datetime(2026, 7, 12, 20, 0, 0),
-        )
+        # GL-54: the loop still finishes (10x24 still gets its turn), but the
+        # cycle now raises once at the end so run_batch's _run_stage sees it.
+        with pytest.raises(group_mockup.GroupMockupCycleError, match="Gelato throttled"):
+            group_mockup.run_group_mockup_cycle(
+                conn, static_config=static_config, poll_interval=0, poll_timeout=10,
+                now=datetime(2026, 7, 12, 20, 0, 0),
+            )
 
-    assert [(p["candidate_id"], p["group_type"]) for p in processed] == [(candidate_id, "10x24")]
+    failing_group = conn.execute(
+        "SELECT status, failed_reason FROM groups WHERE candidate_id = ? AND group_type = '5x7'",
+        (candidate_id,),
+    ).fetchone()
+    assert failing_group["status"] == "pending_generation"
+    assert "Gelato throttled" in failing_group["failed_reason"]
     conn.close()
 
 

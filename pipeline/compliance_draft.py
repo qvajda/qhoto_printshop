@@ -104,14 +104,26 @@ _FORBIDDEN_PATTERN = re.compile(
 )
 
 
-def check_forbidden_terms(title: str, tags: list, description: str) -> None:
+def check_forbidden_terms(title: str, tags: list, description: str, alt_texts: list = None) -> None:
     """Rejects a draft carrying AI-provenance or digital-product wording (GL-53).
 
     Raises rather than sanitising: a draft that used the word came out of a wrong
     framing, so a scrubbed title is worse copy than a regenerated one. The message
     is written to be usable verbatim as retry feedback.
+
+    GL-54 rider: alt_texts are model output too, and they go live on the listing
+    as image alt text - they're listing copy, not internal notes, so they belong
+    inside the guardrail same as title/tags/description. alt_texts describe mockup
+    *photographs* ("flat print mockup shot" vs a lifestyle/room-context shot), so
+    the word 'print' alone is expected and legitimate there - checked against the
+    shipped FORBIDDEN_TERMS/FORBIDDEN_WORDS list, which has no bare 'print' entry
+    (only phrases like 'printable', 'print at home'), so that word is never a false
+    positive here.
     """
-    for field, value in (("title", title), ("tags", ", ".join(tags)), ("description", description)):
+    fields = [("title", title), ("tags", ", ".join(tags)), ("description", description)]
+    for index, alt_text in enumerate(alt_texts or []):
+        fields.append((f"alt_texts[{index}]", alt_text))
+    for field, value in fields:
         match = _FORBIDDEN_PATTERN.search(value or "")
         if match:
             raise ValueError(
@@ -122,7 +134,7 @@ def check_forbidden_terms(title: str, tags: list, description: str) -> None:
             )
 
 
-def validate_listing_text(title: str, tags: list, description: str = "", *,
+def validate_listing_text(title: str, tags: list, description: str = "", alt_texts: list = None, *,
                            max_title_length: int = MAX_TITLE_LENGTH) -> None:
     if len(title) > max_title_length:
         raise ValueError(
@@ -135,7 +147,7 @@ def validate_listing_text(title: str, tags: list, description: str = "", *,
             raise ValueError(
                 f"tag {tag!r} is {len(tag)} chars, exceeds Etsy's {MAX_TAG_LENGTH}-char limit"
             )
-    check_forbidden_terms(title, tags, description)
+    check_forbidden_terms(title, tags, description, alt_texts)
 
 
 def get_primary_gallery(conn, candidate_id: int) -> list:
@@ -246,7 +258,7 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
             try:
                 draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key,
                                              retry_feedback=feedback)
-                validate_listing_text(draft["title"], draft["tags"], draft["description"])
+                validate_listing_text(draft["title"], draft["tags"], draft["description"], draft["alt_texts"])
                 last_value_error = None
                 break
             except ValueError as exc:

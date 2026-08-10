@@ -4,6 +4,10 @@ import pipeline.config as config
 import pipeline.group_product as group_product
 
 
+class GroupMockupCycleError(RuntimeError):
+    """Raised once at the end of run_group_mockup_cycle if any group failed."""
+
+
 def get_or_create_group(conn, candidate_id: int, group_type: str, *, now=None) -> int:
     row = conn.execute(
         "SELECT id FROM groups WHERE candidate_id = ? AND group_type = ?",
@@ -106,6 +110,7 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
     ]
 
     processed = []
+    failures = []
     for candidate_id in candidate_ids:
         for group_type in GROUP_TYPES:
             # No scene bundles authored yet for this group_type (5x7/10x24 today) ->
@@ -124,6 +129,17 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
             except Exception as exc:
                 print(f"create_group_mockup failed for candidate {candidate_id} "
                       f"group_type {group_type}: {exc}")
+                # GL-54: same reasoning as primary_mockup - the group row stays
+                # 'pending_generation' (retryable next cycle, budget lives in
+                # create_or_reuse_group_product) with failed_reason as the durable trace.
+                group_id = get_or_create_group(conn, candidate_id, group_type, now=now)
+                timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+                conn.execute(
+                    "UPDATE groups SET failed_reason = ?, updated_at = ? WHERE id = ?",
+                    (f"gl54_group_mockup_failed: {exc}", timestamp, group_id),
+                )
+                conn.commit()
+                failures.append(f"{candidate_id}/{group_type}: {exc}")
                 continue
             if result is not None:
                 processed.append({
@@ -131,4 +147,9 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
                     "group_type": group_type,
                     "group_product_id": result["group_product_id"],
                 })
+
+    if failures:
+        raise GroupMockupCycleError(
+            f"{len(failures)} group mockup(s) failed - " + "; ".join(failures)
+        )
     return processed

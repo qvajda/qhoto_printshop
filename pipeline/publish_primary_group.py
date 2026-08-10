@@ -12,6 +12,14 @@ import pipeline.publish_group as publish_group
 import pipeline.telegram_client as telegram_client
 
 
+class PublishFailedRetryError(RuntimeError):
+    """Raised once at the end of retry_publish_failed_groups if any retry failed.
+    (a) is already satisfied here - publish_candidate marks the group
+    'publish_failed' with a reason before re-raising, and a failed retry leaves it
+    at the same status. This only supplies the missing (b): the printed-and-swallowed
+    exception used to leave run_publish_primary_group_cycle reporting success."""
+
+
 def resolve_callback(update: dict) -> dict | None:
     callback_query = update.get("callback_query")
     if callback_query is None:
@@ -411,6 +419,7 @@ def retry_publish_failed_groups(conn, *, static_config=None, store_id=None, gela
     ]
 
     retried = []
+    failures = []
     for candidate_id in candidate_ids:
         try:
             publish_candidate(
@@ -421,8 +430,15 @@ def retry_publish_failed_groups(conn, *, static_config=None, store_id=None, gela
             )
         except Exception as exc:
             print(f"publish_failed retry failed for candidate {candidate_id}: {exc}")
+            failures.append(f"{candidate_id}: {exc}")
             continue
         retried.append(candidate_id)
+
+    if failures:
+        raise PublishFailedRetryError(
+            f"{len(failures)} of {len(candidate_ids)} publish_failed retry(ies) failed - "
+            + "; ".join(failures)
+        )
     return retried
 
 
@@ -473,14 +489,15 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
 
     # Once per poll cycle, re-attempt any group stuck at publish_failed after an
     # approved decision - a transient patch failure shouldn't strand it forever (H1).
-    try:
-        retry_publish_failed_groups(
-            conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
-            shop_id=shop_id, etsy_api_key=etsy_api_key,
-            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-            dry_run=dry_run, now=now,
-        )
-    except Exception as exc:
-        print(f"retry_publish_failed_groups failed: {exc}")
+    # GL-54: this used to catch-and-print, swallowing retry_publish_failed_groups'
+    # own PublishFailedRetryError and reporting the stage successful. Let it
+    # propagate - the per-update loop above already advanced the Telegram offset
+    # for every update it saw, so nothing here is re-delivered by the raise.
+    retry_publish_failed_groups(
+        conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+        shop_id=shop_id, etsy_api_key=etsy_api_key,
+        etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+        dry_run=dry_run, now=now,
+    )
 
     return processed

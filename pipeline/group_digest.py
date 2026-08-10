@@ -6,6 +6,11 @@ import pipeline.digest as digest
 import pipeline.telegram_client as telegram_client
 
 
+class GroupDigestCycleError(RuntimeError):
+    """Raised once at the end of run_group_digest_cycle if any send failed.
+    Same (b)-only reasoning as digest.DigestCycleError - see there."""
+
+
 def get_review_group(conn, group_id: int) -> dict:
     # v4.12: the digest entry is still per group, but the variant rows it prices live on
     # the candidate's shared listing record - so they're read by group_id, not by
@@ -117,6 +122,7 @@ def run_group_digest_cycle(conn, *, static_config: dict = None, bot_token: str =
         ).fetchall()
     ]
     processed_ids = []
+    failures = []
     for group_id in group_ids:
         try:
             send_group_digest(
@@ -125,6 +131,12 @@ def run_group_digest_cycle(conn, *, static_config: dict = None, bot_token: str =
             )
         except Exception as exc:
             print(f"send_group_digest failed for group {group_id}: {exc}")
+            failures.append(f"group {group_id}: {exc}")
             continue
         processed_ids.append(group_id)
+
+    if failures:
+        raise GroupDigestCycleError(
+            f"{len(failures)} group digest send(s) failed - " + "; ".join(failures)
+        )
     return processed_ids

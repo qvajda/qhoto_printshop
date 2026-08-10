@@ -5,6 +5,10 @@ import pipeline.config as config
 import pipeline.group_product as group_product
 
 
+class PrimaryMockupCycleError(RuntimeError):
+    """Raised once at the end of run_primary_mockup_cycle if any candidate failed."""
+
+
 def build_mockup_title(candidate: dict) -> str:
     # Gelato pushes this as the Etsy draft title; Etsy hard-caps titles at 140 chars
     # and rejects the create otherwise. The real title is set later on the listing patch.
@@ -84,6 +88,7 @@ def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str 
         ).fetchall()
     ]
     processed_ids = []
+    failures = []
     for index, candidate_id in enumerate(candidate_ids):
         if index > 0:
             # Live probe (2026-07-18): back-to-back Gelato create/delete calls across
@@ -98,6 +103,26 @@ def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str 
             )
         except Exception as exc:
             print(f"create_primary_mockup failed for candidate {candidate_id}: {exc}")
+            # GL-54: the group row this stage owns already exists (get_or_create_primary_group
+            # commits it before rendering starts) and stays 'pending_generation' on a failed
+            # render - correct, because the retry budget lives in create_or_reuse_group_product
+            # and the row must still look retryable next cycle. failed_reason is the only
+            # durable trace a diagnosis has; the CHECK constraint has no "mockup failed" status
+            # that wouldn't also lie about whether a retry can still happen.
+            group_id = get_or_create_primary_group(conn, candidate_id, now=now)
+            timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+            conn.execute(
+                "UPDATE groups SET failed_reason = ?, updated_at = ? WHERE id = ?",
+                (f"gl54_primary_mockup_failed: {exc}", timestamp, group_id),
+            )
+            conn.commit()
+            failures.append(f"{candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
+
+    if failures:
+        raise PrimaryMockupCycleError(
+            f"{len(failures)} of {len(candidate_ids)} candidate(s) failed to mock up - "
+            + "; ".join(failures)
+        )
     return processed_ids

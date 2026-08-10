@@ -1058,12 +1058,15 @@ def test_retry_publish_failed_groups_leaves_group_failed_when_patch_still_fails(
     with patch("pipeline.group_product.poll_until_ready"), \
          patch("pipeline.publish_primary_group.group_product.patch_etsy_listing",
                side_effect=RuntimeError("still down")):
-        retried = publish_primary_group.retry_publish_failed_groups(
-            conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
-            now="2026-07-18T12:00:00",
-        )
+        # GL-54: the row was already marked publish_failed by publish_candidate
+        # itself (requirement (a) predates this sweep) - what was missing was (b),
+        # the retry loop swallowing the re-raise instead of failing the stage once.
+        with pytest.raises(publish_primary_group.PublishFailedRetryError, match="still down"):
+            publish_primary_group.retry_publish_failed_groups(
+                conn, static_config=STATIC_CONFIG, shop_id="shop1", dry_run=True,
+                now="2026-07-18T12:00:00",
+            )
 
-    assert retried == []
     group_row = conn.execute("SELECT status FROM groups WHERE id = ?", (group_id,)).fetchone()
     assert group_row["status"] == "publish_failed"  # still stuck, but surfaced + retried next cycle
     conn.close()

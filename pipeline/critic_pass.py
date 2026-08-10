@@ -32,6 +32,16 @@ TRANSIENT_REGEN_EXC_TYPES = (
 
 logger = logging.getLogger(__name__)
 
+
+class CriticPassCycleError(RuntimeError):
+    """Raised once at the end of run_critic_pass_cycle if any candidate failed.
+
+    The inner 3-attempt abandon budget (run_critic_pass) is untouched by this - a
+    candidate that hits its budget already wrote 'failed'/'failed_abandoned' via
+    abandon_candidate before raising. This class only makes sure that raise (or any
+    other exception out of run_critic_pass) still fails the stage once, instead of
+    being printed and swallowed."""
+
 CRITERION_KEYS = tuple(f"criterion_{i}" for i in range(1, 8))
 VALID_OVERALLS = ("good", "refine", "reject")
 
@@ -586,6 +596,7 @@ def run_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_api_key
         ).fetchall()
     ]
     processed_ids = []
+    failures = []
     for candidate_id in candidate_ids:
         try:
             run_critic_pass(
@@ -595,6 +606,13 @@ def run_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_api_key
             )
         except Exception as exc:
             print(f"run_critic_pass failed for candidate {candidate_id}: {exc}")
+            failures.append(f"{candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
+
+    if failures:
+        raise CriticPassCycleError(
+            f"{len(failures)} of {len(candidate_ids)} candidate(s) failed critic pass - "
+            + "; ".join(failures)
+        )
     return processed_ids
