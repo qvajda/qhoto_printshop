@@ -44,7 +44,10 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "{max_title_length} characters, and there must be at most 13 tags and each tag at "
     "most 20 characters. Do NOT include any AI-disclosure or production-partner "
     "sentence anywhere - both are disclosed through Etsy's own structured listing "
-    "fields, not in prose.\n\n"
+    "fields, not in prose. The copy must be EVERGREEN: the listing stays up all year, "
+    "so never name a holiday, festival, sale event or dated season (no Christmas, "
+    "Diwali, Black Friday, New Year, 'for the holidays'). Describing the artwork's own "
+    "mood or palette as autumnal or wintry is fine; naming a date is not.\n\n"
     "The product gallery has {image_count} images in this order: {image_types}. Write one "
     "short, descriptive alt text per image, in the same order, distinguishing a flat print "
     "mockup shot from a lifestyle/room-context shot.\n\n"
@@ -104,6 +107,79 @@ _FORBIDDEN_PATTERN = re.compile(
 )
 
 
+# GL-55. THE DECISION THIS ENFORCES (owner, 2026-08-10, PRD
+# docs/2026-08-10-gl55-gl56-prd.md §6.1 option (a)): listing copy is EVERGREEN. A
+# seasonal niche - from any origin, whether a GL-47 gap, a bug, or the frozen
+# pre-GL-47 backlog that surfaced this - must not put a dated event into the copy.
+# Four E9 candidates reached the owner's queue saying "for the holidays", "Black
+# Friday Cyber Monday Sale", "Welcome to the new year" over artwork that was fine.
+#
+# THE PRINCIPLE, which matters more than the entries (§6.2, owner-chosen):
+#   BLOCKED - anything tied to a calendar date or a named festival / retail moment.
+#       The listing outlives the date; copy that names one is stale the week after.
+#   ALLOWED - atmospheric words for a season of nature ('autumnal', 'wintry',
+#       'summer light'). A design's SUBJECT may legitimately be autumnal without
+#       its COPY being seasonal, so those are deliberately absent below.
+# That line is why 'new year' is here and 'winter' is not.
+#
+# Two halves, one list, and it is used at BOTH ends: the niche is sanitised with it
+# before the prompt ever sees it (sanitize_niche), and the model's output is checked
+# with it after (check_seasonal_terms). The prompt half alone is exactly the failure
+# GL-53 already had once - an instruction in a prompt is a preference, not a control.
+# The list will have gaps; the claim is that it fails loud when it matches and is one
+# line to extend when it misses.
+SEASONAL_TERMS = (
+    "black friday", "cyber monday", "boxing day", "prime day", "singles day",
+    "christmas", "xmas", "yuletide", "noel", "advent", "santa",
+    "hanukkah", "chanukah", "diwali", "deepavali", "eid", "ramadan", "lunar new year",
+    "thanksgiving", "halloween", "easter", "st patrick", "mardi gras",
+    "valentine", "mother's day", "mothers day", "father's day", "fathers day",
+    "new year", "new years", "newyear", "nye",
+    "holiday", "holidays", "festive", "seasonal sale",
+    "engagement season", "wedding season", "back to school", "graduation season",
+)
+_SEASONAL_PATTERN = re.compile(
+    "|".join(re.escape(term) for term in SEASONAL_TERMS), re.IGNORECASE
+)
+
+# What the prompt gets when sanitising leaves nothing usable (e.g. niche
+# 'holiday_peak' -> 'peak' -> meaningless). Better a generic-but-true descriptor than
+# a niche word the copy should never echo.
+NEUTRAL_NICHE = "botanical minimalist wall art"
+
+
+def sanitize_niche(niche: str) -> str:
+    """Strips event/season vocabulary out of a raw niche before it reaches the prompt.
+
+    Niches arrive slug-shaped ('black_friday_cyber_monday', 'new_year_refresh'), so
+    underscores become spaces first or the phrases never match.
+    """
+    cleaned = _SEASONAL_PATTERN.sub(" ", (niche or "").replace("_", " ").replace("-", " "))
+    cleaned = " ".join(cleaned.split())
+    return cleaned if len(cleaned) >= 3 else NEUTRAL_NICHE
+
+
+def check_seasonal_terms(title: str, tags: list, description: str, alt_texts: list = None) -> None:
+    """Rejects a draft naming a dated event or festival (GL-55). See SEASONAL_TERMS.
+
+    Raises rather than scrubbing, same reasoning as check_forbidden_terms: a draft that
+    reached for the event came out of a wrong framing, and the message is written to be
+    usable verbatim as retry feedback.
+    """
+    fields = [("title", title), ("tags", ", ".join(tags)), ("description", description)]
+    for index, alt_text in enumerate(alt_texts or []):
+        fields.append((f"alt_texts[{index}]", alt_text))
+    for field, value in fields:
+        match = _SEASONAL_PATTERN.search(value or "")
+        if match:
+            raise ValueError(
+                f"{field} contains the seasonal term {match.group(0)!r}: this listing stays "
+                f"up all year, so the copy must be evergreen and must never name a dated "
+                f"event, festival or retail moment. Rewrite the {field} describing the "
+                f"artwork itself - its subject, style, colours and the room it suits."
+            )
+
+
 def check_forbidden_terms(title: str, tags: list, description: str, alt_texts: list = None) -> None:
     """Rejects a draft carrying AI-provenance or digital-product wording (GL-53).
 
@@ -148,6 +224,7 @@ def validate_listing_text(title: str, tags: list, description: str = "", alt_tex
                 f"tag {tag!r} is {len(tag)} chars, exceeds Etsy's {MAX_TAG_LENGTH}-char limit"
             )
     check_forbidden_terms(title, tags, description, alt_texts)
+    check_seasonal_terms(title, tags, description, alt_texts)
 
 
 def get_primary_gallery(conn, candidate_id: int) -> list:
@@ -165,8 +242,9 @@ def get_primary_gallery(conn, candidate_id: int) -> list:
 
 
 def build_draft_prompt(candidate: dict, image_types: list) -> str:
+    # GL-55: the raw niche never reaches the model - see SEASONAL_TERMS.
     return DRAFT_TEXT_PROMPT_TEMPLATE.format(
-        niche=candidate["niche"],
+        niche=sanitize_niche(candidate["niche"]),
         image_count=len(image_types),
         image_types=", ".join(image_types),
         max_title_length=MAX_TITLE_LENGTH,

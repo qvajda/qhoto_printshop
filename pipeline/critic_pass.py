@@ -488,7 +488,10 @@ def abandon_candidate(conn, candidate_id: int, group_id: int, reason: str, *, no
 def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                      anthropic_api_key: str = None, store_id: str = None,
                      gelato_api_key: str = None, replicate_api_token: str = None,
-                     now=None) -> dict:
+                     copy_only: bool = False, now=None) -> dict:
+    """copy_only=True (GL-56): retries redraft the listing text and nothing else. The
+    artwork is the one the owner already approved, so regenerating it here would destroy
+    the very thing the copy-only path exists to preserve."""
     static_config = static_config if static_config is not None else config.load_static_config()
 
     group_row = conn.execute(
@@ -530,10 +533,13 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
             conn.commit()
             return {"candidate_id": candidate_id, "passed": True, "attempts": attempt_number}
 
-        discard_superseded_attempt(
-            conn, state["group_product_id"], state["group_id"],
-            store_id=store_id, api_key=gelato_api_key,
-        )
+        if not copy_only:
+            # copy_only keeps the gallery: nothing re-renders it, and discarding it here
+            # would leave the next attempt grading a candidate with no images.
+            discard_superseded_attempt(
+                conn, state["group_product_id"], state["group_id"],
+                store_id=store_id, api_key=gelato_api_key,
+            )
 
         if attempt_number >= 3:
             abandon_candidate(conn, candidate_id, state["group_id"], result["reason"], now=now)
@@ -544,14 +550,15 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
         conn.commit()
 
         try:
-            generate.generate_for_candidate(
-                conn, candidate_id, correction_note=result["reason"],
-                api_token=replicate_api_token, now=now,
-            )
-            primary_mockup.create_primary_mockup(
-                conn, candidate_id, static_config=static_config, store_id=store_id,
-                api_key=gelato_api_key, now=now,
-            )
+            if not copy_only:
+                generate.generate_for_candidate(
+                    conn, candidate_id, correction_note=result["reason"],
+                    api_token=replicate_api_token, now=now,
+                )
+                primary_mockup.create_primary_mockup(
+                    conn, candidate_id, static_config=static_config, store_id=store_id,
+                    api_key=gelato_api_key, now=now,
+                )
             compliance_draft.build_compliance_draft(
                 conn, candidate_id, static_config=static_config,
                 anthropic_api_key=anthropic_api_key, now=now,

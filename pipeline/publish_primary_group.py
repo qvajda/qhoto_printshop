@@ -41,7 +41,7 @@ def resolve_callback(update: dict) -> dict | None:
 # also makes a second tap on an already-decided message harmless (action 'noop').
 NOOP_ACTION = "noop"
 _DECIDED_LABELS = {"approve": "✅ Approved", "edit": "✏️ Edit requested",
-                   "reject": "\U0001f6ab Rejected"}
+                   "reject": "\U0001f6ab Rejected", "redraft": "📝 Copy redo requested"}
 
 
 def _ack(callback_query_id, text, *, bot_token) -> None:
@@ -283,6 +283,46 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
             anthropic_api_key=anthropic_api_key, now=now,
         )
         return {"action": "edit"}
+
+    if action == "redraft":
+        # GL-56: copy-only redo, the sibling Edit never had. What defines it is what it
+        # does NOT do - no generate call, no mockup re-render, no _discard_group_contribution -
+        # so base_image_* and the artwork on disk are byte-identical afterwards. That is the
+        # hard constraint (a design is only ever image-generated once), not a nicety.
+        #
+        # Decision value is 'edited', reused deliberately: it already means "redo this one,
+        # not terminal", and groups.decision's CHECK would need a table rebuild for a new
+        # value that behaves identically. decision_notes carries the distinction.
+        #
+        # Retry budget: RESET (owner decision, PRD 2026-08-10 §6.3). The attempts rows are
+        # deleted, so an owner-initiated copy redo starts from attempt 1. The owner is the
+        # gatekeeper on this path, so there is no unattended loop to bound.
+        record_decision(conn, group_id, "edited", decision_notes, now=now)
+        resolved_static_config = static_config if static_config is not None else config.load_static_config()
+
+        conn.execute("DELETE FROM critic_pass_attempts WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM group_messages WHERE group_id = ?", (group_id,))
+        # Back to 'generating' so that if the inline run below dies, the ordinary
+        # compliance-draft/critic cycles re-enter this candidate instead of it sitting at
+        # primary_review with no listing_texts row. Both stages below write their own
+        # failure status + reason onto the row before re-raising (GL-46/GL-54).
+        conn.execute(
+            "UPDATE candidates SET status = 'generating', updated_at = ? WHERE id = ?",
+            (timestamp, candidate_id),
+        )
+        conn.commit()
+
+        compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=resolved_static_config,
+            anthropic_api_key=anthropic_api_key, now=now,
+        )
+        critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=resolved_static_config,
+            anthropic_api_key=anthropic_api_key, store_id=store_id,
+            gelato_api_key=gelato_api_key, now=now, copy_only=True,
+        )
+        return {"action": "redraft"}
 
     if action == "reject":
         record_decision(conn, group_id, "rejected", decision_notes, now=now)
