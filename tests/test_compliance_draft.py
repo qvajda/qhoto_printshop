@@ -177,6 +177,26 @@ def test_validate_listing_text_accepts_clean_physical_poster_copy():
     )
 
 
+def test_validate_listing_text_rejects_ai_disclosure_in_an_alt_text():
+    # GL-54 rider: alt texts are model output that goes live on the listing, so
+    # they belong inside the guardrail same as title/tags/description.
+    with pytest.raises(ValueError, match=r"alt_texts\[1\] contains the forbidden term"):
+        compliance_draft.validate_listing_text(
+            "Sage Branch Wall Art", ["botanical"], "A made-to-order poster.",
+            ["Flat print mockup on a white background", "AI Generated art hanging in a living room"],
+        )
+
+
+def test_validate_listing_text_accepts_honest_mockup_alt_text_with_the_word_print():
+    # Alt texts describe mockup *photographs* ("flat print mockup shot" vs a
+    # lifestyle/room-context shot) - the bare word 'print' must not trip the
+    # guardrail, and the shipped term list has no entry that would.
+    compliance_draft.validate_listing_text(
+        "Sage Branch Wall Art", ["botanical"], "A made-to-order poster.",
+        ["Flat print mockup shot on a white background", "Lifestyle shot of the print in a living room"],
+    )
+
+
 def test_forbidden_terms_list_is_not_empty():
     # If this list is emptied, GL-37's decision is unenforced again and nothing
     # else in the suite would notice. See the comment above FORBIDDEN_TERMS.

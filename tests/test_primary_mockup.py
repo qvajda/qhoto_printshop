@@ -1,6 +1,8 @@
 from datetime import datetime
 from unittest.mock import patch
 
+import pytest
+
 import pipeline.config as config
 import pipeline.db as db
 import pipeline.primary_mockup as primary_mockup
@@ -239,12 +241,21 @@ def test_run_primary_mockup_cycle_isolates_per_candidate_failures(tmp_path):
         "pipeline.primary_mockup.group_product.render_group_mockups",
         side_effect=fake_render,
     ):
-        processed_ids = primary_mockup.run_primary_mockup_cycle(
-            conn, static_config=static_config, store_id="store1", api_key="key1",
-            now=datetime(2026, 7, 16, 12, 0, 0), sleep_fn=lambda s: None,
-        )
+        # GL-54: the loop still finishes (the succeeding candidate is still
+        # processed), but the cycle now raises once at the end so run_batch's
+        # _run_stage sees it and the Telegram path fires.
+        with pytest.raises(primary_mockup.PrimaryMockupCycleError, match="Gelato throttled"):
+            primary_mockup.run_primary_mockup_cycle(
+                conn, static_config=static_config, store_id="store1", api_key="key1",
+                now=datetime(2026, 7, 16, 12, 0, 0), sleep_fn=lambda s: None,
+            )
 
-    assert processed_ids == [succeeding_id]
+    failing_group_id = primary_mockup.get_or_create_primary_group(conn, failing_id)
+    failing_group = conn.execute(
+        "SELECT status, failed_reason FROM groups WHERE id = ?", (failing_group_id,)
+    ).fetchone()
+    assert failing_group["status"] == "pending_generation"
+    assert "Gelato throttled" in failing_group["failed_reason"]
     conn.close()
 
 

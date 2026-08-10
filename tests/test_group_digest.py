@@ -326,11 +326,16 @@ def test_run_group_digest_cycle_isolates_per_group_failures(tmp_path):
     with patch("pipeline.group_digest.telegram_client.send_media_group",
                return_value={"ok": True, "result": []}), \
          patch("pipeline.group_digest.telegram_client.send_message", side_effect=fake_send_message):
-        processed_ids = group_digest.run_group_digest_cycle(
-            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 14, 9, 30, 0),
-        )
+        # GL-54: the loop still finishes (the succeeding group's digest still
+        # goes out), but the cycle now raises once at the end.
+        with pytest.raises(group_digest.GroupDigestCycleError, match="Telegram throttled"):
+            group_digest.run_group_digest_cycle(
+                conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 14, 9, 30, 0),
+            )
 
-    assert processed_ids == [succeeding_group_id]
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (succeeding_group_id,)
+    ).fetchone() is not None
     assert conn.execute(
         "SELECT * FROM group_messages WHERE group_id = ?", (failing_group_id,)
     ).fetchone() is None

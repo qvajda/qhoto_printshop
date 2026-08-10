@@ -6,6 +6,11 @@ import pipeline.group_mockup as group_mockup
 import pipeline.group_product as group_product
 
 
+class GroupCriticPassCycleError(RuntimeError):
+    """Raised once at the end of run_group_critic_pass_cycle if any group failed.
+    The inner 3-attempt abandon budget is untouched - see CriticPassCycleError."""
+
+
 def get_group_critic_state(conn, candidate_id: int, group_type: str) -> dict:
     group_row = conn.execute(
         "SELECT id FROM groups WHERE candidate_id = ? AND group_type = ?",
@@ -125,6 +130,7 @@ def run_group_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_a
     ).fetchall()
 
     processed = []
+    failures = []
     for row in pairs:
         candidate_id, group_type = row["candidate_id"], row["group_type"]
         try:
@@ -136,8 +142,14 @@ def run_group_critic_pass_cycle(conn, *, static_config: dict = None, anthropic_a
         except Exception as exc:
             print(f"run_group_critic_pass failed for candidate {candidate_id} "
                   f"group_type {group_type}: {exc}")
+            failures.append(f"{candidate_id}/{group_type}: {exc}")
             continue
         processed.append({
             "candidate_id": candidate_id, "group_type": group_type, "passed": result["passed"],
         })
+
+    if failures:
+        raise GroupCriticPassCycleError(
+            f"{len(failures)} group critic pass(es) failed - " + "; ".join(failures)
+        )
     return processed

@@ -5,6 +5,21 @@ import pipeline.config as config
 import pipeline.telegram_client as telegram_client
 
 
+class DigestCycleError(RuntimeError):
+    """Raised once at the end of run_digest_cycle if any send failed.
+
+    GL-54: unlike generate/compliance_draft, there is deliberately no (a) here - no
+    write to the row. A digest send failure is not a property of the group; it is
+    still legitimately 'pending_review', it just hasn't been shown to anyone yet.
+    groups.status's CHECK has no value that means "could not tell you about this"
+    and marking it failed_abandoned would be a lie that costs a real design. The
+    failure is transient by nature (Telegram down, a media upload 502) and the next
+    cycle re-sends because group_messages has no row for it yet - that re-send IS
+    the retry, and this exception's only job is to make sure run_batch's _run_stage
+    still notices and fires its own Telegram notification instead of the failure
+    going completely unseen."""
+
+
 def get_primary_group(conn, candidate_id: int) -> dict:
     # v4.12: the listing record is the candidate's and is 'pending' (no Gelato product)
     # throughout review; the primary group's own variants are read by group_id.
@@ -154,6 +169,7 @@ def run_digest_cycle(conn, *, static_config: dict = None, bot_token: str = None,
         ).fetchall()
     ]
     processed_ids = []
+    failures = []
     for candidate_id in candidate_ids:
         try:
             send_primary_digest(
@@ -162,12 +178,21 @@ def run_digest_cycle(conn, *, static_config: dict = None, bot_token: str = None,
             )
         except Exception as exc:
             print(f"send_primary_digest failed for candidate {candidate_id}: {exc}")
+            failures.append(f"candidate {candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
 
     try:
         surface_publish_failed_groups(conn, bot_token=bot_token, chat_id=chat_id, now=now)
     except Exception as exc:
+        # GL-54: this function's whole job is surfacing publish_failed groups, so a
+        # swallow here is arguably worse than a swallow on the primary send - the
+        # safety net itself goes silently dark. Same (b)-only treatment.
         print(f"surface_publish_failed_groups failed: {exc}")
+        failures.append(f"surface_publish_failed_groups: {exc}")
 
+    if failures:
+        raise DigestCycleError(
+            f"{len(failures)} digest send(s) failed - " + "; ".join(failures)
+        )
     return processed_ids

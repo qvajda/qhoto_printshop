@@ -344,11 +344,22 @@ def test_run_digest_cycle_isolates_per_candidate_failures(tmp_path):
     with patch("pipeline.digest.telegram_client.send_media_group",
                return_value={"ok": True, "result": []}), \
          patch("pipeline.digest.telegram_client.send_message", side_effect=fake_send_message):
-        processed_ids = digest.run_digest_cycle(
-            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 11, 9, 30, 0),
-        )
+        # GL-54: the loop still finishes (the succeeding candidate's digest still
+        # goes out), but the cycle now raises once at the end so run_batch's
+        # _run_stage sees it. No row is marked - see DigestCycleError's docstring
+        # for why: the group is still legitimately pending_review and the next
+        # cycle's re-send (guarded by group_messages) is the actual retry.
+        with pytest.raises(digest.DigestCycleError, match="Telegram throttled"):
+            digest.run_digest_cycle(
+                conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 11, 9, 30, 0),
+            )
 
-    assert processed_ids == [succeeding_id]
+    succeeding_group_id = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (succeeding_id,)
+    ).fetchone()["id"]
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (succeeding_group_id,)
+    ).fetchone() is not None
 
     failing_group_id = conn.execute(
         "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (failing_id,)
