@@ -46,6 +46,17 @@ def pick_safe_evergreen_fallback(*, rng=None) -> dict:
 # as rough manual heuristics; revisit at M3 once real data exists").
 MIN_EVENT_LEAD_DAYS = 14
 
+# GL-47. The "too early" half of the same question, and deliberately NOT 14:
+# MIN_EVENT_LEAD_DAYS asks "is there still time to sell into this window?",
+# MAX_EVENT_LEAD_DAYS asks "should we start making it yet?". The input is the
+# pipeline's own latency plus listing runway: research -> generate -> primary
+# critic -> owner review -> secondary groups -> owner review -> publish is a
+# multi-day loop on a twice-daily cadence (call it ~1-2 weeks with owner
+# turnaround), and a fresh Etsy listing needs a few more weeks of views before
+# a window opens to rank at all. 45 days covers both with slack, and holds
+# candidates whose window is still a quarter away.
+MAX_EVENT_LEAD_DAYS = 45
+
 # Dates are this cycle's (2026-2027) concrete mapping of SPEC_v4.10.md section
 # 3 step 1's event table. Diwali's date is lunar-calendar-driven and must be
 # re-researched annually; the others' month/day boundaries are this plan's
@@ -117,11 +128,22 @@ def classify(raw: dict, *, now=None) -> dict:
 
 def _classify_by_timing(raw: dict, now: date) -> dict:
     days_until_close = (raw["window_end"] - now).days
-    if days_until_close >= MIN_EVENT_LEAD_DAYS:
+    window_start = raw.get("window_start")
+    # Two independent predicates, not one range test: engagement_season runs
+    # 2026-11-21 -> 2027-02-14, so "opens soon" and "closes soon" can be true
+    # at very different times. days_until_open goes negative once the window is
+    # open, which must stay `go` - hence <=, never abs().
+    days_until_open = (window_start - now).days if window_start else 0
+    if days_until_close >= MIN_EVENT_LEAD_DAYS and days_until_open <= MAX_EVENT_LEAD_DAYS:
         return {"go_hold_kill": "go", "hold_recheck_date": None, "kill_reason": None}
 
-    next_year_start = date(raw["window_start"].year + 1, raw["window_start"].month, raw["window_start"].day)
-    recheck_date = next_year_start - timedelta(days=60)
+    if days_until_open > MAX_EVENT_LEAD_DAYS:
+        # Too early: recheck when this year's window enters the lead-time band.
+        recheck_date = window_start - timedelta(days=MAX_EVENT_LEAD_DAYS)
+    else:
+        # Too late: this year's window is spent, recheck ahead of next year's.
+        next_year_start = date(window_start.year + 1, window_start.month, window_start.day)
+        recheck_date = next_year_start - timedelta(days=60)
     return {"go_hold_kill": "hold", "hold_recheck_date": recheck_date.isoformat(), "kill_reason": None}
 
 
@@ -217,6 +239,28 @@ def _insert_candidate(conn, raw: dict, classification: dict, *, now=None) -> int
     return cursor.lastrowid
 
 
+TERMINAL_CANDIDATE_STATUSES = ("failed", "abandoned", "completed")
+
+
+def _drop_already_proposed(conn, raw_candidates: list) -> list:
+    """GL-47. Two batch runs close together re-proposed all six event niches.
+
+    The filter lives here, in the caller, rather than inside
+    collect_event_lookahead: that keeps the collectors pure (no conn argument,
+    still trivially testable) and fixes trending_now and on-demand topics in
+    the same pass, which have the same duplicate shape. trend_source is the
+    key rather than niche - it is already structured (`event_lookahead:<name>`)
+    where niche is free text.
+    """
+    placeholders = ",".join("?" for _ in TERMINAL_CANDIDATE_STATUSES)
+    rows = conn.execute(
+        f"SELECT trend_source FROM candidates WHERE status NOT IN ({placeholders})",
+        TERMINAL_CANDIDATE_STATUSES,
+    ).fetchall()
+    alive = {row["trend_source"] for row in rows}
+    return [raw for raw in raw_candidates if raw["trend_source"] not in alive]
+
+
 def run_research_cycle(conn, static_config, *, on_demand_topics=None, now=None) -> list:
     now_dt = datetime.combine(now, datetime.min.time()) if now else datetime.utcnow()
     today = now_dt.date()
@@ -227,8 +271,14 @@ def run_research_cycle(conn, static_config, *, on_demand_topics=None, now=None) 
     for topic in on_demand_topics:
         raw_candidates.append(collect_on_demand(topic))
 
+    deduped = _drop_already_proposed(conn, raw_candidates)
+    # A dropped duplicate means a non-terminal candidate for that source is
+    # already in flight, so the cycle is not starving - do not fire the
+    # safe-evergreen fallback on top of it.
+    any_go = len(deduped) < len(raw_candidates)
+    raw_candidates = deduped
+
     inserted_ids = []
-    any_go = False
     for raw in raw_candidates:
         classification = classify(raw, now=today)
         if classification["go_hold_kill"] == "go":
