@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 
 import pipeline.anthropic_client as anthropic_client
@@ -22,6 +23,11 @@ import pipeline.config as config
 # The listing_texts.disclosure_text column is retained (NOT NULL) and written
 # empty rather than migrated away: dropping it means a table rebuild, and it
 # costs nothing to leave.
+# WHAT KEEPS THIS DECISION TRUE: check_forbidden_terms below, called from
+# validate_listing_text. Emptying this constant removed *our* sentence and
+# nothing else - the model went on writing its own for two more days (GL-53:
+# 27 of 27 drafts, including ones written after this comment was added). A
+# prompt instruction is a preference; the check is the control.
 DISCLOSURE_TEXT = ""
 
 MAX_TAGS = 13
@@ -29,12 +35,16 @@ MAX_TAG_LENGTH = 20
 MAX_TITLE_LENGTH = 140
 
 DRAFT_TEXT_PROMPT_TEMPLATE = (
-    "You are writing an Etsy listing draft for an AI-generated botanical/minimalist wall "
-    "art poster print, niche: {niche}. This listing must comply with Etsy's format limits: "
-    "the title must be at most {max_title_length} characters, and there "
-    "must be at most 13 tags and each tag at most 20 characters. Do NOT include any "
-    "AI-disclosure or production-partner sentence in the description - both are disclosed "
-    "through Etsy's own structured listing fields, not in prose.\n\n"
+    "You are writing an Etsy listing draft for a botanical/minimalist wall art poster "
+    "print, niche: {niche}. THE PRODUCT: a physical, made-to-order poster, printed on "
+    "premium matte paper and shipped to the buyer. It is NOT a digital file, NOT a "
+    "printable, NOT a download, and nothing is printed at home - never describe it as "
+    "any of those, in the title, in a tag, or in the description. "
+    "This listing must comply with Etsy's format limits: the title must be at most "
+    "{max_title_length} characters, and there must be at most 13 tags and each tag at "
+    "most 20 characters. Do NOT include any AI-disclosure or production-partner "
+    "sentence anywhere - both are disclosed through Etsy's own structured listing "
+    "fields, not in prose.\n\n"
     "The product gallery has {image_count} images in this order: {image_types}. Write one "
     "short, descriptive alt text per image, in the same order, distinguishing a flat print "
     "mockup shot from a lifestyle/room-context shot.\n\n"
@@ -55,7 +65,65 @@ def resolve_compliance_metadata(static_config: dict) -> dict:
     }
 
 
-def validate_listing_text(title: str, tags: list, *, max_title_length: int = MAX_TITLE_LENGTH) -> None:
+# GL-53. THIS LIST IS THE MECHANISM THAT KEEPS GL-37's DECISION TRUE (see the
+# DISCLOSURE_TEXT comment above): if it is emptied, that decision is unenforced
+# again and nothing anywhere will say so. Two classes, one list:
+#
+#   AI provenance - GL-37 put this in Etsy's structured "tools used" tick, set
+#       by hand at publish. Prose repeats it in the one place we said it would
+#       not be, and a tag spends one of thirteen search slots on it.
+#   Digital-product wording - worse than drift: it advertises a product the
+#       shop does not sell. Every size is a physical made-to-order Gelato
+#       poster (when_made 'made_to_order', is_supply false). 25 of 27 drafts
+#       said 'printable' or 'Instant Digital Download'.
+#
+# ONE LIST FOR ALL THREE FIELDS, deliberately, and the judgement call is the
+# bare-'AI' one. The actual shipped sentence is "created using AI image
+# generation" - it contains none of 'ai generated', 'ai-generated' or 'ai art',
+# so a substring list alone misses the 27-of-27 defect it was written for. Hence
+# FORBIDDEN_WORDS: word-boundary 'ai', case-insensitive. In English art copy a
+# standalone "ai" token is always the acronym ('air', 'detail', 'paint' don't
+# match a \bai\b), so the false-positive risk that argued for a narrower
+# description list does not actually exist, and a narrower list would have let
+# the defect through. The digital terms are safe on a description for the same
+# reason they are needed there: an honest description of a shipped poster has no
+# use for the word 'printable'. Over-matching costs one regeneration; under-
+# matching costs a hand-repaired title at publish time, or a buyer complaint.
+FORBIDDEN_TERMS = (
+    "ai generated", "ai-generated", "ai art", "artificial intelligence",
+    "midjourney", "dall-e", "stable diffusion", "generated with ai",
+    "production partner", "gelato",
+    "printable", "digital download", "instant download", "instant digital",
+    "digital file", "pdf download", "jpg download", "svg", "print at home",
+)
+FORBIDDEN_WORDS = ("ai",)
+_FORBIDDEN_PATTERN = re.compile(
+    "|".join([re.escape(term) for term in FORBIDDEN_TERMS]
+             + [rf"\b{re.escape(word)}\b" for word in FORBIDDEN_WORDS]),
+    re.IGNORECASE,
+)
+
+
+def check_forbidden_terms(title: str, tags: list, description: str) -> None:
+    """Rejects a draft carrying AI-provenance or digital-product wording (GL-53).
+
+    Raises rather than sanitising: a draft that used the word came out of a wrong
+    framing, so a scrubbed title is worse copy than a regenerated one. The message
+    is written to be usable verbatim as retry feedback.
+    """
+    for field, value in (("title", title), ("tags", ", ".join(tags)), ("description", description)):
+        match = _FORBIDDEN_PATTERN.search(value or "")
+        if match:
+            raise ValueError(
+                f"{field} contains the forbidden term {match.group(0)!r}: this listing is a "
+                f"physical made-to-order poster and its AI provenance and production partner "
+                f"are disclosed in Etsy's structured fields, never in the copy. Rewrite the "
+                f"{field} without that term or any wording that means the same thing."
+            )
+
+
+def validate_listing_text(title: str, tags: list, description: str = "", *,
+                           max_title_length: int = MAX_TITLE_LENGTH) -> None:
     if len(title) > max_title_length:
         raise ValueError(
             f"title is {len(title)} chars, exceeds the {max_title_length}-char limit: {title!r}"
@@ -67,6 +135,7 @@ def validate_listing_text(title: str, tags: list, *, max_title_length: int = MAX
             raise ValueError(
                 f"tag {tag!r} is {len(tag)} chars, exceeds Etsy's {MAX_TAG_LENGTH}-char limit"
             )
+    check_forbidden_terms(title, tags, description)
 
 
 def get_primary_gallery(conn, candidate_id: int) -> list:
@@ -177,7 +246,7 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
             try:
                 draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key,
                                              retry_feedback=feedback)
-                validate_listing_text(draft["title"], draft["tags"])
+                validate_listing_text(draft["title"], draft["tags"], draft["description"])
                 last_value_error = None
                 break
             except ValueError as exc:
@@ -199,6 +268,10 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
     return {"listing_text_id": listing_text_id, "candidate_id": candidate_id}
 
 
+class ComplianceDraftCycleError(RuntimeError):
+    """Raised once at the end of run_compliance_draft_cycle if any candidate failed."""
+
+
 def run_compliance_draft_cycle(conn, *, static_config: dict = None,
                                 anthropic_api_key: str = None, now=None) -> list:
     candidate_ids = [
@@ -213,7 +286,17 @@ def run_compliance_draft_cycle(conn, *, static_config: dict = None,
             """
         ).fetchall()
     ]
+    # GL-53 found the second instance of GL-46's shape here (CLAUDE.md: a
+    # swallowed per-item exception must always leave a state change behind).
+    # Half of it was already right - build_compliance_draft marks the row
+    # 'compliance_failed' with a reason - but the `continue` meant the stage
+    # returned success, so run_batch's _run_stage never fired its Telegram
+    # notification. Finish the loop so one bad candidate does not strand the
+    # rest, then raise once with every failure named. No re-queue: a
+    # 'compliance_failed' row is terminal here (an existing test pins that),
+    # and the retry budget lives inside build_compliance_draft's 3 attempts.
     processed_ids = []
+    failures = []
     for candidate_id in candidate_ids:
         try:
             build_compliance_draft(
@@ -222,6 +305,13 @@ def run_compliance_draft_cycle(conn, *, static_config: dict = None,
             )
         except Exception as exc:
             print(f"build_compliance_draft failed for candidate {candidate_id}: {exc}")
+            failures.append(f"{candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
+
+    if failures:
+        raise ComplianceDraftCycleError(
+            f"{len(failures)} of {len(candidate_ids)} candidate(s) failed compliance draft - "
+            + "; ".join(failures)
+        )
     return processed_ids
