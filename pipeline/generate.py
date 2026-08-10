@@ -236,6 +236,55 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
     }
 
 
+# GL-46. A per-candidate failure used to be swallowed with a print and a
+# `continue`: the row kept status 'pending', indistinguishable from one that
+# had never run, and the exception never reached run_batch.py's _run_stage, so
+# no Telegram notification fired (2026-08-09: 8 of 8 new candidates stuck at
+# 'pending', silently). Two requirements pull against each other here -
+# propagate so the stage reports, and keep going so one bad candidate does not
+# strand nine good ones. Resolution, chosen not stumbled into: mark the row,
+# finish the loop, raise once at the end with every failure named.
+#
+# Retry budget reuses generation_attempts (R2-c) rather than a new column -
+# every FLUX call already logs a row there, including the ones that raise.
+MAX_GENERATE_ATTEMPTS = 3
+GENERATE_FAILED_REASON_PREFIX = "gl46_generate_failed"
+
+
+class GenerateCycleError(RuntimeError):
+    """Raised once at the end of run_generate_cycle if any candidate failed."""
+
+
+def _attempt_count(conn, candidate_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM generation_attempts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()[0]
+
+
+def _record_generate_failure(conn, candidate_id: int, exc: Exception, *,
+                              attempts_before: int, now=None) -> None:
+    attempts = _attempt_count(conn, candidate_id)
+    if attempts == attempts_before:
+        # The failure happened before the FLUX call (art-brief writer, DB,
+        # config), so nothing logged an attempt. Log one, or the retry budget
+        # never counts down and the row is retried forever.
+        _record_generation_attempt(
+            conn, candidate_id, prompt=f"(no FLUX call: {exc})", art_brief_snapshot="",
+            correction_note=None, prediction_id=None, now=now,
+        )
+        attempts += 1
+
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "UPDATE candidates SET status = 'failed', failed_reason = ?, updated_at = ? WHERE id = ?",
+        (
+            f"{GENERATE_FAILED_REASON_PREFIX} (attempt {attempts}/{MAX_GENERATE_ATTEMPTS}): {exc}",
+            timestamp, candidate_id,
+        ),
+    )
+    conn.commit()
+
+
 def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.sleep) -> list[int]:
     """Round-2 (FM-5): threads the briefs already written earlier in this same batch
     run into each subsequent generate_for_candidate call as sibling_briefs, so the
@@ -243,17 +292,32 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.s
     instead of the whole batch herding toward the same choices."""
     pending_ids = [
         row["id"] for row in conn.execute(
-            "SELECT id FROM candidates WHERE status = 'pending' ORDER BY id"
+            # GL-46: 'failed' rows this stage itself marked are re-attempted
+            # while their attempt budget lasts, so a transient failure still
+            # self-heals on the next cycle. Only this stage's own failures -
+            # a critic/publish/reconcile 'failed' is a different, terminal thing.
+            """
+            SELECT id FROM candidates
+            WHERE status = 'pending'
+               OR (status = 'failed'
+                   AND failed_reason LIKE ?
+                   AND (SELECT COUNT(*) FROM generation_attempts ga
+                        WHERE ga.candidate_id = candidates.id) < ?)
+            ORDER BY id
+            """,
+            (f"{GENERATE_FAILED_REASON_PREFIX}%", MAX_GENERATE_ATTEMPTS),
         ).fetchall()
     ]
     processed_ids = []
     sibling_briefs = []
+    failures = []
     for index, candidate_id in enumerate(pending_ids):
         if index > 0:
             # R2-d: conservative inter-call pacing to stay under Replicate's
             # granted-credit 6/min cap (FM-6) until the owner adds a payment
             # method - see DEFAULT_GENERATE_CYCLE_PACING_SECONDS above.
             sleep_fn(_generate_cycle_pacing_seconds())
+        attempts_before = _attempt_count(conn, candidate_id)
         try:
             result = generate_for_candidate(
                 conn, candidate_id, api_token=api_token, now=now,
@@ -261,8 +325,16 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.s
             )
         except Exception as exc:
             print(f"generate_for_candidate failed for candidate {candidate_id}: {exc}")
+            _record_generate_failure(conn, candidate_id, exc, attempts_before=attempts_before, now=now)
+            failures.append(f"{candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
         if result.get("art_brief"):
             sibling_briefs.append(result["art_brief"])
+
+    if failures:
+        raise GenerateCycleError(
+            f"{len(failures)} of {len(pending_ids)} candidate(s) failed to generate - "
+            + "; ".join(failures)
+        )
     return processed_ids

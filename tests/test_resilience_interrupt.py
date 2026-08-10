@@ -9,6 +9,8 @@ Two scenarios per docs/2026-07-22-resilience-design.md section 4/5:
 from datetime import datetime
 from unittest.mock import patch
 
+import pytest
+
 import pipeline.cleanup as cleanup
 import pipeline.config as config
 import pipeline.db as db
@@ -55,14 +57,18 @@ def test_generate_cycle_resumes_after_mid_stage_kill_without_manual_intervention
     with patch("pipeline.art_brief.generate_art_brief", return_value="A line-art monstera leaf, cream backdrop."), \
          patch("pipeline.generate.replicate_client.generate_image",
                side_effect=RuntimeError("simulated kill mid-generate")):
-        processed_1 = generate.run_generate_cycle(conn, api_token="tok1")
+        # GL-46: the cycle now raises once at the end so the stage reports the
+        # failure instead of returning a clean [].
+        with pytest.raises(generate.GenerateCycleError):
+            generate.run_generate_cycle(conn, api_token="tok1")
 
-    assert processed_1 == []
     row_after_kill = conn.execute(
-        "SELECT status, art_brief FROM candidates WHERE id = ?", (candidate_id,)
+        "SELECT status, failed_reason, art_brief FROM candidates WHERE id = ?", (candidate_id,)
     ).fetchone()
-    # Left exactly where it was - no partial write, no manual DB edit performed here.
-    assert row_after_kill["status"] == "pending"
+    # No partial write, no manual DB edit performed here - but GL-46 the row now
+    # says it failed rather than passing for one that never ran.
+    assert row_after_kill["status"] == "failed"
+    assert "simulated kill mid-generate" in row_after_kill["failed_reason"]
     assert row_after_kill["art_brief"]  # brief was written and persists - not redone on resume
 
     # Cycle 2: next scheduled run, same code path, no human touched the DB in between.

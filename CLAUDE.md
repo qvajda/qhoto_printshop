@@ -287,4 +287,14 @@ price table and per-size notes; prices below are final, not placeholders)
   diffs `static_config.json` against the live templates and prints the placed
   artwork aspect per variant. Note that `productImages[]` are 1000×1000 scene
   previews, **not** the submitted print file: the file's own aspect is not
-  readable from the API, only the rectangle the artwork occupies on the paper.
+  readable from the API, only the rectangle the artwork occupies on the paper.- **A swallowed per-item exception must always leave a state change behind.**
+  GL-7's per-stage isolation stops one stage's crash killing a whole run, and
+  in exchange it made per-item failures invisible at *both* levels: a
+  `try/except: continue` inside a stage loop leaves the row exactly as it was,
+  so it reads as "hasn't run yet", and the stage returns success, so no
+  Telegram notification fires. GL-46: 8 of 8 candidates sat at `pending`
+  overnight with nothing anywhere saying so. Any per-item catch inside a stage
+  loop must (a) write the failure onto the row — a status plus a reason — and
+  (b) let the stage still fail once at the end, after the loop has given the
+  other items their turn. Self-healing on the next cycle is not a substitute:
+  it hides a persistent failure behind a transient one's recovery.
