@@ -90,6 +90,12 @@ def build_digest_keyboard(group_id: int) -> dict:
             {"text": "✅ Approve", "callback_data": f"approve:{group_id}"},
             {"text": "✏️ Edit", "callback_data": f"edit:{group_id}"},
             {"text": "❌ Reject", "callback_data": f"reject:{group_id}"},
+        ], [
+            # GL-56: good design, bad copy. Edit is "redo the artwork" and destroys a
+            # design the owner was happy with; this redrafts the listing text only.
+            # Second row rather than a fourth button on one row - four side by side on a
+            # phone truncates every label.
+            {"text": "📝 Redo copy only", "callback_data": f"redraft:{group_id}"},
         ]]
     }
 

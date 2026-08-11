@@ -262,6 +262,68 @@ def test_build_draft_prompt_forbids_a_prose_disclosure(monkeypatch):
     assert compliance_draft.DISCLOSURE_TEXT == ""
 
 
+# GL-55 (PRD 2026-08-10 §2.1). Fixtures are the four E9 niches that reached the owner's
+# queue with the event written into the copy.
+E9_SEASONAL_NICHES = ("holiday_peak", "diwali", "black_friday_cyber_monday", "new_year_refresh")
+
+
+@pytest.mark.parametrize("niche", E9_SEASONAL_NICHES)
+def test_seasonal_niche_never_reaches_the_prompt(niche):
+    prompt = compliance_draft.build_draft_prompt({"niche": niche}, ["flat_mockup"])
+
+    assert compliance_draft._SEASONAL_PATTERN.search(prompt.split("niche:")[1].split(".")[0]) is None
+    assert "EVERGREEN" in prompt
+
+
+@pytest.mark.parametrize("niche,expected", [
+    ("holiday_peak", "peak"),  # thin, but the prompt's own framing carries it
+    ("holidays", compliance_draft.NEUTRAL_NICHE),  # nothing usable left over
+    ("black_friday_cyber_monday", compliance_draft.NEUTRAL_NICHE),
+    ("new_year_refresh", "refresh"),
+    ("diwali_lanterns", "lanterns"),
+    ("monstera line art", "monstera line art"),      # untouched
+    ("autumnal fern study", "autumnal fern study"),  # a season of NATURE is allowed
+])
+def test_sanitize_niche_strips_dated_events_but_not_atmosphere(niche, expected):
+    assert compliance_draft.sanitize_niche(niche) == expected
+
+
+@pytest.mark.parametrize("bad", [
+    "Black Friday Cyber Monday Sale Print",
+    "Festive Holiday Wall Art",
+    "Welcome to the New Year botanical print",
+    "Diwali lantern poster",
+])
+def test_check_seasonal_terms_raises_on_dated_copy(bad):
+    # The control, not the prompt: an instruction is a preference (CLAUDE.md, GL-53).
+    with pytest.raises(ValueError, match="seasonal term"):
+        compliance_draft.check_seasonal_terms(bad, [], "")
+    with pytest.raises(ValueError, match="seasonal term"):
+        compliance_draft.check_seasonal_terms("ok title", [bad], "")
+    with pytest.raises(ValueError, match="seasonal term"):
+        compliance_draft.check_seasonal_terms("ok title", [], bad)
+    with pytest.raises(ValueError, match="seasonal term"):
+        compliance_draft.check_seasonal_terms("ok title", [], "", [bad])
+
+
+def test_check_seasonal_terms_allows_evergreen_copy_with_atmosphere():
+    compliance_draft.check_seasonal_terms(
+        "Autumnal Fern Botanical Print",
+        ["botanical", "wintry palette"],
+        "Warm autumnal tones for a calm corner. Printed on premium matte paper.",
+        ["flat print of a fern study", "the print above a summer-lit sideboard"],
+    )
+
+
+def test_validate_listing_text_enforces_the_seasonal_check():
+    # Wired into the same validator the draft retry loop calls, so a seasonal draft is
+    # fed back and rewritten rather than silently shipped.
+    with pytest.raises(ValueError, match="seasonal term"):
+        compliance_draft.validate_listing_text(
+            "Christmas Botanical Print", ["botanical"], "A print for the holidays.",
+        )
+
+
 def test_generate_draft_text_returns_parsed_draft():
     candidate = {"niche": "monstera line art"}
     fake_response = {

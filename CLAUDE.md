@@ -302,6 +302,19 @@ price table and per-size notes; prices below are final, not placeholders)
   (b) let the stage still fail once at the end, after the loop has given the
   other items their turn. Self-healing on the next cycle is not a substitute:
   it hides a persistent failure behind a transient one's recovery.
+- **Listing copy is evergreen, and copy is recoverable without touching the art
+  (GL-55/GL-56, owner 2026-08-10).** A listing stays up all year, so the copy
+  never names a dated event, festival or retail moment — the niche is sanitised
+  before the drafting prompt sees it and the output is checked after
+  (`compliance_draft.SEASONAL_TERMS`, used at both ends; the principle is
+  "calendar date or named festival", while atmospheric words for a season of
+  nature stay allowed). Letting the event inform genuinely tasteful copy is the
+  eventual target and belongs with GL-10c, not here. The other half: Telegram's
+  `📝 Redo copy only` (`redraft:{group_id}`) redrafts the listing text and
+  **never** regenerates the artwork — it exists because `✏️ Edit` destroys a
+  design the owner already liked, and because a design is only ever
+  image-generated once. `critic_pass.run_critic_pass(copy_only=True)` carries
+  that guarantee into the retry loop.
 - **An instruction in a prompt is a preference, not a control.** If a decision
   says the copy must never contain something, an assertion has to say so too, in
   code, next to the decision and cross-referenced from it. GL-53: `DISCLOSURE_TEXT`

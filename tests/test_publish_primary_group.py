@@ -637,6 +637,95 @@ def test_handle_decision_edit_clears_group_messages_so_digest_can_resend(tmp_pat
     conn.close()
 
 
+def test_handle_decision_redraft_rewrites_copy_and_leaves_artwork_byte_identical(tmp_path):
+    # GL-56 acceptance test (PRD 2026-08-10 §2.5). The whole point of this path is what
+    # it does NOT touch: the artwork on disk and base_image_* must come out the far side
+    # unchanged, because Edit - the only pre-existing recovery - regenerates them.
+    conn = _fresh_conn(tmp_path)
+    artwork = tmp_path / "master.png"
+    artwork.write_bytes(b"\x89PNG\r\n\x1a\n original artwork bytes")
+    before_bytes = artwork.read_bytes()
+    candidate_id = _insert_candidate(conn, base_image_local_path=str(artwork))
+    group_id = _insert_ready_primary_group(conn, candidate_id, niche="black friday cyber monday")
+    _insert_group_message(conn, group_id, "987654321", 202)
+    images_before = conn.execute(
+        "SELECT COUNT(*) AS n FROM product_images WHERE group_id = ?", (group_id,)
+    ).fetchone()["n"]
+    publish_primary_group.critic_pass.record_critic_attempt(
+        conn, group_id, 1, {"passed": True, "reason": "meets rubric"}, now=datetime(2026, 8, 10, 9, 20, 0),
+    )
+
+    def fake_build_compliance_draft(conn, candidate_id, *, static_config=None,
+                                     anthropic_api_key=None, now=None):
+        conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+        _insert_listing_text(conn, candidate_id, niche="evergreen botanical")
+
+    def fake_run_critic_pass(conn, candidate_id, **kwargs):
+        assert kwargs["copy_only"] is True
+        conn.execute(
+            "UPDATE candidates SET status = 'primary_review' WHERE id = ?", (candidate_id,)
+        )
+        conn.commit()
+        return {"candidate_id": candidate_id, "passed": True, "attempts": 1}
+
+    with patch("pipeline.gelato_client.delete_product") as mock_delete, \
+         patch("pipeline.publish_primary_group.generate.generate_for_candidate") as mock_generate, \
+         patch("pipeline.publish_primary_group.primary_mockup.create_primary_mockup") as mock_mockup, \
+         patch("pipeline.publish_primary_group.compliance_draft.build_compliance_draft",
+               side_effect=fake_build_compliance_draft), \
+         patch("pipeline.publish_primary_group.critic_pass.run_critic_pass",
+               side_effect=fake_run_critic_pass):
+        result = publish_primary_group.handle_decision(
+            conn, candidate_id, group_id, "redraft", "copy names Black Friday",
+            static_config=STATIC_CONFIG, now=datetime(2026, 8, 10, 12, 0, 0),
+        )
+
+    assert result["action"] == "redraft"
+    mock_generate.assert_not_called()
+    mock_mockup.assert_not_called()
+    mock_delete.assert_not_called()
+
+    assert artwork.read_bytes() == before_bytes
+    candidate_row = conn.execute(
+        "SELECT base_image_url, base_image_local_path FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    assert candidate_row["base_image_url"] == "https://replicate.delivery/out.png"
+    assert candidate_row["base_image_local_path"] == str(artwork)
+
+    # The gallery survives too: nothing re-renders it on this path (the edit path drops it).
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM product_images WHERE group_id = ?", (group_id,)
+    ).fetchone()["n"] == images_before
+    # Fresh copy, fresh attempt budget (§6.3: an owner-initiated redo resets it), and the
+    # digest can re-send because group_messages is cleared.
+    assert conn.execute(
+        "SELECT title FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone()["title"] == "evergreen botanical print"
+    assert conn.execute(
+        "SELECT * FROM critic_pass_attempts WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
+    assert conn.execute(
+        "SELECT * FROM group_messages WHERE group_id = ?", (group_id,)
+    ).fetchall() == []
+    assert conn.execute(
+        "SELECT decision FROM groups WHERE id = ?", (group_id,)
+    ).fetchone()["decision"] == "edited"
+    conn.close()
+
+
+def test_redraft_is_offered_as_its_own_button_and_leaves_edit_alone():
+    # §2.6: Edit's image redo is wanted and is not being replaced.
+    import pipeline.digest as digest
+    rows = digest.build_digest_keyboard(42)["inline_keyboard"]
+    actions = [button["callback_data"] for row in rows for button in row]
+
+    assert "edit:42" in actions
+    assert "redraft:42" in actions
+    assert publish_primary_group.resolve_callback(
+        _callback_update(data="redraft:42")
+    )["action"] == "redraft"
+
+
 def test_handle_decision_raises_on_unknown_action(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
