@@ -983,6 +983,37 @@ def test_process_update_acknowledges_before_dispatching_the_decision(tmp_path):
     conn.close()
 
 
+def test_process_update_records_the_decision_even_when_the_ack_fails(tmp_path):
+    # E10a / GL-65 item 2: the ack is a spinner, not the decision. Telegram rejects a
+    # stale callback_query_id ("query is too old...") and on an hourly poll that is the
+    # common case, not the edge one - so answer_callback_query raising must not stop the
+    # dispatch. _ack swallows; this asserts the swallowing is load-bearing.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(user_id=987654321, data=f"reject:{group_id}", message_id=202,
+                               chat_id=987654321, callback_id="cbq_stale")
+
+    with patch("pipeline.publish_primary_group.telegram_client.answer_callback_query",
+               side_effect=RuntimeError("query is too old and response timeout expired")), \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
+         patch("pipeline.publish_primary_group.handle_decision",
+               return_value={"action": "reject"}) as mock_decide:
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1",
+        )
+
+    assert mock_decide.call_count == 1
+    assert result["group_id"] == group_id
+    # and the tap is still on the record, so a lost spinner is never a lost audit trail
+    logged = conn.execute(
+        "SELECT accepted, action_taken FROM telegram_events_log ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert (logged["accepted"], logged["action_taken"]) == (1, "reject")
+    conn.close()
+
+
 def test_run_publish_primary_group_cycle_processes_and_advances_offset(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)

@@ -8,6 +8,15 @@ function per stage, the runner sequences, it does not absorb).
 
 Windows Task Scheduler invokes this hourly; exit code is the signal it acts
 on (see docs/2026-08-05-gl7-cron-prd-and-kickoff.md §2 item 1 and item 7).
+
+E10a: the trigger is now every 5 minutes, and JOB_NAME stays "hourly" as a
+deliberate misnomer - renaming it churns heartbeats.job_name, the log filename
+and the Task Scheduler task name for zero functional gain. The cadence is the
+dominant term in tap-to-toast latency (the ack in process_update has been
+pre-dispatch since GL-45, so it was never the dispatch), and Telegram expires a
+callback_query_id in minutes, not an hour. A run that collides with a batch
+raises lock.LockHeldError, prints, and exits 2 with no alert and no heartbeat
+row, so 12x the cadence adds no noise. See docs/2026-08-11-e10-kickoff.md §1.
 """
 import sys
 from pathlib import Path
