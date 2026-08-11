@@ -10,7 +10,7 @@ handle_decision(..., 'redraft') is the whole recovery: it deletes the
 group_messages row itself, so the next digest cycle re-sends the entry with the
 new two-row keyboard. See docs/2026-08-11-e10-kickoff.md §2.
 
-Usage (from the repo root, with .env loaded as the entrypoints load it):
+Usage (from the repo root; .env is loaded for you, same as run_hourly):
 
     python scripts/e10b_backlog_recovery.py plan
     python scripts/e10b_backlog_recovery.py collapse
@@ -177,6 +177,8 @@ def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
     command = argv[1]
+    # Same first move as run_hourly/run_batch: nothing here reads .env for itself.
+    config.load_env()
     conn = db.get_connection(DB_PATH)
     try:
         if command == "plan":
