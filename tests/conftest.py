@@ -6,8 +6,26 @@ import pytest
 from PIL import Image
 
 import pipeline.config as config
+import pipeline.telegram_client as telegram_client
 
 MASTER_ASPECT = 6656 / 9728   # db/base_artwork/39.png - the approved master
+
+
+@pytest.fixture(autouse=True)
+def isolate_getupdates_raw_log(monkeypatch, tmp_path_factory):
+    """E10a: logs/telegram_getupdates.log is the forensic instrument that
+    discriminates "Telegram never sent the tap" from "we lost it" (GL-45 H3), and
+    it is the only evidence GL-65 has. `_log_raw_updates` falls back to the real
+    repo path whenever a caller omits raw_log_path, so a single test that forgot
+    the argument wrote synthetic polls - offset null, update_id 1 and 2 - into it,
+    interleaved with real ones by timestamp.
+
+    Redirected here rather than in the one offending test: the default is the
+    trap, so every future caller that omits the argument is caught too."""
+    monkeypatch.setattr(
+        telegram_client, "RAW_LOG_PATH",
+        tmp_path_factory.mktemp("getupdates") / "telegram_getupdates.log",
+    )
 
 
 @pytest.fixture(autouse=True)
