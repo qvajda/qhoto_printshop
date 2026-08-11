@@ -422,3 +422,68 @@ def test_trigger_fallback_if_needed_inserts_fallback_when_nothing_alive(tmp_path
     assert row["status"] == "pending"
     assert row["trend_source"].startswith("safe_evergreen_fallback:")
     conn.close()
+
+
+# --- GL-61 knob 3: RESEARCH_MODE ---
+
+def test_research_mode_consume_pending_only_proposes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCH_MODE", "consume-pending-only")
+    conn = _fresh_conn(tmp_path)
+
+    with patch("pipeline.research.anthropic_client.research_web_search") as mock_search,          patch("pipeline.research.etsy_client.find_all_listings_active") as mock_listings:
+        inserted_ids = research.run_research_cycle(conn, {}, now=date(2026, 9, 1))
+
+    assert inserted_ids == []
+    # Not just "inserts nothing" - it must not spend the research API calls either.
+    mock_search.assert_not_called()
+    mock_listings.assert_not_called()
+    conn.close()
+
+
+def test_research_mode_if_nothing_pending_still_runs_on_an_empty_board(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCH_MODE", "if-nothing-pending")
+    conn = _fresh_conn(tmp_path)
+
+    def fake_web_search(prompt, api_key=None, max_tokens=2048):
+        return {"text": json.dumps([{"keyword": "monstera line art", "rationale": "rising"}]), "raw": {}}
+
+    def fake_find_listings(keywords, **kwargs):
+        return {"count": 1000, "results": [{"num_favorers": 50}]}
+
+    with patch("pipeline.research.anthropic_client.research_web_search", side_effect=fake_web_search),          patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        inserted_ids = research.run_research_cycle(conn, {}, now=date(2026, 9, 1))
+
+    assert inserted_ids
+    conn.close()
+
+
+def test_research_mode_if_nothing_pending_skips_while_a_candidate_is_in_flight(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCH_MODE", "if-nothing-pending")
+    conn = _fresh_conn(tmp_path)
+    conn.execute(
+        "INSERT INTO candidates (niche, status, go_hold_kill, created_at, updated_at) "
+        "VALUES ('in flight', 'pending', 'go', '2026-08-11T09:00:00', '2026-08-11T09:00:00')"
+    )
+    conn.commit()
+
+    with patch("pipeline.research.anthropic_client.research_web_search") as mock_search:
+        assert research.run_research_cycle(conn, {}, now=date(2026, 9, 1)) == []
+
+    mock_search.assert_not_called()
+    conn.close()
+
+
+def test_an_on_demand_topic_is_honoured_regardless_of_research_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCH_MODE", "consume-pending-only")
+    conn = _fresh_conn(tmp_path)
+
+    def fake_find_listings(keywords, **kwargs):
+        return {"count": 1000, "results": [{"num_favorers": 50}]}
+
+    with patch("pipeline.research.anthropic_client.research_web_search", return_value={"text": "[]", "raw": {}}),          patch("pipeline.research.etsy_client.find_all_listings_active", side_effect=fake_find_listings):
+        inserted_ids = research.run_research_cycle(
+            conn, {}, on_demand_topics=["mushroom foraging"], now=date(2026, 9, 1)
+        )
+
+    assert len(inserted_ids) == 1
+    conn.close()

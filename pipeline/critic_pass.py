@@ -296,7 +296,10 @@ def check_master_image_ai_sanity(image_source: str, *, api_key: str = None,
         return None
     prompt = MASTER_SANITY_PROMPT_TEMPLATE.format(flag_note=flag_note or "")
     response = anthropic_client.complete_with_images(
-        prompt, [image_source], api_key=api_key, model=anthropic_client.HAIKU_MODEL
+        # GL-60 audit: explicit, not the library default - a raised default must never
+        # silently resize a caller. 1024 is ample for this call's {passed, reason} JSON.
+        prompt, [image_source], api_key=api_key, model=anthropic_client.HAIKU_MODEL,
+        max_tokens=1024,
     )
     parsed = anthropic_client.parse_json_response(response["text"])
     for key in ("passed", "reason"):

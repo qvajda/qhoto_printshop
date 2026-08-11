@@ -457,3 +457,44 @@ def test_update_listing_inventory_raises_if_a_size_has_no_matching_product():
         mock_get.return_value = inventory
         with pytest.raises(ValueError, match="A1"):
             etsy_client.update_listing_inventory("shop1", "555", {"8x12": 24.0, "A1": 49.0}, dry_run=False)
+
+
+# --- GL-57: the gallery rank must be on the wire, not only in the caller ---
+
+def test_upload_listing_image_sends_rank_as_a_multipart_field():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["body"] = request.data
+        return {"listing_image_id": 556}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        etsy_client.upload_listing_image(
+            "shop1", "listing1", b"fake-image-bytes", rank=3,
+            api_key="key1", api_secret="secret1", access_token="token1", dry_run=False,
+        )
+
+    body = captured["body"]
+    assert b'name="rank"' in body
+    assert b"\r\n\r\n3\r\n" in body
+    assert b"fake-image-bytes" in body
+    # Well-formed: exactly one closing boundary, and it closes the last part.
+    boundary = body.split(b"\r\n")[0]
+    assert body.endswith(boundary + b"--\r\n")
+    assert body.count(boundary) == 3  # image part, rank part, closing
+
+
+def test_upload_listing_image_omits_rank_when_not_given():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["body"] = request.data
+        return {"listing_image_id": 557}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        etsy_client.upload_listing_image(
+            "shop1", "listing1", b"bytes", api_key="k", api_secret="s",
+            access_token="t", dry_run=False,
+        )
+
+    assert b'name="rank"' not in captured["body"]

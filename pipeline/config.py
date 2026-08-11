@@ -102,6 +102,43 @@ def is_live_mode(service: str) -> bool:
     return os.environ.get(f"{service}_LIVE_MODE", "").strip().lower() == "true"
 
 
+# GL-61 operability knobs. Every default reproduces today's behaviour exactly, so an
+# unconfigured .env is not a behaviour change. Resolved through here and nowhere else
+# (the static-config rule: read once, never discovered at runtime).
+RESEARCH_MODES = ("always", "consume-pending-only", "if-nothing-pending")
+
+
+def research_mode() -> str:
+    """'always' (default, today's behaviour) · 'consume-pending-only' (never propose new
+    candidates - the mode for draining a backlog through GL-56 without piling more on
+    top) · 'if-nothing-pending' (propose only when nothing is still in flight)."""
+    mode = os.environ.get("RESEARCH_MODE", "").strip().lower() or "always"
+    if mode not in RESEARCH_MODES:
+        raise MissingConfigError(
+            f"RESEARCH_MODE={mode!r} is not one of {', '.join(RESEARCH_MODES)}"
+        )
+    return mode
+
+
+def candidates_per_batch() -> int | None:
+    """Cap on how many candidates one generate cycle will process. None (the default) is
+    uncapped - today's behaviour. Also GL-59's cheap mitigation: fewer generate calls
+    per cycle is less queue depth against Replicate's 6/min granted-credit cap."""
+    raw = os.environ.get("CANDIDATES_PER_BATCH", "").strip()
+    if not raw:
+        return None
+    value = int(raw)
+    if value < 1:
+        raise MissingConfigError(f"CANDIDATES_PER_BATCH must be >= 1, got {value}")
+    return value
+
+
+def telegram_error_verbosity() -> str:
+    """'full' (default, today's behaviour: the exception text goes to Telegram) or
+    'brief' (stage name only - the exception still goes to the log)."""
+    return os.environ.get("TELEGRAM_ERROR_VERBOSITY", "").strip().lower() or "full"
+
+
 R2_ENV_VARS = (
     "R2_ACCOUNT_ID",
     "R2_ACCESS_KEY_ID",

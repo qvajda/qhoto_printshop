@@ -1,4 +1,5 @@
 import json
+import time
 import urllib.request
 
 import pipeline.config as config
@@ -63,37 +64,66 @@ UPSCALE_MODEL = "nightmareai/real-esrgan"  # pure super-resolution GAN, no diffu
 # Replicate accepts scale=8 at this input size live before the E2E burns a candidate on it.
 
 
-def _predict(model: str, input_body: dict, *, api_token: str) -> dict:
-    url = f"{REPLICATE_API_BASE}/{model}/predictions"
-    body = json.dumps({"input": input_body}).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_token}",
-            "Prefer": "wait",
-        },
-        method="POST",
-    )
-    # The 60s "Prefer: wait" window (timeout=65 for HTTP overhead) was sized for FLUX
-    # schnell's typical 1-2s generate latency. real-esrgan's actual latency - especially
-    # a cold boot - hasn't been measured against it; if upscale calls routinely exceed
-    # this window, they'll need either a longer timeout or a polling fallback instead of
-    # synchronous "Prefer: wait".
+# GL-59: the old synchronous "Prefer: wait" window gave up at 60s counting QUEUE time,
+# so candidates 78 and 83 raised a timeout on predictions Replicate's own dashboard
+# showed executing in 2.8s and 3.7s - queued behind the 6/min cap, then finishing into
+# nobody listening. Submit + poll instead: queue time no longer counts against a
+# latency budget, and a real timeout now means the job genuinely never terminated.
+PREDICTION_POLL_TIMEOUT_SECONDS = 600.0
+PREDICTION_POLL_INTERVAL_SECONDS = 2.0
+_TERMINAL_STATUSES = ("succeeded", "failed", "canceled")
+
+
+class ReplicatePredictionFailedError(Exception):
+    """Replicate itself reported the prediction failed/canceled - a terminal answer,
+    not a timeout. Distinct from ReplicatePredictionTimeoutError so the next reader
+    does not go looking for a slow network."""
+
+
+def _send(request):
+    """Shared 429 -> ReplicateThrottledError translation. A rate-cap 429 is NOT a
+    timeout and must never be reported as one."""
     try:
-        result = http.send(request, timeout=65)
+        return http.send(request, timeout=65)
     except http.HTTPError as exc:
         if exc.status_code == 429:
             raise ReplicateThrottledError(retry_after=_parse_retry_after(exc.headers)) from exc
         raise
 
-    if result.get("status") != "succeeded":
-        raise ReplicatePredictionTimeoutError(
-            f"Replicate prediction {result.get('id')} on {model} did not complete within "
-            f"the 60s synchronous wait window (status: {result.get('status')}). This is not "
-            f"the granted-credit rate cap (that raises HTTP 429 as ReplicateThrottledError) - "
-            f"it likely indicates a genuine Replicate-side outage, not a pipeline bug."
+
+def _predict(model: str, input_body: dict, *, api_token: str,
+             poll_timeout: float = None, poll_interval: float = None,
+             sleep_fn=time.sleep, time_fn=time.monotonic) -> dict:
+    poll_timeout = PREDICTION_POLL_TIMEOUT_SECONDS if poll_timeout is None else poll_timeout
+    poll_interval = PREDICTION_POLL_INTERVAL_SECONDS if poll_interval is None else poll_interval
+    auth_headers = {"Authorization": f"Bearer {api_token}"}
+
+    url = f"{REPLICATE_API_BASE}/{model}/predictions"
+    body = json.dumps({"input": input_body}).encode("utf-8")
+    result = _send(urllib.request.Request(
+        url, data=body,
+        headers={"Content-Type": "application/json", **auth_headers},
+        method="POST",
+    ))
+
+    deadline = time_fn() + poll_timeout
+    while result.get("status") not in _TERMINAL_STATUSES:
+        if time_fn() >= deadline:
+            raise ReplicatePredictionTimeoutError(
+                f"Replicate prediction {result.get('id')} on {model} was still "
+                f"{result.get('status')!r} after polling for {poll_timeout:.0f}s. This is not "
+                f"the granted-credit rate cap (that raises HTTP 429 as ReplicateThrottledError) "
+                f"and not a queue wait (queue time no longer counts against this budget) - it "
+                f"indicates a genuine Replicate-side stall."
+            )
+        sleep_fn(poll_interval)
+        poll_url = (result.get("urls") or {}).get("get") or f"https://api.replicate.com/v1/predictions/{result['id']}"
+        result = _send(urllib.request.Request(poll_url, headers=auth_headers, method="GET"))
+
+    if result["status"] != "succeeded":
+        raise ReplicatePredictionFailedError(
+            f"Replicate prediction {result.get('id')} on {model} ended {result['status']}: "
+            f"{result.get('error')}"
         )
 
     output = result["output"]
@@ -101,19 +131,19 @@ def _predict(model: str, input_body: dict, *, api_token: str) -> dict:
     return {"image_url": image_url, "prediction_id": result["id"]}
 
 
-def generate_image(prompt: str, *, api_token: str = None) -> dict:
+def generate_image(prompt: str, *, api_token: str = None, **poll_kwargs) -> dict:
     api_token = api_token or config.require_env("REPLICATE_API_TOKEN")
     return _predict(
         FLUX_SCHNELL_MODEL,
         {"prompt": prompt, "aspect_ratio": "2:3", "megapixels": "1"},
-        api_token=api_token,
+        api_token=api_token, **poll_kwargs,
     )
 
 
-def upscale_image(image_url: str, *, api_token: str = None) -> dict:
+def upscale_image(image_url: str, *, api_token: str = None, **poll_kwargs) -> dict:
     api_token = api_token or config.require_env("REPLICATE_API_TOKEN")
     return _predict(
         UPSCALE_MODEL,
         {"image": image_url, "scale": 8, "face_enhance": False},
-        api_token=api_token,
+        api_token=api_token, **poll_kwargs,
     )

@@ -594,3 +594,28 @@ def test_generate_cycle_pacing_seconds_reads_env_override(monkeypatch):
     assert generate._generate_cycle_pacing_seconds() == 5.0
     monkeypatch.delenv("GENERATE_CYCLE_PACING_SECONDS")
     assert generate._generate_cycle_pacing_seconds() == generate.DEFAULT_GENERATE_CYCLE_PACING_SECONDS
+
+
+# --- GL-61 knob 1: CANDIDATES_PER_BATCH ---
+
+def test_run_generate_cycle_caps_the_batch_and_leaves_the_rest_pending(tmp_path, monkeypatch):
+    monkeypatch.setenv("CANDIDATES_PER_BATCH", "1")
+    conn = _fresh_conn(tmp_path)
+    first_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
+    second_id = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred1"}
+
+    with patch("pipeline.generate.art_brief.generate_art_brief", return_value="A dense brief."),          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image),          patch("pipeline.generate.replicate_client.upscale_image",
+               return_value={"image_url": "https://replicate.delivery/up.png", "prediction_id": "p"}),          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"),          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        processed_ids = generate.run_generate_cycle(
+            conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
+        )
+
+    assert processed_ids == [first_id]
+    # The overflow is deferred, never dropped - the next cycle takes it.
+    assert conn.execute(
+        "SELECT status FROM candidates WHERE id = ?", (second_id,)
+    ).fetchone()["status"] == "pending"
+    conn.close()
