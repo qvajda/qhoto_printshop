@@ -132,13 +132,13 @@ def run_group_mockup_cycle(conn, *, static_config: dict = None, store_id: str = 
                 # GL-54: same reasoning as primary_mockup - the group row stays
                 # 'pending_generation' (retryable next cycle, budget lives in
                 # create_or_reuse_group_product) with failed_reason as the durable trace.
+                # GL-58: except for a permanent error (SharedProductVariantError on a
+                # pre-v4.12 product), which is marked 'failed_abandoned' - it re-failed
+                # and re-alerted every cycle for candidates 1 and 39 indefinitely.
                 group_id = get_or_create_group(conn, candidate_id, group_type, now=now)
-                timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
-                conn.execute(
-                    "UPDATE groups SET failed_reason = ?, updated_at = ? WHERE id = ?",
-                    (f"gl54_group_mockup_failed: {exc}", timestamp, group_id),
+                group_product.record_group_failure(
+                    conn, group_id, "gl54_group_mockup_failed", exc, now=now
                 )
-                conn.commit()
                 failures.append(f"{candidate_id}/{group_type}: {exc}")
                 continue
             if result is not None:

@@ -191,6 +191,10 @@ def generate_art_brief(candidate: dict, *, api_key: str = None, sibling_briefs: 
     out of scope, deferred by owner decision."""
     prompt = build_brief_prompt(candidate, sibling_briefs=sibling_briefs)
     result = anthropic_client.complete(
-        prompt, api_key=api_key, max_tokens=200, model=anthropic_client.HAIKU_MODEL
+        # GL-60: 200 was sized for the <=60(-75)-word brief alone and left no headroom -
+        # candidate 81 hit TruncatedResponseError live and burned a retry. 75 words is
+        # ~110 tokens; 600 covers the long tail without licensing a rambling brief (the
+        # word cap is enforced by the prompt and brief_lint, not by max_tokens).
+        prompt, api_key=api_key, max_tokens=600, model=anthropic_client.HAIKU_MODEL
     )
     return result["text"].strip()

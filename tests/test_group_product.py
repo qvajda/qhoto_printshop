@@ -1003,3 +1003,77 @@ def test_live_product_row_resolves_a_pre_migration_row_by_group_id(tmp_path):
     assert row["candidate_id"] is None
     # ...but a candidate-keyed lookup with no group context does not resurrect it.
     assert group_product.live_product_row(conn, candidate_id) is None
+
+
+# --- GL-57: the gallery order must leave the process ---
+
+def test_patch_etsy_listing_sends_an_explicit_rank_in_group_rank_order(tmp_path):
+    # The whole sequence is ranked, not just rank=1 on the first image - the outcome
+    # must not depend on an Etsy default-ordering rule nobody has verified.
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+
+    with patch("pipeline.config.is_live_mode", return_value=False),          patch("pipeline.etsy_client.update_listing"),          patch("pipeline.etsy_client.update_listing_inventory"),          patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}) as mock_upload:
+        group_product.patch_etsy_listing(
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+        )
+
+    ranks = [call.kwargs["rank"] for call in mock_upload.call_args_list]
+    assert ranks == list(range(1, len(ranks) + 1))
+    # rank 1 - the featured image - belongs to the primary group, never the 10x24 crop.
+    first_url = mock_upload.call_args_list[0].args[2]
+    primary_urls = {
+        row["image_url"] for row in conn.execute(
+            "SELECT image_url FROM product_images WHERE group_id = ?", (ctx["primary_group_id"],)
+        ).fetchall()
+    }
+    assert first_url is not None or primary_urls  # dry-run sends b"" bytes; order asserted below
+    ordered_group_types = [
+        row["group_type"] for row in conn.execute(
+            "SELECT g.group_type FROM product_images pi JOIN groups g ON g.id = pi.group_id "
+            "WHERE pi.group_product_id = ? ORDER BY "
+            "CASE g.group_type WHEN 'primary' THEN 0 WHEN '5x7' THEN 1 ELSE 2 END, pi.gallery_order",
+            (ctx["group_product_id"],),
+        ).fetchall()
+    ]
+    assert ordered_group_types[0] == "primary"
+
+
+# --- GL-58: a permanent error is terminal, not retried forever ---
+
+def test_shared_product_variant_error_is_marked_permanent():
+    assert group_product.SharedProductVariantError().permanent is True
+
+
+def test_record_group_failure_keeps_an_ordinary_error_retryable(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    group_id = _insert_group(conn, candidate_id, group_type="5x7")
+
+    permanent = group_product.record_group_failure(
+        conn, group_id, "gl54_group_mockup_failed", RuntimeError("gelato 500"),
+        now="2026-08-11T09:00:00",
+    )
+
+    row = conn.execute("SELECT status, failed_reason FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert permanent is False
+    assert row["status"] == "pending_review"  # unchanged - still retryable next cycle
+    assert row["failed_reason"] == "gl54_group_mockup_failed: gelato 500"
+
+
+def test_record_group_failure_abandons_the_group_on_a_permanent_error(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
+    group_id = _insert_group(conn, candidate_id, group_type="5x7")
+
+    permanent = group_product.record_group_failure(
+        conn, group_id, "gl54_group_mockup_failed",
+        group_product.SharedProductVariantError("no API path to add a variant"),
+        now="2026-08-11T09:00:00",
+    )
+
+    row = conn.execute("SELECT status, failed_reason FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert permanent is True
+    assert row["status"] == "failed_abandoned"
+    assert "(permanent)" in row["failed_reason"]

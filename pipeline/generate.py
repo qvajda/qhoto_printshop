@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pipeline.art_brief as art_brief
 import pipeline.artwork_store as artwork_store
 import pipeline.brief_lint as brief_lint
+import pipeline.config as config
 import pipeline.http as http
 import pipeline.replicate_client as replicate_client
 
@@ -308,6 +309,13 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.s
             (f"{GENERATE_FAILED_REASON_PREFIX}%", MAX_GENERATE_ATTEMPTS),
         ).fetchall()
     ]
+    # GL-61: uncapped by default (today's behaviour). The overflow is not dropped - the
+    # rows stay 'pending' and the next cycle takes them, in the same id order.
+    cap = config.candidates_per_batch()
+    if cap is not None and len(pending_ids) > cap:
+        print(f"[generate] CANDIDATES_PER_BATCH={cap}: deferring "
+              f"{len(pending_ids) - cap} candidate(s) to the next cycle")
+        pending_ids = pending_ids[:cap]
     processed_ids = []
     sibling_briefs = []
     failures = []

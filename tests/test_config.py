@@ -250,3 +250,40 @@ def test_group_review_stall_days_is_a_named_constant():
     # [D2] The stall window is tunable without a code change, and is deliberately long:
     # a size aged out of a published listing can never be added back (GL-22a Q2).
     assert config.GROUP_REVIEW_STALL_DAYS == 14
+
+
+# --- GL-61 knobs: every default must reproduce today's behaviour exactly ---
+
+def test_research_mode_defaults_to_always(monkeypatch):
+    monkeypatch.delenv("RESEARCH_MODE", raising=False)
+    assert config.research_mode() == "always"
+
+
+def test_research_mode_rejects_an_unknown_value(monkeypatch):
+    monkeypatch.setenv("RESEARCH_MODE", "sometimes")
+    with pytest.raises(config.MissingConfigError, match="sometimes"):
+        config.research_mode()
+
+
+def test_research_mode_accepts_the_documented_values(monkeypatch):
+    for mode in config.RESEARCH_MODES:
+        monkeypatch.setenv("RESEARCH_MODE", mode.upper())
+        assert config.research_mode() == mode
+
+
+def test_candidates_per_batch_defaults_to_uncapped(monkeypatch):
+    monkeypatch.delenv("CANDIDATES_PER_BATCH", raising=False)
+    assert config.candidates_per_batch() is None
+
+
+def test_candidates_per_batch_reads_an_integer_and_rejects_zero(monkeypatch):
+    monkeypatch.setenv("CANDIDATES_PER_BATCH", "3")
+    assert config.candidates_per_batch() == 3
+    monkeypatch.setenv("CANDIDATES_PER_BATCH", "0")
+    with pytest.raises(config.MissingConfigError):
+        config.candidates_per_batch()
+
+
+def test_telegram_error_verbosity_defaults_to_full(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_ERROR_VERBOSITY", raising=False)
+    assert config.telegram_error_verbosity() == "full"

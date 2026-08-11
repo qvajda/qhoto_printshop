@@ -30,10 +30,19 @@ import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
 import pipeline.reconcile as reconcile
 import pipeline.research as research
+import pipeline.runlog as runlog
 import pipeline.telegram_client as telegram_client
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
 JOB_NAME = "batch"
+
+
+def _admin_error_text(stage_name, exc):
+    """GL-61 knob 2: 'brief' keeps the exception text out of Telegram (it is still in
+    the log). Default 'full' is today's behaviour."""
+    if config.telegram_error_verbosity() == "brief":
+        return f"[{JOB_NAME}] stage '{stage_name}' failed - see logs/{JOB_NAME}.log"
+    return f"[{JOB_NAME}] stage '{stage_name}' failed: {exc}"
 
 
 def _notify_admin(admin_chat_id, bot_token, message):
@@ -52,7 +61,7 @@ def _run_stage(name, fn, admin_chat_id, bot_token, failures):
         return fn()
     except Exception as exc:
         print(f"{JOB_NAME}: stage {name} failed: {exc}")
-        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] stage '{name}' failed: {exc}")
+        _notify_admin(admin_chat_id, bot_token, _admin_error_text(name, exc))
         failures.append(name)
         return None
 
@@ -232,4 +241,10 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # GL-62: only the scheduled invocation tees to a file - importing main() from a test
+    # or a REPL should not start writing logs/batch.log.
+    _stop_log = runlog.start(JOB_NAME)
+    try:
+        sys.exit(main())
+    finally:
+        _stop_log()

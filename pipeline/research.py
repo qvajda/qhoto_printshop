@@ -261,13 +261,34 @@ def _drop_already_proposed(conn, raw_candidates: list) -> list:
     return [raw for raw in raw_candidates if raw["trend_source"] not in alive]
 
 
+def _has_candidate_in_flight(conn) -> bool:
+    """Same "alive" definition trigger_fallback_if_needed uses - one notion of in-flight,
+    not two."""
+    return conn.execute(
+        "SELECT 1 FROM candidates WHERE status NOT IN ('failed', 'abandoned', 'completed') LIMIT 1"
+    ).fetchone() is not None
+
+
 def run_research_cycle(conn, static_config, *, on_demand_topics=None, now=None) -> list:
     now_dt = datetime.combine(now, datetime.min.time()) if now else datetime.utcnow()
     today = now_dt.date()
     on_demand_topics = on_demand_topics or []
 
-    raw_candidates = collect_event_lookahead()
-    raw_candidates += collect_trending_now()
+    # GL-61: the modes govern whether this stage proposes candidates on its OWN. An
+    # explicitly-requested on-demand topic is always honoured - but on its own, without
+    # the automatic sources piling more on top, which is the whole point of the knob.
+    mode = config.research_mode()
+    auto_sources = mode == "always" or (
+        mode == "if-nothing-pending" and not _has_candidate_in_flight(conn)
+    )
+    if not auto_sources and not on_demand_topics:
+        print(f"[research] skipped: RESEARCH_MODE={mode}")
+        return []
+
+    raw_candidates = []
+    if auto_sources:
+        raw_candidates += collect_event_lookahead()
+        raw_candidates += collect_trending_now()
     for topic in on_demand_topics:
         raw_candidates.append(collect_on_demand(topic))
 
@@ -285,7 +306,9 @@ def run_research_cycle(conn, static_config, *, on_demand_topics=None, now=None) 
             any_go = True
         inserted_ids.append(_insert_candidate(conn, raw, classification, now=now_dt))
 
-    if not any_go:
+    # GL-61: the starvation fallback is an automatic source too - it must not manufacture
+    # a candidate in a mode whose whole point is proposing none.
+    if not any_go and auto_sources:
         fallback_raw = pick_safe_evergreen_fallback()
         fallback_classification = classify(fallback_raw, now=today)
         inserted_ids.append(_insert_candidate(conn, fallback_raw, fallback_classification, now=now_dt))

@@ -71,16 +71,21 @@ def upload_listing_image(
     listing_id: str,
     image_bytes: bytes,
     *,
+    rank: int = None,
     api_key: str = None,
     api_secret: str = None,
     access_token: str = None,
     dry_run: bool = None,
 ) -> dict:
+    """GL-57: `rank` is Etsy's 1-based gallery position (rank=1 is the featured image).
+    Without it Etsy picks the order itself and the last upload - the 10x24 mockup -
+    became the featured image on every listing. Callers send an explicit rank for the
+    WHOLE sequence rather than relying on any default ordering rule."""
     if dry_run is None:
         dry_run = not config.is_live_mode("ETSY")
 
     if dry_run:
-        return {"listing_image_id": "DRY_RUN_IMAGE_ID", "_dry_run": True}
+        return {"listing_image_id": "DRY_RUN_IMAGE_ID", "rank": rank, "_dry_run": True}
 
     api_key = api_key or config.require_env("ETSY_API_KEY")
     api_secret = api_secret or config.require_env("ETSY_API_SECRET")
@@ -92,7 +97,14 @@ def upload_listing_image(
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="image"; filename="image.png"\r\n'
         f"Content-Type: image/png\r\n\r\n"
-    ).encode("utf-8") + image_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    ).encode("utf-8") + image_bytes + b"\r\n"
+    if rank is not None:
+        body += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="rank"\r\n\r\n'
+            f"{int(rank)}\r\n"
+        ).encode("utf-8")
+    body += f"--{boundary}--\r\n".encode("utf-8")
 
     def _build(token):
         headers = _headers(api_key, api_secret, token)

@@ -13,7 +13,6 @@ def test_generate_image_builds_correct_request_and_parses_response():
     def fake_send(request, timeout=30):
         captured["url"] = request.full_url
         captured["auth_header"] = request.get_header("Authorization")
-        captured["prefer_header"] = request.get_header("Prefer")
         captured["body"] = json.loads(request.data)
         captured["timeout"] = timeout
         return {"id": "pred123", "status": "succeeded", "output": ["https://replicate.delivery/out.png"]}
@@ -23,7 +22,6 @@ def test_generate_image_builds_correct_request_and_parses_response():
 
     assert captured["url"] == "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions"
     assert captured["auth_header"] == "Bearer test-token"
-    assert captured["prefer_header"] == "wait"
     assert captured["body"]["input"]["prompt"] == "a botanical watercolor poster"
     # Portrait primary template is 8x12 (2:3) - FLUX schnell defaults to square 1:1 and
     # ~1MP unless told otherwise; megapixels="1" is schnell's max native resolution.
@@ -36,12 +34,53 @@ def test_generate_image_builds_correct_request_and_parses_response():
     assert captured["timeout"] >= 60
 
 
-def test_generate_image_raises_timeout_error_when_not_succeeded():
+def test_generate_image_raises_timeout_error_only_after_the_poll_budget_is_spent():
+    # GL-59: a still-queued prediction is no longer a timeout on the first look -
+    # only exhausting the poll budget is.
     def fake_send(request, timeout=30):
         return {"id": "pred456", "status": "processing", "output": None}
 
+    clock = iter([0.0, 0.0, 5.0, 99.0])
     with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
         with pytest.raises(replicate_client.ReplicatePredictionTimeoutError, match="pred456"):
+            replicate_client.generate_image(
+                "a prompt", api_token="test-token", poll_timeout=10.0,
+                sleep_fn=lambda _: None, time_fn=lambda: next(clock),
+            )
+
+
+def test_generate_image_succeeds_when_a_queued_prediction_finishes_while_polling():
+    # GL-59, the actual defect: candidates 78/83 raised a timeout on predictions that
+    # executed in under 4s, because the 60s window counted queue time.
+    responses = [
+        {"id": "pred-q", "status": "starting", "output": None,
+         "urls": {"get": "https://api.replicate.com/v1/predictions/pred-q"}},
+        {"id": "pred-q", "status": "processing", "output": None,
+         "urls": {"get": "https://api.replicate.com/v1/predictions/pred-q"}},
+        {"id": "pred-q", "status": "succeeded", "output": ["https://replicate.delivery/q.png"]},
+    ]
+    polled = []
+
+    def fake_send(request, timeout=30):
+        if request.get_method() == "GET":
+            polled.append(request.full_url)
+        return responses.pop(0)
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        result = replicate_client.generate_image(
+            "a prompt", api_token="test-token", sleep_fn=lambda _: None,
+        )
+
+    assert result == {"image_url": "https://replicate.delivery/q.png", "prediction_id": "pred-q"}
+    assert polled == ["https://api.replicate.com/v1/predictions/pred-q"] * 2
+
+
+def test_a_replicate_side_failure_is_not_reported_as_a_timeout():
+    def fake_send(request, timeout=30):
+        return {"id": "pred-f", "status": "failed", "error": "NSFW content detected"}
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        with pytest.raises(replicate_client.ReplicatePredictionFailedError, match="NSFW"):
             replicate_client.generate_image("a prompt", api_token="test-token")
 
 
@@ -65,7 +104,6 @@ def test_upscale_image_builds_correct_request_and_parses_response():
     def fake_send(request, timeout=30):
         captured["url"] = request.full_url
         captured["auth_header"] = request.get_header("Authorization")
-        captured["prefer_header"] = request.get_header("Prefer")
         captured["body"] = json.loads(request.data)
         captured["timeout"] = timeout
         return {"id": "pred-up1", "status": "succeeded", "output": ["https://replicate.delivery/upscaled.png"]}
@@ -75,7 +113,6 @@ def test_upscale_image_builds_correct_request_and_parses_response():
 
     assert captured["url"] == "https://api.replicate.com/v1/models/nightmareai/real-esrgan/predictions"
     assert captured["auth_header"] == "Bearer test-token"
-    assert captured["prefer_header"] == "wait"
     assert captured["body"]["input"] == {
         "image": "https://replicate.delivery/out.png",
         "scale": 8,
@@ -85,13 +122,17 @@ def test_upscale_image_builds_correct_request_and_parses_response():
     assert captured["timeout"] >= 60
 
 
-def test_upscale_image_raises_timeout_error_when_not_succeeded():
+def test_upscale_image_raises_timeout_error_when_the_poll_budget_is_spent():
     def fake_send(request, timeout=30):
         return {"id": "pred-up2", "status": "processing", "output": None}
 
+    clock = iter([0.0, 0.0, 99.0])
     with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
         with pytest.raises(replicate_client.ReplicatePredictionTimeoutError, match="pred-up2"):
-            replicate_client.upscale_image("https://replicate.delivery/out.png", api_token="test-token")
+            replicate_client.upscale_image(
+                "https://replicate.delivery/out.png", api_token="test-token", poll_timeout=10.0,
+                sleep_fn=lambda _: None, time_fn=lambda: next(clock),
+            )
 
 
 def test_upscale_image_api_token_defaults_to_env_var(monkeypatch):
@@ -151,10 +192,14 @@ def test_timeout_error_text_does_not_speculate_generic_throttling():
     def fake_send(request, timeout=30):
         return {"id": "pred999", "status": "processing", "output": None}
 
+    clock = iter([0.0, 0.0, 99.0])
     with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
         with pytest.raises(replicate_client.ReplicatePredictionTimeoutError) as exc_info:
-            replicate_client.generate_image("a prompt", api_token="test-token")
+            replicate_client.generate_image(
+                "a prompt", api_token="test-token", poll_timeout=10.0,
+                sleep_fn=lambda _: None, time_fn=lambda: next(clock),
+            )
 
     message = str(exc_info.value)
-    assert "outage" in message.lower()
+    assert "stall" in message.lower()
     assert "rate cap" in message.lower() or "ReplicateThrottledError" in message

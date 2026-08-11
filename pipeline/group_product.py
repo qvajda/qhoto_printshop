@@ -35,7 +35,43 @@ class SharedProductVariantError(Exception):
     candidate and is created ONCE with every validated size (D1); GL-22a Q2 proved
     there is no API path to add a variant afterwards, and deleting + recreating would
     destroy sizes another group already published. So a mismatch here is a bug or a
-    hand-edited DB, not something to route around - it fails loud."""
+    hand-edited DB, not something to route around - it fails loud.
+
+    GL-58: `permanent` is read by every stage's per-item handler (the GL-54 shape) and
+    means "retrying this can never succeed" - the item is marked terminal and alerts
+    once, instead of re-failing and re-alerting on every batch cycle forever. Any new
+    exception with the same property sets this attribute; handlers stay duck-typed on
+    `getattr(exc, 'permanent', False)` so there is nothing to import."""
+
+    permanent = True
+
+
+def record_group_failure(conn, group_id: int, reason_prefix: str, exc: Exception, *, now=None) -> bool:
+    """GL-54's per-item failure write, plus GL-58's permanence branch. Returns True if
+    the failure was permanent (the group is now 'failed_abandoned' and will never be
+    retried or re-alerted), False if it stays retryable at 'pending_generation'.
+
+    A stage loop still appends to `failures` and still fails once at the end either way
+    - permanence changes how often the item is retried, never whether the stage reports
+    (CLAUDE.md's swallowed-exception rule)."""
+    permanent = getattr(exc, "permanent", False)
+    timestamp = now if isinstance(now, str) else (
+        now or datetime.now(timezone.utc).replace(tzinfo=None)
+    ).isoformat()
+    reason = f"{reason_prefix}{' (permanent)' if permanent else ''}: {exc}"
+    if permanent:
+        conn.execute(
+            "UPDATE groups SET status = 'failed_abandoned', failed_reason = ?, updated_at = ? "
+            "WHERE id = ?",
+            (reason, timestamp, group_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE groups SET failed_reason = ?, updated_at = ? WHERE id = ?",
+            (reason, timestamp, group_id),
+        )
+    conn.commit()
+    return permanent
 
 
 class GalleryTooLargeError(Exception):
@@ -566,7 +602,13 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
             f"Candidate listing {listing_id} would carry {len(image_rows)} gallery images; "
             f"Etsy caps a listing at {ETSY_MAX_LISTING_IMAGES}."
         )
-    for row in image_rows:
+    for rank, row in enumerate(image_rows, start=1):
+        # GL-57: rank is the row's 1-based position in the _GROUP_RANK_SQL order above -
+        # counted over the whole ordered list, including rows skipped just below, so a
+        # resumed upload lands in the same slot it would have on a clean run. Sent on
+        # every image rather than only rank=1, so the gallery does not depend on an
+        # Etsy default-ordering rule nobody has verified.
+        #
         # Idempotent: this loop is a full re-upload with no delta, so a second call after
         # a partial failure would duplicate the whole gallery on the live listing. Rows
         # that already uploaded carry Etsy's own listing_image_id and are skipped.
@@ -577,8 +619,8 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
             http.fetch_bytes(url) if url.startswith(("http://", "https://")) else Path(url).read_bytes()
         )
         response = etsy_client.upload_listing_image(
-            shop_id, listing_id, image_bytes, api_key=etsy_api_key, api_secret=etsy_api_secret,
-            access_token=etsy_access_token, dry_run=dry_run,
+            shop_id, listing_id, image_bytes, rank=rank, api_key=etsy_api_key,
+            api_secret=etsy_api_secret, access_token=etsy_access_token, dry_run=dry_run,
         )
         conn.execute(
             "UPDATE product_images SET etsy_listing_image_id = ? WHERE id = ?",

@@ -109,13 +109,12 @@ def run_primary_mockup_cycle(conn, *, static_config: dict = None, store_id: str 
             # and the row must still look retryable next cycle. failed_reason is the only
             # durable trace a diagnosis has; the CHECK constraint has no "mockup failed" status
             # that wouldn't also lie about whether a retry can still happen.
+            # GL-58: unless the error says it can never succeed, in which case the row
+            # is marked terminal instead of being handed back to the retry loop forever.
             group_id = get_or_create_primary_group(conn, candidate_id, now=now)
-            timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
-            conn.execute(
-                "UPDATE groups SET failed_reason = ?, updated_at = ? WHERE id = ?",
-                (f"gl54_primary_mockup_failed: {exc}", timestamp, group_id),
+            group_product.record_group_failure(
+                conn, group_id, "gl54_primary_mockup_failed", exc, now=now
             )
-            conn.commit()
             failures.append(f"{candidate_id}: {exc}")
             continue
         processed_ids.append(candidate_id)
