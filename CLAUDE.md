@@ -175,6 +175,19 @@ pipeline stage — don't guess at behavior that's already specified.
   `products:create-from-template` call, that must fail loudly with a
   clear error — never silently skip the size or proceed with a fake ID.
 
+## Standing owner decision — activation/publishing is not a planning variable
+**No listing is activated until the pipeline is fully clear AND the shop is out
+of developer mode. The owner decides when drafts get published; it is not gated
+on any board row, is never a step in a session plan, and is not to be raised as
+a question, recommendation or reminder** (owner, 2026-08-12). Planning docs may
+state what a defect *would* cost on a live listing — that is a technical fact —
+but must not propose, schedule or prompt for an activation. Two consequences
+that matter downstream: everything stays a draft, so gallery/alt-text repair
+stays free indefinitely and the 2026-08-12 "hold the first activation until
+GL-69 and GL-71 land" urgency is void; and the GL-37 manual disclosure step
+above is documentation of how publishing works when the owner chooses to do it,
+**not** a to-do to surface.
+
 ## Static config values (see docs/SPEC_v4.11.md section 4 for the full cost/
 price table and per-size notes; prices below are final, not placeholders)
 - Telegram admin/allowlist user ID: **not listed here** — read from

@@ -657,3 +657,33 @@ edits landed with it, and one PRD.**
   **unsigned**. `CLAUDE.md` §2 is met on both limbs (live external account, more
   than one sitting); the activation inside it carries its own separate explicit
   proceed per §4.
+
+---
+
+# Owner decisions 2026-08-12 (evening) — activation retired as a planning variable; E12 signed with changes
+
+**Cause:** owner review of `docs/2026-08-13-e12-kickoff.md`.
+
+- **Standing decision, recorded in `CLAUDE.md` so it is not re-litigated each
+  pass: activation/publishing is not a planning variable.** No listing is
+  activated until the pipeline is fully clear **and** the shop is out of
+  developer mode. It is not gated on any board row, is never a step in a session
+  plan, and is not to be raised as a question, recommendation or reminder.
+  Planning docs may state what a defect *would* cost on a live listing — a
+  technical fact — but must not propose or prompt for an activation.
+- **Consequence: the 08-12 morning "hold the first activation until GL-69 and
+  GL-71 land" decision is moot rather than satisfied.** Everything stays a
+  draft, so gallery and alt-text repair stay free indefinitely; those two rows
+  lose their deadline, not their content. GL-69's and GL-71's cells and the E12
+  PRD are annotated accordingly; E12 now contains no irreversible action at all.
+- **GL-71 gains a confirmation step in front of its investigation.** Confirm the
+  gallery on `4554354628` is *still* scrambled before spending a session on
+  causes — the owner's manual GL-57 dashboard pass may already have reordered
+  it, and E10c is one snapshot of one listing. A clean read downgrades the row
+  and defers re-verification to the next upload; it does not close it.
+- **Hypothesis A is pre-approved for same-session repair.** If the cause is
+  duplicate `approve` dispatch, the `handle_decision` dispatch guard ships in
+  that session and **GL-74** (reject confirmation) ships with it — no separate
+  scoping pass.
+- **E12 signed with those two changes.** Step §2 (the alt-text read-back) can
+  start; no open decisions remain on the PRD.
