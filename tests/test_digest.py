@@ -187,7 +187,9 @@ def test_build_digest_keyboard_has_three_buttons_with_group_id_callback_data():
     buttons = keyboard["inline_keyboard"][0]
     assert len(buttons) == 3
     callback_data = [button["callback_data"] for button in buttons]
-    assert callback_data == ["approve:42", "edit:42", "reject:42"]
+    # GL-74: the reject button asks rather than decides; 'reject:42' lives on the
+    # confirm keyboard and nowhere else.
+    assert callback_data == ["approve:42", "edit:42", "confirm_reject:42"]
 
 
 def test_send_primary_digest_sends_media_group_then_message_and_persists_id(tmp_path):

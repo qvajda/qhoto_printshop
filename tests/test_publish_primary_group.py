@@ -6,6 +6,7 @@ import pytest
 
 import pipeline.config as config
 import pipeline.db as db
+import pipeline.digest as digest
 import pipeline.group_product as group_product
 import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
@@ -282,8 +283,11 @@ def _insert_group_product_with_variants(conn, group_id, sizes=("8x12",), *, gela
     return gp_id
 
 
-def _insert_ready_primary_group(conn, candidate_id, niche="monstera line art"):
-    group_id = _insert_primary_group(conn, candidate_id, status="pending_review")
+def _insert_ready_primary_group(conn, candidate_id, niche="monstera line art", decision=None):
+    # decision defaults to None: a group awaiting the owner's tap has not been decided,
+    # and GL-71's dispatch guard discards a callback for a group that already carries a
+    # terminal decision - so a pre-decided fixture would be discarded before dispatch.
+    group_id = _insert_primary_group(conn, candidate_id, status="pending_review", decision=decision)
     # ponytail: no variants here (sizes=()) - none of this file's handle_decision/process_update
     # tests assert on group_product_variants, and critic_pass.discard_superseded_attempt (called
     # from the edit path below) has a pre-existing bug where it deletes group_products before its
@@ -851,6 +855,82 @@ def test_process_update_accepts_admin_callback_and_calls_handle_decision(tmp_pat
     log_row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
     assert log_row["accepted"] == 1
     assert log_row["action_taken"] == "approve"
+    conn.close()
+
+
+def test_process_update_discards_a_second_tap_on_an_already_decided_group(tmp_path):
+    """GL-71: four approve:100 taps were all dispatched on 2026-08-12 and three of them
+    ran into the first one's gallery upload. The decided row, not the keyboard, is the lock."""
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id, decision="approved")
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(
+        user_id=987654321, data=f"approve:{group_id}", message_id=202, chat_id=987654321, callback_id="cbq9",
+    )
+
+    with patch("pipeline.publish_primary_group.handle_decision") as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup"), \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result is None
+    mock_handle.assert_not_called()
+    log_row = conn.execute("SELECT * FROM telegram_events_log").fetchone()
+    assert log_row["accepted"] == 0
+    assert log_row["action_taken"] == "discarded: group already approved"
+    conn.close()
+
+
+def test_process_update_reject_asks_for_confirmation_before_deciding_anything(tmp_path):
+    """GL-74: the first reject tap swaps the keyboard and nothing else; the confirm
+    keyboard is the only place 'reject:' is reachable from."""
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(
+        user_id=987654321, data=f"confirm_reject:{group_id}", message_id=202, chat_id=987654321,
+        callback_id="cbq7",
+    )
+
+    with patch("pipeline.publish_primary_group.handle_decision") as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup") as mock_markup, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result is None
+    mock_handle.assert_not_called()
+    buttons = mock_markup.call_args.args[2]["inline_keyboard"][0]
+    assert [b["callback_data"] for b in buttons] == [f"reject:{group_id}", f"keep:{group_id}"]
+    assert conn.execute("SELECT decision FROM groups WHERE id = ?", (group_id,)).fetchone()["decision"] is None
+    conn.close()
+
+
+def test_process_update_keep_restores_the_digest_keyboard_and_decides_nothing(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    group_id = _insert_ready_primary_group(conn, candidate_id)
+    _insert_group_message(conn, group_id, "987654321", 202)
+    update = _callback_update(
+        user_id=987654321, data=f"keep:{group_id}", message_id=202, chat_id=987654321, callback_id="cbq8",
+    )
+
+    with patch("pipeline.publish_primary_group.handle_decision") as mock_handle, \
+         patch("pipeline.publish_primary_group.telegram_client.edit_message_reply_markup") as mock_markup, \
+         patch("pipeline.publish_primary_group.telegram_client.answer_callback_query"):
+        result = publish_primary_group.process_update(
+            conn, update, admin_chat_id="987654321", bot_token="tok1", now=datetime(2026, 7, 12, 13, 0, 0),
+        )
+
+    assert result is None
+    mock_handle.assert_not_called()
+    assert mock_markup.call_args.args[2] == digest.build_digest_keyboard(group_id)
+    assert conn.execute("SELECT decision FROM groups WHERE id = ?", (group_id,)).fetchone()["decision"] is None
     conn.close()
 
 

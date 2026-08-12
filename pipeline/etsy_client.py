@@ -60,10 +60,15 @@ def create_draft_listing(
     access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
     url = f"{ETSY_API_BASE}/shops/{shop_id}/listings"
     body = json.dumps(listing_data).encode("utf-8")
-    headers = _headers(api_key, api_secret, access_token)
-    headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    return http.send(request)
+
+    # E12: the only Etsy call that bypassed _call_with_refresh, so it was the only one
+    # that 401'd on an expired access token instead of refreshing once and retrying.
+    def _build(token):
+        headers = _headers(api_key, api_secret, token)
+        headers["Content-Type"] = "application/json"
+        return urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+    return _call_with_refresh(_build, access_token)
 
 
 def upload_listing_image(
