@@ -5,6 +5,7 @@ import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
 import pipeline.critic_pass as critic_pass
 import pipeline.db as db
+import pipeline.digest as digest
 import pipeline.generate as generate
 import pipeline.group_product as group_product
 import pipeline.primary_mockup as primary_mockup
@@ -40,6 +41,10 @@ def resolve_callback(update: dict) -> dict | None:
 # keyboard is edited to a single non-actionable label carrying the decision - which
 # also makes a second tap on an already-decided message harmless (action 'noop').
 NOOP_ACTION = "noop"
+# GL-74: the two non-deciding actions. Neither writes to the DB; they only swap the
+# keyboard between "ask" and "back out".
+CONFIRM_REJECT_ACTION = "confirm_reject"
+KEEP_ACTION = "keep"
 _DECIDED_LABELS = {"approve": "✅ Approved", "edit": "✏️ Edit requested",
                    "reject": "\U0001f6ab Rejected", "redraft": "📝 Copy redo requested"}
 
@@ -54,17 +59,22 @@ def _ack(callback_query_id, text, *, bot_token) -> None:
         print(f"answer_callback_query failed for {callback_query_id}: {exc}")
 
 
-def _mark_decided(parsed, *, bot_token) -> None:
-    label = _DECIDED_LABELS.get(parsed["action"], parsed["action"])
-    markup = {"inline_keyboard": [[
-        {"text": label, "callback_data": f"{NOOP_ACTION}:{parsed['group_id']}"}
-    ]]}
+def _set_markup(parsed, markup, *, bot_token) -> None:
+    """Never raises: the keyboard is a display, and the decision (or the deliberate
+    absence of one) is already durable by the time this runs."""
     try:
         telegram_client.edit_message_reply_markup(
             parsed["chat_id"], parsed["message_id"], markup, bot_token=bot_token,
         )
     except Exception as exc:
         print(f"edit_message_reply_markup failed for group {parsed['group_id']}: {exc}")
+
+
+def _mark_decided(parsed, *, bot_token) -> None:
+    label = _DECIDED_LABELS.get(parsed["action"], parsed["action"])
+    _set_markup(parsed, {"inline_keyboard": [[
+        {"text": label, "callback_data": f"{NOOP_ACTION}:{parsed['group_id']}"}
+    ]]}, bot_token=bot_token)
 
 
 def is_admin(telegram_user_id, admin_chat_id) -> bool:
@@ -409,9 +419,36 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
         return None
 
     group_row = conn.execute(
-        "SELECT candidate_id, group_type FROM groups WHERE id = ?", (parsed["group_id"],)
+        "SELECT candidate_id, group_type, decision FROM groups WHERE id = ?", (parsed["group_id"],)
     ).fetchone()
     candidate_id = group_row["candidate_id"]
+
+    # GL-71: the dispatch guard. The keyboard edit is not a lock - four `approve:100`
+    # taps landed 07:25:01-07:26:59 on 2026-08-12 and all four were dispatched, three of
+    # them into the middle of the first one's gallery upload, which is what permuted
+    # ranks 3-7 of listing 4554354628. handle_decision commits its decision before doing
+    # any work, so the row is the authority a second dispatch has to lose to.
+    if group_row["decision"] in _TERMINAL_DECISIONS:
+        log_telegram_event(conn, parsed["telegram_user_id"], update, False,
+                            f"discarded: group already {group_row['decision']}", now=now)
+        _ack(parsed["callback_query_id"], f"Already {group_row['decision']}.", bot_token=bot_token)
+        _mark_decided(parsed, bot_token=bot_token)
+        return None
+
+    # GL-74: reject asks first. Neither branch touches the DB or dispatches anything.
+    if parsed["action"] == CONFIRM_REJECT_ACTION:
+        log_telegram_event(conn, parsed["telegram_user_id"], update, False,
+                            "confirmation requested: reject", now=now)
+        _ack(parsed["callback_query_id"], "Reject this one? Confirm below.", bot_token=bot_token)
+        _set_markup(parsed, digest.build_reject_confirm_keyboard(parsed["group_id"]), bot_token=bot_token)
+        return None
+
+    if parsed["action"] == KEEP_ACTION:
+        log_telegram_event(conn, parsed["telegram_user_id"], update, False,
+                            "reject cancelled", now=now)
+        _ack(parsed["callback_query_id"], "Kept - nothing changed.", bot_token=bot_token)
+        _set_markup(parsed, digest.build_digest_keyboard(parsed["group_id"]), bot_token=bot_token)
+        return None
 
     log_telegram_event(conn, parsed["telegram_user_id"], update, True, parsed["action"], now=now)
 

@@ -687,3 +687,70 @@ edits landed with it, and one PRD.**
   scoping pass.
 - **E12 signed with those two changes.** Step §2 (the alt-text read-back) can
   start; no open decisions remain on the PRD.
+
+
+---
+
+# E12 2026-08-13 — GL-69 and GL-71 closed by measurement; GL-74 and GL-75 with them
+
+**Cause:** `docs/2026-08-13-e12-kickoff.md` (signed 2026-08-12). Findings:
+`docs/2026-08-13-e12-findings.md`. Branch `e12-measure-and-repair`, **810 green**
+(803 baseline + 5 new tests + 2 that `test_scripts_smoke.py` derives from the
+session’s two throwaway scripts).
+
+- **GL-69 closed — Etsy persists `alt_text`, and no code change was needed.** A
+  throwaway draft (`4554693392`, created and deleted in-session) took one image
+  through `upload_listing_image` with a sentinel string; `get_listing_images`
+  returned it verbatim. Asserted on the value, not on the 200 and not on the
+  upload response's own echo — the GL-22a Q2 rule. **This is why the measurement
+  had to come before the repair:** had the field been wrong, the gallery would
+  have been re-uploaded twice.
+- **GL-71 closed — still scrambled, and the cause is hypothesis A (duplicate
+  dispatch).** §3a confirmed the permutation was unchanged from E10c's snapshot.
+  §3b did *not* use the instrument the PRD specified: the incident's own
+  artefacts discriminated the hypotheses better than a re-enactment could.
+  Etsy's per-image `created_timestamp` shows the upload loop ran in the right
+  order at the right ranks; `telegram_events_log` shows four accepted
+  `approve:100` dispatches; and **the permutation is confined to exactly the
+  ranks uploaded inside the window the three duplicates overlap** — the ranks
+  before and after it are correct. Hypothesis B is active for a whole upload and
+  cannot produce a windowed defect.
+- **Shipped: the dispatch guard.** `process_update` discards a callback for a
+  group whose `groups.decision` is already terminal. `handle_decision` commits
+  the decision before doing any work, so the row is the lock; the keyboard edit
+  never was one. **No reorder fix was written** — under A the ordering code is
+  correct and was raced, so `patch_etsy_listing`'s reconcile-after-upload comment
+  stands. One change, one observable.
+- **GL-74 shipped with it, per the owner's pre-approval.** `❌ Reject` now sends
+  `confirm_reject:` and only swaps the keyboard; `reject:` lives on the confirm
+  keyboard alone, and `↩️ Keep it` restores the original. Neither branch writes
+  to the DB. Approve stays one tap.
+- **Listing `4554354628`'s gallery repaired on the draft** — 12 images
+  re-uploaded in `gallery_order` with alt text on all of them, DB ids rewritten
+  scoped by `group_product_id`, read back twice. Backup
+  `db/qhoto.sqlite3.bak-2026-08-13-pre-e12` taken first. **One implementation
+  fact worth keeping:** Etsy refuses to delete a listing's last image
+  (`"Listings must have at least 1 image"`), so a delete-first repair strands the
+  gallery at one stale image — upload first and let the existing reconcile remove
+  the strays, which is the same ordering `patch_etsy_listing` already argues for.
+- **GL-75 closed — 77, 78 and 79 restored, sha256 identical after.** Their state
+  had moved since the row was written: all three sat `failed`/`failed_abandoned`,
+  abandoned on 08-11 by the copy-only retry loop *before* GL-70 gave it a
+  hand-back path, with no `group_messages` row left. The restore undoes the
+  abandonment and re-runs the same copy-only redraft under the fixed code. **The
+  copy now matches the artwork on all three** — GL-68 working on the exact data
+  that exposed it. `scripts/e10b_backlog_recovery.py` deleted.
+- **Rider: `create_draft_listing` was the only Etsy call bypassing
+  `_call_with_refresh`**, so it alone died on an expired token instead of
+  refreshing once. Fixed. It remains unused by any pipeline stage.
+- **Rider: Etsy now rejects a physical draft with no `readiness_state_id`**
+  (`400`). Recorded so it is not re-derived; nothing in the pipeline creates
+  listings.
+- **§6 not done, and it is an environment boundary rather than a decision.** The
+  two batch scheduled tasks stay **Disabled** and `RESEARCH_MODE` stays
+  `consume-pending-only` — `.env` and the Windows scheduler were both outside
+  what the session could touch. The state is coherent, not half-finished:
+  `consume-pending-only` is the right mode while 77/78/79 await their re-sent
+  digests. Owner steps: enable the two tasks; unset `RESEARCH_MODE` once those
+  three are decided; watch the first run.
+- **Gate: 27 of 28.** Open set: **GL-11** alone (the Etsy developer-mode email).

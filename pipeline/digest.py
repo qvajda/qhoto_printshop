@@ -89,13 +89,29 @@ def build_digest_keyboard(group_id: int) -> dict:
         "inline_keyboard": [[
             {"text": "✅ Approve", "callback_data": f"approve:{group_id}"},
             {"text": "✏️ Edit", "callback_data": f"edit:{group_id}"},
-            {"text": "❌ Reject", "callback_data": f"reject:{group_id}"},
+            # GL-74: reject is irreversible (it discards the group's contribution and
+            # fails the candidate) and sat one mis-tap away from approve - next to a
+            # parked-GL-65 workaround whose instruction is "tap until it lands". This
+            # button now only ASKS; 'reject:' itself is reachable from the confirm
+            # keyboard below and nowhere else.
+            {"text": "❌ Reject", "callback_data": f"confirm_reject:{group_id}"},
         ], [
             # GL-56: good design, bad copy. Edit is "redo the artwork" and destroys a
             # design the owner was happy with; this redrafts the listing text only.
             # Second row rather than a fourth button on one row - four side by side on a
             # phone truncates every label.
             {"text": "📝 Redo copy only", "callback_data": f"redraft:{group_id}"},
+        ]]
+    }
+
+
+def build_reject_confirm_keyboard(group_id: int) -> dict:
+    """GL-74: the second tap. 'Keep' restores build_digest_keyboard, so backing out
+    costs nothing and leaves no decision behind."""
+    return {
+        "inline_keyboard": [[
+            {"text": "❌ Yes, reject", "callback_data": f"reject:{group_id}"},
+            {"text": "↩️ Keep it", "callback_data": f"keep:{group_id}"},
         ]]
     }
 
