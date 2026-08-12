@@ -563,3 +563,97 @@ up as a "quick parallel task."
   removed from Track D's "now" list.
 - No code or spec changes — this is a scheduling decision only. Nothing else
   on the go-live path depends on GL-12.
+
+---
+
+# Planning pass 2026-08-12 — E10 integrated, E11 scoped, the board re-derived
+
+**Cause:** the E10 hand-off (PR #14, `e10a-ack-and-cadence` → master `289c337`,
+790 green) plus its single findings artefact
+`docs/2026-08-11-e10b-findings.md` §0–§14, which by owner decision filed no board
+rows and left the planner to surface them.
+
+**No code or spec changes — planning, board reconciliation and one PRD.**
+
+- **Closed on the board:** GL-7 (all four DoD items given verdicts), GL-52 (fresh
+  create measured *and* owner-confirmed in the Gelato Design editor), and **GL-36**
+  — the last of which nothing in the hand-off mentioned; E10c's live reconcile
+  closed it as a side effect of GL-7 DoD 3, after fixing the endpoint defect the
+  proof exposed.
+- **GL-65 localised and then parked** (owner, 2026-08-12): per-callback loss
+  upstream of Telegram's queue, revisit post-go-live, interim workaround is to
+  re-tap. Filed with the rider that the workaround is one of two live hypotheses
+  for GL-71.
+- **Eight new rows from the E10 carried items:** GL-68 (the drafter never sees the
+  artwork — root cause of three abandoned candidates and the gate on resuming
+  unattended operation), GL-69 (alt text generated, validated, never shipped),
+  GL-70 (`copy_only` graded on artwork it cannot change, retries blind, can
+  abandon), GL-71 (gallery order not preserved), GL-72, GL-73, GL-74, GL-75. A
+  rider added to GL-49 (its three `DRY_RUN` rows answer 400, not 404, so the
+  reconcile can never reach them).
+- **Owner decision: the first activation is held** until GL-69 and GL-71 land.
+  Alt text and gallery rank are set at image-upload time and Etsy v3 has no
+  update-image endpoint, so repair is free on a draft and expensive on a live
+  listing. First scheduling decision on this project driven by the *absence* of
+  an API endpoint.
+- **The gate count was re-derived rather than inherited.** 24-of-27 does not
+  reconstruct from the blocker table under any rule; the count is now **23 of 28**
+  with the derivation published in the doc header so it is auditable rather than
+  trusted. Re-deriving it found that **eight rows closed on 08-11 were marked done
+  in header prose and never in their own cells** (GL-55 through GL-62) — the exact
+  failure GL-23b's row was kept on the board to prevent. All reconciled in-cell.
+- **Deliverable:** `docs/2026-08-12-e11-kickoff.md` — the E11 PRD and kickoff,
+  **unsigned**. `CLAUDE.md` §2 threshold met on both limbs (live external account,
+  more than one sitting), so no code starts before owner sign-off, and the
+  activation itself carries a separate explicit proceed per §4.
+
+---
+
+# Planning pass 2026-08-12 (evening) — E11 integrated, E12 scoped, the gate is no longer code
+
+**Cause:** the E11 hand-off — PR #15 (`e11-copy-and-gallery-integrity` → master
+`ac715a3`, squash), 803 green (790 baseline + 13 new) — plus its findings
+artefact `docs/2026-08-12-e11-findings.md` and the kickoff it was built against,
+`docs/2026-08-12-e11-kickoff.md`.
+
+**No code or spec changes — board integration, the pending pre-E11 planning
+edits landed with it, and one PRD.**
+
+- **Closed on the gate:** **GL-68** (the drafter receives the master artwork and
+  a *sanitised* `art_brief`, with an explicit artwork-wins-over-brief precedence
+  rule) and **GL-70** (all three halves: `copy_only` no longer graded on the
+  artwork, the critic's reason reaches the drafter and is persisted, and
+  `hand_back_to_owner` replaces `abandon_candidate` on that path). Off-gate:
+  **GL-72** (one `UPDATE`, as scoped).
+- **GL-69 is recorded as half closed, not closed.** The code shipped; the live
+  read-back the E11 PRD made non-negotiable did not. Under this project's own
+  convention — verify by measurement, not by status code, earned by GL-22a Q2 —
+  a row like this does not close on a 200. The cell carries the caveat and the
+  standing prohibition: nothing re-uploads listing `4554354628`'s gallery before
+  the read-back.
+- **GL-71 is recorded as open *by design*, which is a different state from
+  skipped.** The hypothesis-B fix is a two-line move left unwritten deliberately;
+  what is missing is evidence, not a patch. Discriminate before writing, because
+  a reorder shipped next to a dispatch dedupe makes the next permutation
+  uninterpretable. If it lands on hypothesis A, the `handle_decision` dispatch
+  guard enters scope and GL-74 gains urgency with it.
+- **GL-75 unblocked** (GL-68 merged). Sequenced *after* the two live
+  measurements rather than in front of them: it spends Anthropic tokens per
+  candidate and the measurements do not.
+- **One item of debt recorded rather than discovered later:**
+  `generate_draft_text`'s text-only fallback on a missing master file is
+  intentional and warns loudly; if that warning appears in a real run it is a
+  GL-69-class finding, not log noise.
+- **Board-hygiene note, fourth pass running.** E11 deliberately left the
+  GL-68/69/70/72 cells un-updated rather than fold them into a diff that already
+  carried unreviewed pre-E11 planning edits — the correct call. Those edits and
+  this pass's row updates land in one commit, per the standing rule: move both
+  sides or move neither.
+- **Gate re-run under the published rule** (37 rows − 7 riders − 2 struck = 28):
+  **25 of 28**, open set **GL-11, GL-69, GL-71**. All three of the remaining open
+  rows now turn on something other than writing code — one external reply, two
+  live measurements.
+- **Deliverable:** `docs/2026-08-13-e12-kickoff.md` — the E12 PRD and kickoff,
+  **unsigned**. `CLAUDE.md` §2 is met on both limbs (live external account, more
+  than one sitting); the activation inside it carries its own separate explicit
+  proceed per §4.
