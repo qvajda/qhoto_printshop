@@ -237,6 +237,40 @@ def get_listing_inventory(
     return _call_with_refresh(_build, access_token)
 
 
+def get_listing(
+    listing_id: str, *, api_key: str = None, api_secret: str = None,
+    access_token: str = None, dry_run: bool = None
+) -> dict:
+    """GET the listing resource itself. This is the ONLY endpoint that discriminates a
+    deleted listing from a live one, which is why GL-36's reconcile probes it (E10c,
+    measured live 2026-08-12):
+
+        listing 4548623111, deleted    /listings/{id} -> 404   /listings/{id}/inventory -> 200
+        listing 4549960823, live draft /listings/{id} -> 200   /listings/{id}/inventory -> 200
+
+    /images returns 200 for a deleted listing too, and the shop-scoped
+    /shops/{shop_id}/listings/{listing_id} returns 404 even for a listing that exists -
+    probing either would make the reconcile useless or catastrophic respectively.
+
+    No shop_id parameter: this endpoint is not shop-scoped. It still needs the OAuth
+    token, because a draft listing is not publicly readable."""
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    if dry_run:
+        return {"listing_id": listing_id, "_dry_run": True}
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/listings/{listing_id}"
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="GET")
+
+    return _call_with_refresh(_build, access_token)
+
+
 _INVENTORY_READONLY_PRODUCT_FIELDS = ("product_id", "is_deleted")
 _INVENTORY_READONLY_OFFERING_FIELDS = ("offering_id", "is_deleted")
 _INVENTORY_READONLY_PROPERTY_VALUE_FIELDS = ("scale_name",)

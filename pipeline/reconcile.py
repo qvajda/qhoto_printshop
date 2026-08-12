@@ -52,8 +52,13 @@ def reconcile_etsy_listings(
     for row in rows:
         checked += 1
         try:
-            etsy_client.get_listing_inventory(
-                shop_id, row["etsy_listing_id"], api_key=api_key, api_secret=api_secret,
+            # E10c: this probed get_listing_inventory until 2026-08-12, and that made the
+            # 404 branch below unreachable for the only case it exists for - Etsy returns
+            # 200 on /listings/{id}/inventory for a listing that has been deleted. Two
+            # rows (candidates 40 and 41) sat 'published' against 404 listings and a live
+            # reconcile marked neither. See etsy_client.get_listing for the measurements.
+            etsy_client.get_listing(
+                row["etsy_listing_id"], api_key=api_key, api_secret=api_secret,
                 access_token=access_token, dry_run=dry_run_override,
             )
         except http.HTTPError as exc:

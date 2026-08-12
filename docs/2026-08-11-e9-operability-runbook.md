@@ -33,3 +33,41 @@ scheduled task/script, never when `main()` is imported by a test.
 
 No change is needed in the Windows Task Scheduler actions; a redirect there
 would be lost on re-registration, which is why this lives in the repo.
+
+---
+
+## Poll cadence: the "hourly" job runs every 5 minutes (E10a, 2026-08-11)
+
+**`JOB_NAME` stays `"hourly"`. It is a deliberate misnomer, do not rename it** —
+the name is load-bearing in `heartbeats.job_name`, `heartbeat_status.JOB_NAMES`,
+the `logs/hourly.log` filename and the Task Scheduler task name, and renaming
+buys nothing functional.
+
+Why the cadence and not the ack: `process_update` has acknowledged the tap
+*before* dispatching `handle_decision` since GL-45 (`publish_primary_group.py`,
+the `_ack` call above the dispatch). The dispatch was never the latency — the
+**cadence** is. Telegram expires a `callback_query_id` in minutes, so on an
+hourly poll the ack we already ship was usually answering a dead query: the
+owner's tap landed and looked dropped. At 5 minutes the ack lands inside the
+window.
+
+Checked before changing it:
+
+- `getUpdates` is free and unmetered; 12 calls/hour is nothing. **No Replicate,
+  Anthropic, Gelato or Etsy call is added** — `run_hourly` only polls and retries
+  `publish_failed` groups.
+- A run colliding with a batch or a long `handle_decision` raises
+  `lock.LockHeldError`, prints, exits 2 — **no Telegram alert, no heartbeat
+  row** — so 12× the cadence produces no new noise, and the skipped poll retries
+  in 5 minutes instead of an hour.
+- `heartbeat_status.py` has no hardcoded staleness window (it prints the last row
+  and judges nothing), so a faster cadence cannot make it lie.
+
+**The trigger edit is manual, on the owner's machine** (Task Scheduler → the
+hourly task → Triggers → repeat every 5 minutes). Nothing in the repo sets it.
+
+### Not done, deliberately
+
+Early dispatch, webhook migration, cursor changes, retrospective log-diffing. If
+taps still vanish after this, the next decision is a different confirmation
+channel — record it, do not iterate (E10 kickoff §1).

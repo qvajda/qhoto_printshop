@@ -82,7 +82,7 @@ def test_reconcile_marks_listing_missing_on_definitive_404(tmp_path):
     _insert_published_group_product(conn, 1, "listing-123")
 
     with patch(
-        "pipeline.etsy_client.get_listing_inventory",
+        "pipeline.etsy_client.get_listing",
         side_effect=http.HTTPError(404, "not found"),
     ):
         result = reconcile.reconcile_etsy_listings(conn, shop_id="shop", dry_run_override=False)
@@ -97,7 +97,7 @@ def test_reconcile_skips_on_non_404_error(tmp_path):
     _insert_published_group_product(conn, 1, "listing-123")
 
     with patch(
-        "pipeline.etsy_client.get_listing_inventory",
+        "pipeline.etsy_client.get_listing",
         side_effect=http.HTTPError(500, "server error"),
     ):
         result = reconcile.reconcile_etsy_listings(conn, shop_id="shop", dry_run_override=False)
@@ -113,8 +113,8 @@ def test_reconcile_leaves_row_alone_when_listing_found(tmp_path):
     _insert_published_group_product(conn, 1, "listing-123")
 
     with patch(
-        "pipeline.etsy_client.get_listing_inventory",
-        return_value={"products": []},
+        "pipeline.etsy_client.get_listing",
+        return_value={"listing_id": "listing-123"},
     ):
         result = reconcile.reconcile_etsy_listings(conn, shop_id="shop", dry_run_override=False)
 
@@ -127,8 +127,26 @@ def test_reconcile_ignores_rows_without_etsy_listing_id(tmp_path):
     conn = _conn(tmp_path)
     _insert_published_group_product(conn, 1, None)
 
-    with patch("pipeline.etsy_client.get_listing_inventory") as mock_get:
+    with patch("pipeline.etsy_client.get_listing") as mock_get:
         result = reconcile.reconcile_etsy_listings(conn, shop_id="shop", dry_run_override=False)
 
     mock_get.assert_not_called()
     assert result["checked"] == 0
+
+
+def test_reconcile_probes_the_listing_resource_not_its_inventory(tmp_path):
+    """E10c, and the reason the other tests in this file passed against a broken probe:
+    they mock whichever function the code calls, so the endpoint choice was invisible to
+    them. Etsy returns 200 on /listings/{id}/inventory for a DELETED listing and 404 only
+    on /listings/{id} (measured live on 4548623111), so probing inventory makes the 404
+    branch unreachable for the only case it exists for. This asserts the choice itself."""
+    conn = _conn(tmp_path)
+    _insert_published_group_product(conn, 1, "listing-123")
+
+    with patch("pipeline.etsy_client.get_listing",
+               side_effect=http.HTTPError(404, "not found")) as mock_listing,          patch("pipeline.etsy_client.get_listing_inventory") as mock_inventory:
+        result = reconcile.reconcile_etsy_listings(conn, shop_id="shop", dry_run_override=False)
+
+    mock_inventory.assert_not_called()
+    assert mock_listing.call_count == 1
+    assert result["marked_missing"] == [1]
