@@ -694,8 +694,9 @@ edits landed with it, and one PRD.**
 # E12 2026-08-13 — GL-69 and GL-71 closed by measurement; GL-74 and GL-75 with them
 
 **Cause:** `docs/2026-08-13-e12-kickoff.md` (signed 2026-08-12). Findings:
-`docs/2026-08-13-e12-findings.md`. Branch `e12-measure-and-repair`, **808 green**
-(803 baseline + 5).
+`docs/2026-08-13-e12-findings.md`. Branch `e12-measure-and-repair`, **810 green**
+(803 baseline + 5 new tests + 2 that `test_scripts_smoke.py` derives from the
+session’s two throwaway scripts).
 
 - **GL-69 closed — Etsy persists `alt_text`, and no code change was needed.** A
   throwaway draft (`4554693392`, created and deleted in-session) took one image
