@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 import pipeline.artwork_store as artwork_store
+import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
 import pipeline.etsy_client as etsy_client
 import pipeline.gelato_client as gelato_client
@@ -591,7 +592,7 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
         conn.commit()
 
     image_rows = conn.execute(
-        f"SELECT pi.id, pi.image_url, pi.etsy_listing_image_id "
+        f"SELECT pi.id, pi.image_url, pi.etsy_listing_image_id, pi.alt_text, pi.image_type "
         f"FROM product_images pi JOIN groups g ON g.id = pi.group_id "
         f"WHERE pi.group_product_id = ? AND {_INCLUDED_GROUP_SQL} "
         f"ORDER BY {_GROUP_RANK_SQL}, pi.gallery_order",
@@ -618,9 +619,31 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
         image_bytes = b"" if dry_run else (
             http.fetch_bytes(url) if url.startswith(("http://", "https://")) else Path(url).read_bytes()
         )
+        # GL-69: alt text is set at upload or never - Etsy v3 has no update-image
+        # endpoint. The primary gallery carries model-written alt text
+        # (compliance_draft.update_gallery_alt_text); secondary groups (5x7 / 10x24)
+        # were never given any, so they get one derived from the listing title, written
+        # back to the row so the DB stays the thing a live read-back is checked against.
+        alt_text = row["alt_text"]
+        if not alt_text:
+            alt_text = compliance_draft.fallback_alt_text(
+                listing_text["title"], row["image_type"]
+            )
+            conn.execute(
+                "UPDATE product_images SET alt_text = ? WHERE id = ?", (alt_text, row["id"])
+            )
+            conn.commit()
+        if not alt_text:
+            # Fails loud rather than uploading an empty string: an empty alt_text is
+            # unrepairable after upload, and silence is exactly how GL-69 survived.
+            raise ValueError(
+                f"product_images row {row['id']} has no alt text and none could be "
+                f"derived; refusing to upload an image whose alt text can never be set"
+            )
         response = etsy_client.upload_listing_image(
-            shop_id, listing_id, image_bytes, rank=rank, api_key=etsy_api_key,
-            api_secret=etsy_api_secret, access_token=etsy_access_token, dry_run=dry_run,
+            shop_id, listing_id, image_bytes, rank=rank, alt_text=alt_text,
+            api_key=etsy_api_key, api_secret=etsy_api_secret,
+            access_token=etsy_access_token, dry_run=dry_run,
         )
         conn.execute(
             "UPDATE product_images SET etsy_listing_image_id = ? WHERE id = ?",

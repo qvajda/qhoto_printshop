@@ -72,6 +72,7 @@ def upload_listing_image(
     image_bytes: bytes,
     *,
     rank: int = None,
+    alt_text: str = None,
     api_key: str = None,
     api_secret: str = None,
     access_token: str = None,
@@ -80,12 +81,20 @@ def upload_listing_image(
     """GL-57: `rank` is Etsy's 1-based gallery position (rank=1 is the featured image).
     Without it Etsy picks the order itself and the last upload - the 10x24 mockup -
     became the featured image on every listing. Callers send an explicit rank for the
-    WHOLE sequence rather than relying on any default ordering rule."""
+    WHOLE sequence rather than relying on any default ordering rule.
+
+    GL-69: `alt_text` is the other field that can only be set HERE. Etsy v3 has no
+    update-image endpoint, so an image uploaded without it carries alt_text='' for the
+    life of the listing (all 12 images on listing 4554354628 do) and repairing it means
+    re-uploading the gallery - new image ids and new URLs. We generated alt text,
+    validated it (GL-54), and then never sent it, because this function had no parameter
+    for it."""
     if dry_run is None:
         dry_run = not config.is_live_mode("ETSY")
 
     if dry_run:
-        return {"listing_image_id": "DRY_RUN_IMAGE_ID", "rank": rank, "_dry_run": True}
+        return {"listing_image_id": "DRY_RUN_IMAGE_ID", "rank": rank, "alt_text": alt_text,
+                "_dry_run": True}
 
     api_key = api_key or config.require_env("ETSY_API_KEY")
     api_secret = api_secret or config.require_env("ETSY_API_SECRET")
@@ -104,6 +113,11 @@ def upload_listing_image(
             f'Content-Disposition: form-data; name="rank"\r\n\r\n'
             f"{int(rank)}\r\n"
         ).encode("utf-8")
+    if alt_text:
+        body += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="alt_text"\r\n\r\n'
+        ).encode("utf-8") + alt_text.encode("utf-8") + b"\r\n"
     body += f"--{boundary}--\r\n".encode("utf-8")
 
     def _build(token):

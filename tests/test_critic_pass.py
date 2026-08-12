@@ -11,6 +11,32 @@ import pipeline.http as http
 import pipeline.replicate_client as replicate_client
 
 
+class _VisionDispatch:
+    """GL-68: the drafter now sends the artwork too, so compliance_draft and critic_pass
+    both call anthropic_client.complete_with_images - and since they import the SAME
+    module object, patching it 'in compliance_draft' patches it in critic_pass as well.
+    One fake, routed on the prompt, with the critic calls counted separately."""
+
+    def __init__(self, draft_response, critic_responses):
+        self.draft_response = draft_response
+        self._critic = critic_responses
+        self.critic_call_count = 0
+        self.draft_call_count = 0
+
+    # Only these two prompts are critic verdicts (tier 2 master sanity, tier 3 rubric).
+    # Everything else on this seam is a drafting-side call - the listing draft, and
+    # generate.py's art-brief call, which shares the module attribute.
+    _CRITIC_PROMPTS = ("You are the compliance and quality critic",
+                       "You are a cheap, narrow pre-filter")
+
+    def __call__(self, prompt, image_urls=None, *args, **kwargs):
+        if not prompt.startswith(self._CRITIC_PROMPTS):
+            self.draft_call_count += 1
+            return self.draft_response
+        self.critic_call_count += 1
+        return next(self._critic) if hasattr(self._critic, "__next__") else self._critic
+
+
 def test_build_critic_prompt_includes_rubric_and_listing_text():
     listing_text = {
         "title": "Monstera Line Art Botanical Print",
@@ -455,8 +481,14 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
 
     # attempt 2's local gate is inconclusive (nonexistent file) -> falls through to tier 2
     # (cheap master-image check) then tier 3 (full rubric) - two vision calls total.
+    dispatch = _VisionDispatch(
+        {"text": _json.dumps({"title": "T", "tags": ["a"], "description": "d", "alt_texts": []})},
+        _verdict_response("good"),
+    )
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
-               return_value=_verdict_response("good")) as mock_vision, \
+               side_effect=dispatch), \
+         patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=lambda *a, **k: dispatch(*a, **k)), \
          patch("pipeline.generate.replicate_client.generate_image",
                return_value={"image_url": "https://replicate.delivery/r.png", "prediction_id": "p"}), \
          patch("pipeline.generate.replicate_client.upscale_image",
@@ -468,9 +500,7 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
                    "local_path": f"/fake/nonexistent/{candidate_id}.png", "sha256": "x"}), \
          patch("pipeline.group_product.gelato_client.create_product_from_template", side_effect=fake_create), \
          patch("pipeline.group_product.gelato_client.get_product",
-               side_effect=lambda pid, *, store_id=None, api_key=None: fake_create()), \
-         patch("pipeline.compliance_draft.anthropic_client.complete",
-               return_value={"text": _json.dumps({"title": "T", "tags": ["a"], "description": "d", "alt_texts": []})}):
+               side_effect=lambda pid, *, store_id=None, api_key=None: fake_create()):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
@@ -480,7 +510,7 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
     assert result == {"candidate_id": candidate_id, "passed": True, "attempts": 2}
     # Vision called exactly twice (attempt 2's tier-2 master check + tier-3 full rubric)
     # - attempt 1 was the zero-cost local fail, no vision call at all.
-    assert mock_vision.call_count == 2
+    assert dispatch.critic_call_count == 2
     attempts = conn.execute(
         "SELECT passed, failure_reason FROM critic_pass_attempts WHERE group_id = "
         "(SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary') ORDER BY attempt_number",
@@ -788,8 +818,11 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
         })
     }
 
+    dispatch = _VisionDispatch(fake_draft_response, critic_responses)
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
-               side_effect=lambda *a, **k: next(critic_responses)), \
+               side_effect=dispatch), \
+         patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=lambda *a, **k: dispatch(*a, **k)), \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
@@ -801,8 +834,7 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
                }), \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product), \
-         patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_draft_response):
+         patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
@@ -875,8 +907,11 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
         })
     }
 
+    dispatch = _VisionDispatch(fake_draft_response, critic_responses)
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
-               side_effect=lambda *a, **k: next(critic_responses)), \
+               side_effect=dispatch), \
+         patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=lambda *a, **k: dispatch(*a, **k)), \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
          patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
@@ -888,8 +923,7 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
                }), \
          patch("pipeline.group_product.gelato_client.create_product_from_template",
                side_effect=fake_create_product_from_template), \
-         patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product), \
-         patch("pipeline.compliance_draft.anthropic_client.complete", return_value=fake_draft_response):
+         patch("pipeline.group_product.gelato_client.get_product", side_effect=fake_get_product):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",

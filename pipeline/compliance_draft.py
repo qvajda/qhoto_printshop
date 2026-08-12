@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pipeline.anthropic_client as anthropic_client
 import pipeline.config as config
@@ -35,6 +36,12 @@ MAX_TAG_LENGTH = 20
 MAX_TITLE_LENGTH = 140
 
 DRAFT_TEXT_PROMPT_TEMPLATE = (
+    "The image above IS the artwork this listing sells. Look at it and describe what is "
+    "actually there - its subject, medium, palette and mood. Where the artwork and the "
+    "niche/brief below disagree, THE ARTWORK WINS: the buyer receives the artwork, not "
+    "the brief. (GL-68: copy written from the niche alone described a minimalist line "
+    "leaf over an image of a red cardinal, and the critic rejected it three times.)\n"
+    "Art brief the artwork was generated from, as intent only: {art_brief}\n\n"
     "You are writing an Etsy listing draft for a botanical/minimalist wall art poster "
     "print, niche: {niche}. THE PRODUCT: a physical, made-to-order poster, printed on "
     "premium matte paper and shipped to the buyer. It is NOT a digital file, NOT a "
@@ -48,7 +55,8 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "so never name a holiday, festival, sale event or dated season (no Christmas, "
     "Diwali, Black Friday, New Year, 'for the holidays'). Describing the artwork's own "
     "mood or palette as autumnal or wintry is fine; naming a date is not.\n\n"
-    "The product gallery has {image_count} images in this order: {image_types}. Write one "
+    "The product gallery (mockup photographs of this same artwork, not shown to you) has "
+    "{image_count} images in this order: {image_types}. Write one "
     "short, descriptive alt text per image, in the same order, distinguishing a flat print "
     "mockup shot from a lifestyle/room-context shot.\n\n"
     "Reply with ONLY a JSON object with keys 'title' (string), 'tags' (list of strings), "
@@ -188,7 +196,12 @@ def check_forbidden_terms(title: str, tags: list, description: str, alt_texts: l
     is written to be usable verbatim as retry feedback.
 
     GL-54 rider: alt_texts are model output too, and they go live on the listing
-    as image alt text - they're listing copy, not internal notes, so they belong
+    as image alt text - TRUE ONLY SINCE GL-69 (2026-08-12): when this sentence was
+    written the upload call had no alt_text field at all, so every listing shipped
+    alt_text='' and this docstring asserted a behaviour that did not exist. That is
+    how the gap survived the review that added this validation. The consumer is now
+    etsy_client.upload_listing_image's alt_text field, via group_product's upload
+    loop - they're listing copy, not internal notes, so they belong
     inside the guardrail same as title/tags/description. alt_texts describe mockup
     *photographs* ("flat print mockup shot" vs a lifestyle/room-context shot), so
     the word 'print' alone is expected and legitimate there - checked against the
@@ -242,9 +255,12 @@ def get_primary_gallery(conn, candidate_id: int) -> list:
 
 
 def build_draft_prompt(candidate: dict, image_types: list) -> str:
-    # GL-55: the raw niche never reaches the model - see SEASONAL_TERMS.
+    # GL-55: the raw niche never reaches the model - see SEASONAL_TERMS. The art brief
+    # goes through the same sanitiser: it was written FROM the niche, so a pre-GL-55
+    # brief carries the event wording the niche no longer does (candidates 77/78/79).
     return DRAFT_TEXT_PROMPT_TEMPLATE.format(
         niche=sanitize_niche(candidate["niche"]),
+        art_brief=sanitize_niche(candidate.get("art_brief") or ""),
         image_count=len(image_types),
         image_types=", ".join(image_types),
         max_title_length=MAX_TITLE_LENGTH,
@@ -253,10 +269,27 @@ def build_draft_prompt(candidate: dict, image_types: list) -> str:
 
 def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = None,
                          retry_feedback: str = None) -> dict:
+    """GL-68: the drafter sees the artwork. `candidates.base_image_local_path` is the
+    same file the critic's local gate grades, and `_image_content_block` already takes a
+    local path, so this is a call swap - not new plumbing. Without an image the copy is
+    invented from a four-word niche, and the critic (which does get the images) rejects
+    a mismatch the drafter cannot see, let alone fix."""
     prompt = build_draft_prompt(candidate, image_types)
     if retry_feedback:
         prompt += f"\n\n{retry_feedback}"
-    result = anthropic_client.complete(prompt, api_key=api_key, max_tokens=2048)
+    artwork_path = candidate.get("base_image_local_path")
+    if artwork_path and not Path(artwork_path).exists():
+        # Blind drafting is the GL-68 defect itself, so it is never the silent default:
+        # a missing master means the copy is written from the brief alone and that has
+        # to be visible in the log when the critic later rejects the mismatch.
+        print(f"[compliance_draft] artwork {artwork_path!r} is missing; drafting without it")
+        artwork_path = None
+    if artwork_path:
+        result = anthropic_client.complete_with_images(
+            prompt, [artwork_path], api_key=api_key, max_tokens=2048,
+        )
+    else:
+        result = anthropic_client.complete(prompt, api_key=api_key, max_tokens=2048)
     draft = anthropic_client.parse_json_response(result["text"])
     for key in ("title", "tags", "description", "alt_texts"):
         if key not in draft:
@@ -303,8 +336,34 @@ def update_gallery_alt_text(conn, candidate_id: int, alt_texts: list) -> None:
     conn.commit()
 
 
+# GL-69 half two: the secondary-group path (5x7 / 10x24) renders mockups but never
+# generates alt text for them - `update_gallery_alt_text` covers the primary gallery
+# only - so those rows reach the upload loop holding the '' placeholder
+# `create_group_product` inserted. Derived from the listing title rather than drafted by
+# a model: alt text on a mockup photograph only has to say what the photograph shows,
+# and one extra Anthropic call per secondary group buys nothing. Etsy caps alt text at
+# 250 chars; the title is already capped at 140.
+ALT_TEXT_SUFFIXES = {
+    "flat_mockup": "flat print mockup",
+    "lifestyle": "print shown in a room setting",
+}
+ETSY_MAX_ALT_TEXT_LENGTH = 250
+
+
+def fallback_alt_text(title: str, image_type: str) -> str:
+    suffix = ALT_TEXT_SUFFIXES.get(image_type, "product photograph")
+    return f"{title} - {suffix}"[:ETSY_MAX_ALT_TEXT_LENGTH]
+
+
 def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = None,
-                            anthropic_api_key: str = None, now=None) -> dict:
+                            anthropic_api_key: str = None, correction_note: str = None,
+                            now=None) -> dict:
+    """GL-70: `correction_note` is the critic's own reason for rejecting the previous
+    draft. `generate_draft_text` already took `retry_feedback`; the gap was purely that
+    this function had no parameter to forward, so three critic retries were three
+    identical blind draws (all 12 critic_pass_attempts rows E10b wrote had
+    correction_notes NULL). Affects the normal path too, not just copy_only - there it
+    was merely masked, because the regeneration call does receive the note."""
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
@@ -329,7 +388,11 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
         # requirement" message can meaningfully address, so it isn't retried here - it
         # falls through to the outer except below, which still marks the candidate
         # failed (bookkeeping), just without wasting the retry budget on it.
-        feedback = None
+        feedback = (
+            f"The previous listing draft for this artwork was rejected by the quality "
+            f"critic: {correction_note}. Write a new draft that fixes that, describing "
+            f"the artwork you can see."
+        ) if correction_note else None
         draft = None
         last_value_error = None
         for attempt in range(3):

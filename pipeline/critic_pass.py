@@ -310,6 +310,47 @@ def check_master_image_ai_sanity(image_source: str, *, api_key: str = None,
     return {"passed": False, "reason": parsed["reason"]}
 
 
+# GL-70: the copy_only rubric. The full 7-criterion rubric grades the ARTWORK, and a
+# copy-only retry is structurally forbidden to change it - so every artwork criterion is
+# a pure rejection source there ("the orange orb behind the cardinal is a floating
+# backdrop shape…" on a run that could change nothing but the title). What is actually
+# under review on this path is criterion 7 alone: does the copy match the art.
+COPY_MATCH_PROMPT_TEMPLATE = (
+    "You are reviewing ONLY the listing copy for the wall art print shown above. The "
+    "artwork is fixed and already approved by the shop owner - you are NOT judging its "
+    "quality, composition, or style, and any flaw in the art is out of scope and must "
+    "not affect your verdict. Judge one thing: does this copy honestly and accurately "
+    "describe what the images actually show - the right subject, medium, palette and "
+    "mood - and is it free of any claim the images contradict?\n\n"
+    "Title: {title}\n"
+    "Description: {description}\n\n"
+    "Reply with ONLY a JSON object with keys 'passed' (boolean) and 'reason' (string "
+    "- if it fails, say specifically what the copy claims and what the images actually "
+    "show, so the next draft can fix it), no other text."
+)
+
+
+def evaluate_copy_match(gallery_image_urls: list, listing_text: dict, *,
+                         api_key: str = None) -> dict:
+    prompt = COPY_MATCH_PROMPT_TEMPLATE.format(
+        title=listing_text["title"], description=listing_text["description"],
+    )
+    result = anthropic_client.complete_with_images(
+        prompt, gallery_image_urls, api_key=api_key, max_tokens=1024,
+    )
+    parsed = anthropic_client.parse_json_response(result["text"])
+    for key in ("passed", "reason"):
+        if key not in parsed:
+            raise ValueError(f"Claude copy-match response missing required key {key!r}: {parsed!r}")
+    passed = bool(parsed["passed"])
+    return {
+        "passed": passed,
+        "reason": parsed["reason"],
+        "overall": "good" if passed else "reject",
+        "criteria": None,
+    }
+
+
 def build_critic_prompt(listing_text: dict, image_count: int, *, flag_note: str = None) -> str:
     return CRITIC_RUBRIC_PROMPT_TEMPLATE.format(
         image_count=image_count,
@@ -488,6 +529,24 @@ def abandon_candidate(conn, candidate_id: int, group_id: int, reason: str, *, no
     conn.commit()
 
 
+def hand_back_to_owner(conn, candidate_id: int, group_id: int, reason: str, *, now=None) -> dict:
+    """GL-70: the copy_only exhaustion path. Nothing is destroyed and nothing is marked
+    failed - the candidate goes back to 'primary_review' with the last draft still on
+    the row, so run_digest_cycle re-sends it and the owner decides. The reason is kept
+    on the group so the next triage can see why it came back."""
+    timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "UPDATE candidates SET status = 'primary_review', updated_at = ? WHERE id = ?",
+        (timestamp, candidate_id),
+    )
+    conn.execute(
+        "UPDATE groups SET failed_reason = ?, updated_at = ? WHERE id = ?",
+        (f"copy redo exhausted its 3 attempts, handed back: {reason}", timestamp, group_id),
+    )
+    conn.commit()
+    return {"candidate_id": candidate_id, "passed": False, "handed_back": True}
+
+
 def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                      anthropic_api_key: str = None, store_id: str = None,
                      gelato_api_key: str = None, replicate_api_token: str = None,
@@ -509,28 +568,46 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
     ).fetchone()
     attempt_number = (max_attempt_row["max_attempt"] or 0) + 1
 
+    correction_note = None
     while True:
         state = get_primary_group_state(conn, candidate_id)
-        # Three-tier gate before the full rubric call: free local sanity stats -> cheap
-        # single-image vision pre-filter -> full multi-image rubric. Same attempt
-        # counter, same cap, across all three tiers.
-        local_path = conn.execute(
-            "SELECT base_image_local_path FROM candidates WHERE id = ?", (candidate_id,)
-        ).fetchone()["base_image_local_path"]
-        result, flag_note = run_local_and_master_gate(
-            local_path, state["image_urls"], api_key=anthropic_api_key
-        )
-        if result is None:
-            result = evaluate_critic_pass(
+        if copy_only:
+            # GL-70: skip the local + master-image gates entirely. They grade the artwork
+            # file, which this path cannot change, so on a copy redo they are spend with
+            # no possible action behind them.
+            result = evaluate_copy_match(
                 state["image_urls"], state["listing_text"], api_key=anthropic_api_key,
-                flag_note=flag_note,
             )
-        record_critic_attempt(conn, state["group_id"], attempt_number, result, now=now)
+        else:
+            # Three-tier gate before the full rubric call: free local sanity stats -> cheap
+            # single-image vision pre-filter -> full multi-image rubric. Same attempt
+            # counter, same cap, across all three tiers.
+            local_path = conn.execute(
+                "SELECT base_image_local_path FROM candidates WHERE id = ?", (candidate_id,)
+            ).fetchone()["base_image_local_path"]
+            result, flag_note = run_local_and_master_gate(
+                local_path, state["image_urls"], api_key=anthropic_api_key
+            )
+            if result is None:
+                result = evaluate_critic_pass(
+                    state["image_urls"], state["listing_text"], api_key=anthropic_api_key,
+                    flag_note=flag_note,
+                )
+        # GL-70: correction_note is the critic reason that produced the draft now being
+        # graded - NULL on attempt 1, non-null on every attempt after it. It was NULL on
+        # all 12 rows E10b wrote, which is what made three identical retries invisible.
+        record_critic_attempt(conn, state["group_id"], attempt_number, result,
+                              correction_notes=correction_note, now=now)
 
         if result["passed"]:
             timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+            # GL-72: clear failed_reason. A candidate that recovered (e.g. generation
+            # attempt 1 failed, attempt 2 succeeded) otherwise carries the stale reason
+            # forever and reads as failed during triage - worse than no reason, because
+            # it is read as current.
             conn.execute(
-                "UPDATE candidates SET status = 'primary_review', updated_at = ? WHERE id = ?",
+                "UPDATE candidates SET status = 'primary_review', failed_reason = NULL, "
+                "updated_at = ? WHERE id = ?",
                 (timestamp, candidate_id),
             )
             conn.commit()
@@ -545,10 +622,23 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
             )
 
         if attempt_number >= 3:
+            if copy_only:
+                # GL-70: an owner-initiated copy redo must not be able to mark the
+                # candidate failed. The owner has just said they want to keep this
+                # design; running out of copy attempts is a reason to hand it back, not
+                # to destroy it (three good designs died this way on the button's first
+                # live use). Same reasoning that made redraft reset the retry budget
+                # (PRD 2026-08-10 6.3). listing_texts still holds the last draft (it is
+                # only deleted below, on the retry path), so the digest cycle re-sends
+                # this group - handle_decision already cleared its group_messages row.
+                return hand_back_to_owner(
+                    conn, candidate_id, state["group_id"], result["reason"], now=now
+                ) | {"attempts": attempt_number}
             abandon_candidate(conn, candidate_id, state["group_id"], result["reason"], now=now)
             research.trigger_fallback_if_needed(conn, now=now)
             return {"candidate_id": candidate_id, "passed": False, "attempts": attempt_number}
 
+        correction_note = result["reason"]
         conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
         conn.commit()
 
@@ -564,7 +654,8 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                 )
             compliance_draft.build_compliance_draft(
                 conn, candidate_id, static_config=static_config,
-                anthropic_api_key=anthropic_api_key, now=now,
+                anthropic_api_key=anthropic_api_key, correction_note=correction_note,
+                now=now,
             )
         except TRANSIENT_REGEN_EXC_TYPES as exc:
             # A vendor/network blip mid-regen, not a verdict on the art (GL-16). No new
