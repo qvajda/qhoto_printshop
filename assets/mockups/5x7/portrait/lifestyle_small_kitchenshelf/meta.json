@@ -1,0 +1,29 @@
+{
+  "scene": "lifestyle_small_kitchenshelf",
+  "group_type": "5x7",
+  "orientation": "portrait",
+  "aperture": [
+    [
+      298.1,
+      264.1
+    ],
+    [
+      614.2,
+      265.1
+    ],
+    [
+      617.2,
+      702.0
+    ],
+    [
+      294.0,
+      702.0
+    ]
+  ],
+  "size": [
+    896,
+    1152
+  ],
+  "tag": "lifestyle",
+  "overfill": 0.0
+}

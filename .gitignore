@@ -60,6 +60,19 @@ db/group_preview_images/
 # OAuth PKCE state (short-lived, holds code_verifier)
 .etsy_oauth_state.json
 
+# Raw scene generations awaiting a screen. The tracked inflow files are the
+# SCREENED, renamed ones (lifestyle_*.png + .json); `replicate-prediction-*` is
+# the generator's own output, ~5 MB each, superseded the moment it is named or
+# rejected. Zero were ever tracked; this makes that a rule instead of a habit.
+assets/mockups/inflow/**/replicate-prediction-*
+
+# Windows Explorer droppings
+desktop.ini
+
+# qops hook spike — throwaway diagnostic, left ARMED so Cowork and PreCompact
+# answer themselves (ADR-0001). Never project source.
+.qops/hook-spike/
+
 # GL-21 QA artefacts (contact sheets + kept-for-comparison attempt-2 renders)
 outputs/mockup_qa/
 outputs/attempt2_reference/
@@ -79,3 +92,15 @@ outputs/gl6_p4a3/
 # GL-45: raw getUpdates instrumentation (local evidence, not source)
 logs/
 outputs/e13a/
+
+# GL-6 authoring / screening artefacts — regenerable from the bundles + scripts,
+# ~230 MB, same class as the outputs/ dirs already ignored above
+outputs/_prev/
+outputs/_screen_json_backup_*/
+outputs/gl6_author/
+outputs/gl6_debug/
+outputs/gl6_keyed_shelf2/
+outputs/gl6_p4b1/
+outputs/gl6_p4c_review/
+outputs/gl6_rescreen/
+outputs/gl6_review/

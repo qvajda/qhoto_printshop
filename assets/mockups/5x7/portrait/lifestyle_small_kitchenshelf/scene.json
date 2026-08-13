@@ -1,0 +1,138 @@
+{
+  "prompt": "A small 13 by 18 centimetre portrait picture frame in slim white standing on a floating kitchen shelf between two small stoneware cups and a tiny potted herb, soft daylight. The cups are half the frame's height. The frame is a plain flat profile 12mm wide with no mount and no glass. Its opening measures 13cm wide by 18cm tall and is filled corner to corner by one solid panel of vivid emerald green, which meets the frame's inner edge as a hard crisp painted line. No glazing, no glass, no reflection, no white mat, no mount board, no second border inside the frame. Straight-on frontal photograph, the panel rectangular and square to the camera, its surface one unbroken sheet of flat matte vivid emerald green paint, the same colour edge to edge, ending exactly at the panel's own outline. Natural daylight rakes across the whole scene. Photographic, 50mm, sharp, minimal styling.",
+  "seed": 330,
+  "key": "emerald",
+  "key_rgb": [
+    0,
+    177,
+    64
+  ],
+  "model": "black-forest-labs/flux-schnell",
+  "licence": "Apache-2.0 (flux-schnell)",
+  "aspect_ratio": "3:4",
+  "megapixels": "1",
+  "scene": "lifestyle_small_kitchenshelf",
+  "source_image": "outputs\\gl6_p4b1\\s57_kitchenshelf_v1_emerald_s330.png",
+  "mode": "keyed",
+  "seed_polygon": null,
+  "key_lab_ab": [
+    61.0,
+    173.0
+  ],
+  "key_locus": {
+    "knots": [
+      [
+        45.1,
+        -47.0,
+        35.0
+      ],
+      [
+        47.06,
+        -49.0,
+        36.0
+      ],
+      [
+        49.41,
+        -50.0,
+        37.0
+      ],
+      [
+        50.98,
+        -52.0,
+        38.0
+      ],
+      [
+        52.94,
+        -54.0,
+        40.0
+      ],
+      [
+        54.9,
+        -55.0,
+        41.0
+      ],
+      [
+        56.86,
+        -56.0,
+        42.0
+      ],
+      [
+        59.22,
+        -58.0,
+        41.0
+      ],
+      [
+        60.39,
+        -59.0,
+        42.0
+      ],
+      [
+        63.14,
+        -60.0,
+        43.0
+      ],
+      [
+        65.49,
+        -62.0,
+        43.0
+      ],
+      [
+        67.45,
+        -63.0,
+        44.0
+      ],
+      [
+        69.41,
+        -65.0,
+        44.0
+      ],
+      [
+        71.37,
+        -66.0,
+        45.0
+      ],
+      [
+        73.33,
+        -67.0,
+        45.0
+      ],
+      [
+        75.29,
+        -68.0,
+        46.0
+      ],
+      [
+        76.47,
+        -68.0,
+        46.0
+      ],
+      [
+        78.82,
+        -68.0,
+        46.0
+      ],
+      [
+        81.57,
+        -68.0,
+        45.0
+      ],
+      [
+        82.75,
+        -67.0,
+        45.0
+      ],
+      [
+        84.31,
+        -68.0,
+        45.0
+      ]
+    ],
+    "sigma": 1.483
+  },
+  "quad_aspect": 0.7307,
+  "aspect_delta": 0.0679,
+  "cover_crop": 0.0636,
+  "matte_coverage": 0.134,
+  "group_type": "5x7",
+  "orientation": "portrait"
+}

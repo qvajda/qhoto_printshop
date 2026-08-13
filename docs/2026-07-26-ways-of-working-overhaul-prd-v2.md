@@ -697,6 +697,14 @@ deliberate, for Windows/git-bash portability; finding C4, and the script was
 right, the PRD was wrong), tags at each branch tip, the 3 unmerged branches
 pushed to origin, `docs/archive/2026-07-26-branch-inventory.md`.
 
+> **✅ PHASE 0 IS COMPLETE AS OF 2026-08-13. Both outstanding items below are
+> closed and neither is to be re-run.** The secret scan ran as **E13a** —
+> result CLEAN, nothing rotated, no history rewritten, and the history-rewrite
+> question is now a closed standing owner decision
+> (`docs/2026-08-13-e13a-findings.md`, `CLAUDE.md`). The snapshot ran as **E13
+> §7b** — `docs/archive/2026-08-13-remember-sdd-snapshot-manifest.md`. The two
+> bullets are kept below as the record of what was owed, not as a to-do list.
+
 **Outstanding (finding C3) — Phase 0 is not complete, and Phase 3 assumes it is:**
 
 - **Snapshot `.remember/` (24 entries) and `.superpowers/sdd/` (2.1 MB).**
@@ -781,7 +789,14 @@ pushed to origin, `docs/archive/2026-07-26-branch-inventory.md`.
 
 ### Phase 3 — Git hygiene *(was Phase 4; moved before the substrate — first destructive step)*
 
-- **Prerequisite: Phase 0's outstanding snapshot is done.**
+- **Prerequisite: Phase 0's outstanding snapshot is done. ✅ AMENDED 2026-08-13
+  (E13 §7b) — this now resolves to an artefact, not to a memory:
+  `docs/archive/2026-08-13-remember-sdd-snapshot-manifest.md`.** 216 files
+  archived out-of-repo (reading (i)), counts verified in and out, `sha256`
+  recorded, `.remember/tmp/` excluded, the 89 `.diff` files kept on a measurement
+  (excluding them bought 258 KB). **One condition before this phase may delete
+  either tree:** the manifest's Custodian row must name where the archive was
+  saved. Until it does, the only copy is in a session outputs folder.
 - Execute Phase 0's keep/merge/delete decisions: merge what is mergeable, tag and
   delete the rest, prune the 9 `worktree-agent-*` branches and the 6 worktrees.
 - Commit or archive the 15 untracked docs; clean the working tree.
