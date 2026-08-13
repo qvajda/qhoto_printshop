@@ -80,8 +80,16 @@ NET-NEW OBJECTS - one, listed for explicit sign-off (review finding D4):
 
 COUNTS (assert these after any re-run):
   86 rows total | 26 open | 60 closed | 1 cancelled (GL-29) | 1 blocked (GL-11)
-  open by mission: go-live 2 (GL-11 blocked, GL-12 moved) | post-launch 15 |
-                   housekeeping 9
+  open by mission: go-live 1 (GL-11, blocked) | post-launch 17 | housekeeping 8
+  CORRECTED 2026-08-13 (E14 Phase 1 item 6) by counting the blocks themselves.
+  The original line said "go-live 2 (GL-11 blocked, GL-12 moved) | post-launch
+  15 | housekeeping 9". The total 26 was right; the split was wrong twice.
+  GL-12 was counted under go-live AND described as moved - its own block says
+  milestone=post-launch, which is correct, because the row's first words are
+  "DEFERRED TO POST-LAUNCH 2026-08-08 (owner)" even though it still sits at
+  board line 966 inside the go-live table. And one post-launch row was counted
+  as housekeeping. No block changed; only this summary was wrong. PRD v3 s4
+  repeats the old split and wants the same correction.
   Board gate arithmetic, unchanged and not re-derived here: 27 of 28, one open
   row (GL-11). This corpus counts BOARD ROWS, which is a different number from
   GATE ITEMS by construction - the gate excludes sub-lettered riders and struck
