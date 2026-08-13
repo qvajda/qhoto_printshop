@@ -352,3 +352,21 @@ price table and per-size notes; prices below are final, not placeholders)
   Also: when auditing one field, read the whole row. Drift class (c), the
   digital-download wording on a physical product, was the most serious of the
   three and nobody was looking for it.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `qvajda/qhoto_printshop`, via the `gh` CLI; the issue wins over
+any planning doc. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The skills' five triage roles are mapped onto this repo's existing taxonomy
+(`.qops/config.yml` / PRD v3 §9) rather than duplicated. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the root (Phase 2) plus `docs/adr/`. See
+`docs/agents/domain.md`.

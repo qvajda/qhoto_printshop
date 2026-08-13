@@ -1,4 +1,4 @@
-# ADR-001 — Hook availability: what qops may build on
+# ADR-0001 — Hook availability: what qops may build on
 
 **Status:** accepted · **Date:** 2026-08-13 · **Session:** E14, Phase 1 item 1
 **Supersedes:** nothing. **Closes:** review finding B6 (open since 2026-07-26, the
