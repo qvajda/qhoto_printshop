@@ -1,5 +1,29 @@
 # Go-live plan of attack — Etsy AI POD pipeline (2026-07-22)
 
+> ## ⛔ SUPERSEDED 2026-08-13 — retained for history, not for state
+>
+> **Every row on this board now lives as a GitHub issue.** All 86 were imported
+> on 2026-08-13 (E14, PRD v3 Phase 1): 26 open, 60 closed, one of those
+> cancelled rather than completed (GL-29) and one blocked on an external party
+> (GL-11). `gh issue list` is the live record; this file is not.
+>
+> **Do not update this document, and do not read it for current state.** If a
+> row here disagrees with its issue, the issue wins — that is a standing
+> decision (`docs/agents/issue-tracker.md`, review finding E5).
+>
+> **Why it was superseded, measured rather than asserted:** at 3,031 lines and
+> 401,555 bytes it can no longer be read in a single tool call. Consulting it
+> requires line-ranged extraction, which makes it a database with no query
+> language rather than a plan. That measurement is §1.1 of
+> `docs/2026-08-13-qops-prd-v3.md` and is the reason the overhaul exists.
+>
+> **What it is still good for:** the narrative. Part 1, Part 3 and the Part 4
+> session logs were deliberately not extracted — the issues carry the rows, this
+> file carries the reasoning around them. The corpus (`.qops/issues.md`) cites
+> this file by commit `17f35cf` for every block.
+>
+> PRD v3 Phase 3 moves this file to `docs/archive/`. It is not deleted.
+
 > **Last updated 2026-08-13 (E12) — both remaining code rows closed by measurement, and neither closed the way the board expected. Gate: twenty-seven of twenty-eight. One open: GL-11, which is an email waiting on Etsy.** Closed by E12: **GL-69** (the alt-text read-back passed on the first attempt — no code change was needed, which is exactly why the measurement had to happen before any repair) and **GL-71** (still scrambled, cause measured as **hypothesis A**, dispatch guard shipped, gallery repaired). Off-gate rows closed: **GL-74** (reject now asks first, shipped with the guard as pre-approved) and **GL-75** (77/78/79 restored, artwork byte-identical). **810 green** (803 baseline + 5 new tests + 2 from `test_scripts_smoke.py` picking up the session’s two throwaway scripts). Findings: `docs/2026-08-13-e12-findings.md`. PRD: `docs/2026-08-13-e12-kickoff.md`.
 >
 > **The methodological point worth carrying, because it is the second time this project has been saved by it:** GL-71's prescribed instrument was a fresh instrumented run, and it was not used — the incident's own artefacts (Etsy's per-image `created_timestamp` against `telegram_events_log`) discriminated the two hypotheses more cleanly than a new observation could have, because they come from the failure itself rather than from a re-enactment of it. **Look for the record the defect already left before building an instrument to make a new one.**
