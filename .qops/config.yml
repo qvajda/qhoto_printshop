@@ -1,0 +1,26 @@
+# qops project configuration — TRACKED (PRD v3 decision 21).
+# Everything else qops writes under .qops/ is machine state and is ignored.
+#
+# This file is the importer's source for the label taxonomy. PRD v3 §9 is the
+# prose version of the same thing; if the two disagree, this file is what runs.
+
+project: qhoto_printshop
+prd: docs/2026-08-13-qops-prd-v3.md
+
+# PRD v3 §9 — amended taxonomy. v2 §7.1 is void: its mission: values named
+# groupings that no longer exist.
+labels:
+  type: [epic, research, code, manual, test, decision]
+  state: [triage, planned, building, gate, review, blocked, done, cancelled]
+  mission: [go-live, post-launch, housekeeping, qops]
+  gate: [machine, taste, none]
+  flags: [ready:auto, no-auto, fork, budget:approved, go-live-blocker]
+
+milestones: [go-live, post-launch, housekeeping, qops]
+
+# Every OPEN issue must carry exactly one type:, one state: and one gate:.
+# gate:none is legal at import (review finding B7) and blocks ready:auto until
+# it is filled in when the sortie is planned.
+validate:
+  require_on_open: [type, state, gate]
+  forbid_at_import: [ready:auto]

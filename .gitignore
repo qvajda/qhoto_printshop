@@ -42,6 +42,15 @@ db/group_preview_images/
 .agents/
 .claude/
 
+# qops — the split is decided, not inherited (PRD v3 decision 21 / finding E1).
+# TRACKED, deliberately: .qops/config.yml and .qops/issues.md.
+# IGNORED, deliberately: machine state, rewritten every session.
+.qops/state.json
+.qops/resume.md
+.qops/ledger.jsonl
+.qops/outbox.jsonl
+.qops/wt/
+
 # Git worktrees
 .worktrees/
 
