@@ -1,3 +1,8 @@
+---
+status: accepted
+revisit-after: 2026-11-01
+---
+
 # ADR-0002 — Approvals come from Remote Control; Telegram is a channel, not an authority
 
 **Status:** accepted · **Date:** 2026-08-13 · **Session:** E14, Phase 1 item 4
