@@ -8,7 +8,9 @@
 >
 > **§6 (resume unattended operation) is the one part of the PRD this session could not finish, and it is an environment boundary rather than a decision.** The two batch scheduled tasks are still **Disabled** and `RESEARCH_MODE` is still `consume-pending-only`: `.env` and the Windows scheduler were both outside what this session was permitted to touch. **That leaves the pipeline in a coherent state, not a half one** — `consume-pending-only` is the correct mode while 77/78/79 sit at `primary_review` awaiting their re-sent digests, because it drains the backlog without piling new candidates on top. The owner's remaining two steps: enable `qhoto-batch-morning`/`qhoto-batch-evening`, and unset `RESEARCH_MODE` once those three are decided. **First run is watched, not trusted** (`logs/hourly.log` + the batch logs).
 >
-> **Owner read-back still owed on one item:** listing `4554354628`'s repaired gallery — featured image correct, flats before lifestyles, alt text present on all 12. The DB-to-live mapping is 1:1 and stable across two reads, but this row closes on the owner's eye, not on a status code.
+> **Owner read-back DONE 2026-08-13 — the gallery reads correct.** Featured image and flats-before-lifestyles confirmed by the owner in the listing editor. **Alt text is not inspectable there and that is not a defect:** the editor exposes its own control labels ("edit gallery image 2"), never the image's `alt_text`, so the split is structural — the owner's eye covers the half only an eye can judge, and `get_listing_images` covers the half the editor cannot show (all 12 non-empty, read twice). **Recorded because it will be asked again:** do not treat an editor pass as an alt-text check either way, in either direction.
+>
+> **§6 status 2026-08-13:** both batch scheduled tasks re-enabled by the owner. `RESEARCH_MODE` stays `consume-pending-only` until 77/78/79 are decided off their re-sent digests; the first batch run is watched, not trusted.
 
 > **Last updated 2026-08-12 (evening) — E11 merged, and what remains of the gate
 > is no longer code. Gate: twenty-five of twenty-eight. Three open: GL-11,
