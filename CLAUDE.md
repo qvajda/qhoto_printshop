@@ -180,7 +180,7 @@ pipeline stage — don't guess at behavior that's already specified.
 recommend a `filter-repo` / `filter-branch` / BFG / force-push session.** E13a
 scanned all 392 commits and 1357 reachable blobs with three independent
 instruments and found **no live credential of this project anywhere in
-history** (`docs/2026-08-13-e13a-findings.md`). A rewrite would cost new SHAs
+history** (`docs/archive/2026-08-13-e13a-findings.md`). A rewrite would cost new SHAs
 for every commit, re-pointing 24 tags and 14 remote branches, and orphaning
 every existing clone and open PR — and it would buy nothing, because this repo
 is public: a rewrite reduces *convenient* access to something already in
@@ -235,7 +235,7 @@ price table and per-size notes; prices below are final, not placeholders)
   shipping (€5.10–€5.86) is billed to the seller whichever profile is
   set, and is already inside the cost basis those prices were built on;
   all six sizes clear cost at 21–44 % with €0 shown at checkout. See
-  `docs/2026-08-01-gl22a-findings.md` GL-22b and this PRD's margin table.
+  `docs/archive/2026-08-01-gl22a-findings.md` GL-22b and this PRD's margin table.
 - Etsy production_partner_ids (Gelato): **[5717252]** — resolved via live
   `getShopProductionPartners` after Gelato was manually added as a
   production partner in Shop Manager → Settings → Partners you work
@@ -259,7 +259,7 @@ price table and per-size notes; prices below are final, not placeholders)
   **not settable as a shop-level default**. Upstream tracking:
   **`etsy/open-api` GitHub Discussion #1630** (opened 2026-06-22, unactioned
   as of 2026-08-06) requests exactly these two fields. Full evidence:
-  `docs/2026-08-06-gl37-findings.md`. **The operational consequence, which
+  `docs/archive/2026-08-06-gl37-findings.md`. **The operational consequence, which
   matters more than the API answer:** the only way to set them is the web
   listing editor, and **the editor's sole save action is "Activate with
   changes" — there is no draft-save, so ticking the disclosure activates the
