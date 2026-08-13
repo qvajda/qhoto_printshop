@@ -175,6 +175,21 @@ pipeline stage — don't guess at behavior that's already specified.
   `products:create-from-template` call, that must fail loudly with a
   clear error — never silently skip the size or proceed with a fake ID.
 
+## Standing owner decision — git history is not rewritten (2026-08-13)
+**The rewrite question is closed, not deferred. Never propose, schedule or
+recommend a `filter-repo` / `filter-branch` / BFG / force-push session.** E13a
+scanned all 392 commits and 1357 reachable blobs with three independent
+instruments and found **no live credential of this project anywhere in
+history** (`docs/2026-08-13-e13a-findings.md`). A rewrite would cost new SHAs
+for every commit, re-pointing 24 tags and 14 remote branches, and orphaning
+every existing clone and open PR — and it would buy nothing, because this repo
+is public: a rewrite reduces *convenient* access to something already in
+history, it never un-leaks it. **The forward rule: if a secret is ever found,
+rotate the credential first, and treat rewriting as a separate decision even
+then.** This reopens on exactly one condition — a future scan finding a real
+live credential in history. Not on a new scanner, a new ruleset, or the known
+Gelato expired-presigned-URL false positive re-tripping a future run.
+
 ## Standing owner decision — activation/publishing is not a planning variable
 **No listing is activated until the pipeline is fully clear AND the shop is out
 of developer mode. The owner decides when drafts get published; it is not gated

@@ -35,6 +35,25 @@
 > Phase 0's last item from PRD v2 is closed; §7b (the `.remember/` +
 > `.superpowers/sdd/` snapshot) is still open and still belongs to E13.
 >
+> ### Standing owner decision 2026-08-13 — git history is not rewritten
+>
+> **The rewrite question is closed, not deferred.** No `filter-repo`,
+> `filter-branch`, BFG or force-push session gets proposed, scheduled or raised
+> as a recommendation. **The reasoning, recorded so it is not re-derived:** a
+> rewrite reduces *convenient* exposure of a secret already in history — it
+> never un-leaks one, because this repo is public and any past content may
+> already sit in a clone, a fork, GitHub's dangling-object cache or a
+> third-party archive. It costs new SHAs for all 392 commits, re-pointing 24
+> tags and 14 remote branches, and orphaning every existing clone and open PR.
+> E13a measured bucket (a) empty, so there is no target to purge and the whole
+> cost buys tidiness rather than security.
+>
+> **The rule this leaves behind, which is the part that matters going forward:
+> rotate first, and rewriting is still a separate decision even then.** This
+> decision reopens on exactly one condition — a future scan finding a real live
+> credential in history. Nothing else reopens it, including a new scanner, a new
+> ruleset, or the Gelato false positive re-tripping a future `gitleaks` run.
+>
 > Carried pipeline backlog is unchanged and none of it is urgent: GL-53's four GL-46-shaped stage loops, GL-66, GL-67, GL-73 (whose condition never fired), and GL-65, which stays parked with a lower cost basis now that duplicate taps are guarded.
 
 > **Last updated 2026-08-12 (evening) — E11 merged, and what remains of the gate

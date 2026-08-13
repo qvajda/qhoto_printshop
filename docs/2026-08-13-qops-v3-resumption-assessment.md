@@ -9,6 +9,15 @@ design), `docs/2026-07-26-qops-prd-independent-review.md` (33 findings),
 **Board at time of writing:** gate 25 of 28, open GL-11, GL-69, GL-71.
 Next session: `docs/2026-08-13-e12-kickoff.md`.
 
+> **Amendment 2026-08-13 (planner, post-E12).** **O2 is satisfied** — E12 merged
+> (PR #16 → `9c4eed1`, 810 green), GL-69 and GL-71 both closed, gate now **27 of
+> 28** with **GL-11** the only open row. The §5 programme is carried into
+> `docs/2026-08-13-e13-kickoff.md` unchanged in substance, with one correction
+> to sequencing: **the secret scan did not run alongside E12** as O2 assumed, so
+> it is now §7a of the E13 PRD and is sequenced *before* the research pass, not
+> beside it. This document remains the authorising record; E13 is where its §5
+> gets executed.
+
 ---
 
 ## §1. Verdict — resume, but it is a re-extraction, not a resume
