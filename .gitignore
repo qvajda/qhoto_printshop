@@ -69,3 +69,4 @@ outputs/gl6_p4a3/
 
 # GL-45: raw getUpdates instrumentation (local evidence, not source)
 logs/
+outputs/e13a/

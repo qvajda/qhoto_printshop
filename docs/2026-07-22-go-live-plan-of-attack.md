@@ -11,6 +11,31 @@
 > **Owner read-back DONE 2026-08-13 — the gallery reads correct.** Featured image and flats-before-lifestyles confirmed by the owner in the listing editor. **Alt text is not inspectable there and that is not a defect:** the editor exposes its own control labels ("edit gallery image 2"), never the image's `alt_text`, so the split is structural — the owner's eye covers the half only an eye can judge, and `get_listing_images` covers the half the editor cannot show (all 12 non-empty, read twice). **Recorded because it will be asked again:** do not treat an editor pass as an alt-text check either way, in either direction.
 >
 > **§6 status 2026-08-13:** both batch scheduled tasks re-enabled by the owner. `RESEARCH_MODE` stays `consume-pending-only` until 77/78/79 are decided off their re-sent digests; the first batch run is watched, not trusted.
+>
+> ### Planner integration 2026-08-13 (post-E12) — the board is done being the bottleneck
+>
+> **E13 is not a gate session, and the board should stop expecting one.** With GL-11 the only open row and an external reply the only thing that moves it, there is no code-side work whose completion advances the gate. **Plan around waiting, not toward it.** Three consequences, recorded so they are not re-derived:
+>
+> 1. **The next session is off-board.** `docs/2026-08-13-e13-kickoff.md` — **qops v3: re-extract, research, decide, no build.** Authorised by `docs/2026-08-13-qops-v3-resumption-assessment.md`, whose decision **O2 ("E12 first, then qops v3") is now satisfied** — E12 merged, and its two stated reasons (GL-69/GL-71 were cheap and on the gate; E12 is the clean "before" baseline) are both discharged. **Baseline recorded while it is still true: 810 green at `9c4eed1`, gate 27 of 28.**
+> 2. **Two open items are owner-side and are minutes, not sessions.** Decide 77/78/79 off their re-sent digests; then read the logs for a `group already approved` line to confirm the GL-71 dispatch guard fired live. The guard is proven by three unit tests and nothing live, and the instrument for that is free — the re-sent digests are the next real taps. **Do not build a soak, and do not scope a session around either item.**
+> 3. **The secret scan of git history is still open and has been since 2026-07-26.** It is Phase 0's outstanding item, independent of any qops decision, on a public repo through which Etsy OAuth / Gelato / Replicate / Telegram credentials have moved. It slipped past its "runs alongside E12" placement; it is now §7a of the E13 PRD and is the one item there worth doing even if PRD v3 is never signed. **If anything is found, rotate first** — history rewriting is a separate decision and is not taken in that session.
+>
+> **2026-08-13 (E13a) — the secret scan is done and the answer is clean.** Item 3
+> above is closed. Full history scanned after `git fetch --all --tags --prune`:
+> 43 refs, 14 remote branches, 24 tags, 392 commits, all 1357 reachable blobs.
+> Three instruments, not one — `gitleaks` v8.21.2 (one hit, a false positive:
+> Gelato's own expired presigned-URL access-key id, quoted in an archive doc), a
+> blob-level known-name sweep over the project's credential variables, and a
+> blob-level sweep for the 22 live `.env` values verbatim, of which **0 appear
+> anywhere in history** (including the superseded pre-2026-07-17 Etsy pair and
+> the admin chat ID). **Bucket (a) empty, so no rotation was requested or
+> performed, and no history was rewritten.** With nothing leaked there is also
+> nothing to rewrite *for*: recommend closing the rewrite question rather than
+> scheduling a session for it. Findings: `docs/2026-08-13-e13a-findings.md`.
+> Phase 0's last item from PRD v2 is closed; §7b (the `.remember/` +
+> `.superpowers/sdd/` snapshot) is still open and still belongs to E13.
+>
+> Carried pipeline backlog is unchanged and none of it is urgent: GL-53's four GL-46-shaped stage loops, GL-66, GL-67, GL-73 (whose condition never fired), and GL-65, which stays parked with a lower cost basis now that duplicate taps are guarded.
 
 > **Last updated 2026-08-12 (evening) — E11 merged, and what remains of the gate
 > is no longer code. Gate: twenty-five of twenty-eight. Three open: GL-11,
