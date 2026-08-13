@@ -40,7 +40,14 @@ db/group_preview_images/
 
 # Agent / tooling scratch dirs (local, not project source)
 .agents/
-.claude/
+# .claude/ is NARROWED, not ignored wholesale (PRD v3 finding A4, ADR-0001).
+# Hook configuration is project source: without it committed, the brief, the
+# resume writer, the ledger and the guard exist on one laptop only, which is the
+# failure mode where a system appears to work and is actually one machine.
+# `.claude/*` rather than `.claude/` is REQUIRED - git cannot re-include a file
+# whose parent is excluded by a directory-style pattern.
+.claude/*
+!.claude/settings.json
 
 # qops — the split is decided, not inherited (PRD v3 decision 21 / finding E1).
 # TRACKED, deliberately: .qops/config.yml and .qops/issues.md.
