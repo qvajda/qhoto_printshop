@@ -324,3 +324,50 @@ def test_every_verb_is_dispatchable(verb):
     out = subprocess.run([sys.executable, "-m", "qops", verb, "--help"],
                          cwd=REPO, capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
+
+
+# --------------------------------------------------------------------------
+# subagent definitions — the roster, and the two §3.4 levers, asserted
+# --------------------------------------------------------------------------
+
+AGENT_DIR = REPO / ".claude" / "agents"
+
+
+def _frontmatter(path: Path) -> dict:
+    import yaml
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("---\n"), f"{path.name} has no frontmatter"
+    return yaml.safe_load(text.split("---", 2)[1])
+
+
+def test_the_roster_is_exactly_the_config_s():
+    names = {p.stem for p in AGENT_DIR.glob("*.md")}
+    assert names == set(qconfig.load(REPO)["agents"])
+
+
+@pytest.mark.parametrize("role", ["planner", "coder", "reviewer", "scribe",
+                                  "triager", "interactor"])
+def test_each_agent_matches_its_config_entry(role):
+    spec = qconfig.load(REPO)["agents"][role]
+    fm = _frontmatter(AGENT_DIR / f"{role}.md")
+    assert fm["model"] == spec["model"]
+    assert fm["effort"] == spec["effort"]
+    assert [t.strip() for t in fm["tools"].split(",")] == spec["tools"]
+
+
+@pytest.mark.parametrize("role", ["planner", "coder", "reviewer", "scribe",
+                                  "triager", "interactor"])
+def test_no_agent_nags_about_verification(role):
+    """§3.4: scope-fencing language replaces verification-nagging. The named
+    exception is the reviewer, which exists because of a 2026-08-01 incident."""
+    body = (AGENT_DIR / f"{role}.md").read_text(encoding="utf-8").lower()
+    for phrase in ("double-check", "double check", "verify your own work",
+                   "make sure you did"):
+        assert phrase not in body, f"{role} contains {phrase!r}"
+    assert "scope fence" in body
+
+
+def test_read_only_agents_cannot_write():
+    for role in ("planner", "reviewer", "triager", "interactor"):
+        tools = qconfig.load(REPO)["agents"][role]["tools"]
+        assert not ({"Write", "Edit", "MultiEdit", "NotebookEdit"} & set(tools)), role

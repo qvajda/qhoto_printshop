@@ -48,6 +48,7 @@ db/group_preview_images/
 # whose parent is excluded by a directory-style pattern.
 .claude/*
 !.claude/settings.json
+!.claude/agents/
 
 # qops — the split is decided, not inherited (PRD v3 decision 21 / finding E1).
 # TRACKED, deliberately: .qops/config.yml and .qops/issues.md.
