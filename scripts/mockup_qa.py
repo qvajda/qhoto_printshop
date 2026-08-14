@@ -45,7 +45,11 @@ sys.path.insert(0, str(ROOT))
 
 import pipeline.mockup_render as mr  # noqa: E402
 
-MASTER = ROOT / "db" / "base_artwork" / "39.png"      # candidate 39, the approved master
+FIXTURE = ROOT / "tests" / "fixtures" / "masters" / "portrait-0684.png"
+REAL_MASTER = ROOT / "db" / "base_artwork" / "39.png"  # candidate 39, the approved master
+# db/base_artwork/ is gitignored, so CI gets the tracked fixture: same ratio
+# (0.6846 against 0.6842), 1024px instead of 9728. `--art PATH` overrides both.
+MASTER = REAL_MASTER if REAL_MASTER.exists() else FIXTURE
 SHEET_DIR = ROOT / "outputs" / "mockup_qa"
 
 FRINGE_RADIUS = 10      # px either side of the art boundary that counts as "the edge"
