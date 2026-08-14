@@ -1,14 +1,111 @@
 # qops project configuration — TRACKED (PRD v3 decision 21).
 # Everything else qops writes under .qops/ is machine state and is ignored.
 #
-# This file is the importer's source for the label taxonomy. PRD v3 §9 is the
-# prose version of the same thing; if the two disagree, this file is what runs.
+# This file is the ONLY place a project specific may live. The CLI, the hooks
+# and the rendered workflows read it; none of them carries a project name, a
+# path, an interpreter or a threshold of its own. Phase 7's portability proof
+# is exactly "does anything project-specific exist outside this file".
+#
+# This file is also the importer's source for the label taxonomy. PRD v3 §9 is
+# the prose version of the same thing; if the two disagree, this file is what
+# runs.
 
 project: qhoto_printshop
 prd: docs/2026-08-13-qops-prd-v3.md
+repo: qvajda/qhoto_printshop
+default_branch: master
 
-# PRD v3 §9 — amended taxonomy. v2 §7.1 is void: its mission: values named
-# groupings that no longer exist.
+# The interpreter the hooks and the shims invoke. `python3` on this machine is
+# the Windows Store stub, and a hardcoded absolute path is what E14 refused to
+# commit — the py launcher is the portable middle.
+python: py -3
+python_posix: python3
+
+# --- guard -----------------------------------------------------------------
+protected_branches: [master]
+max_worktrees: 2
+
+# Project tripwires. Each is a regex plus the constraint it defends; the guard
+# blocks the tool call locally and guard.yml fails the build in CI. Both read
+# this list — one definition, two enforcement points.
+tripwires:
+  - name: create_draft_listing
+    # The call, not the definition and not the word. etsy_client.py may define
+    # it (it stays DELIBERATELY UNWIRED); the pipeline may never call it.
+    pattern: '(?<!def )\bcreate_draft_listing\s*\('
+    paths: ['pipeline/']
+    why: 'Gelato pushes the Etsy listing and we patch it. Creating one collides with that push (CLAUDE.md, v4.11).'
+  - name: flux_dev
+    pattern: 'FLUX\.1 ?\[dev\]'
+    # ASCII only: this string is printed to a Windows console by the hook.
+    why: 'Artwork generation is FLUX.1 [schnell] only - the licence governs the artefact a buyer pays for.'
+  - name: placeholder_template_id
+    pattern: 'PLACEHOLDER[A-Z_]*'
+    paths: ['config/static_config.json']
+    why: 'A placeholder Gelato template id must never reach a real create-from-template call.'
+
+# Files that name the tripwires on purpose: the constraint docs, the config,
+# the guard itself and its tests. Excluded from `qops guard scan`, never from
+# the PreToolUse hook.
+scan_exclude:
+  - CLAUDE.md
+  - CONTEXT.md
+  - README.md
+  - docs/
+  - qops/
+  - .qops/
+  - tests/test_qops.py
+
+# --- hot path --------------------------------------------------------------
+# S6/S10. Enforced by groom.yml and by tests/test_qops.py, not by intention:
+# CLAUDE.md grew +10 lines/day while the cap was only written down.
+claude_md_max_lines: 150
+
+# guard.yml's doc-link check: every docs/*.md path cited from these trees must
+# resolve. Phase 3 broke 13 of 15 by archiving docs; only a check caught it.
+doc_link_roots: [pipeline, scripts, tests]
+
+# --- CI --------------------------------------------------------------------
+ci:
+  python_version: '3.12'
+  test_command: python -m pytest -q
+  gate_command: python -m pytest -q tests/test_qops.py
+  runs_on: ubuntu-latest
+  digest_cron: '0 6 * * *'      # 06:00 UTC daily
+  groom_cron: '0 5 * * 1'       # Mondays
+  status_issue_label: 'qops:status'
+
+# --- agents (§3.3 roster, §3.4 levers) -------------------------------------
+# effort: start high, drop where quality holds, xhigh only for demanding
+# agentic work. This is the project's only real cost control.
+agents:
+  planner:
+    model: opus
+    effort: high
+    tools: [Read, Grep, Glob, Bash, WebFetch]
+  coder:
+    model: sonnet
+    effort: medium
+    tools: [Read, Edit, Write, Grep, Glob, Bash]
+  reviewer:
+    model: sonnet
+    effort: high
+    tools: [Read, Grep, Glob, Bash]
+  scribe:
+    model: haiku
+    effort: low
+    tools: [Read, Edit, Write, Bash]
+  triager:
+    model: haiku
+    effort: low
+    tools: [Bash, Read, Grep]
+  interactor:
+    model: haiku
+    effort: low
+    tools: [Bash, Read]
+delegation_cap: 1
+
+# --- taxonomy (PRD v3 §9) --------------------------------------------------
 labels:
   type: [epic, research, code, manual, test, decision]
   state: [triage, planned, building, gate, review, blocked, done, cancelled]

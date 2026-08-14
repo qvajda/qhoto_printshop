@@ -1,0 +1,43 @@
+{
+  "$comment": "qops hooks. Wired per ADR-0001, which measured every event below. Commands invoke `qops <verb>` and nothing else; every project specific lives in .qops/config.yml. Invoked as `python -m qops` because a bare `qops` resolves in neither cmd.exe nor git-bash without a PATH edit, and a PATH edit is a machine fact that does not belong in a committed file.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python -m qops brief" },
+          { "type": "command", "command": "python -m qops ledger session_start" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "python -m qops guard" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python -m qops ledger stop" }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python -m qops resume --write --quiet" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python -m qops resume --write --quiet" },
+          { "type": "command", "command": "python -m qops ledger session_end" }
+        ]
+      }
+    ]
+  }
+}

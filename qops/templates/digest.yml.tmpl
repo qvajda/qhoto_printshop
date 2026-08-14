@@ -1,0 +1,67 @@
+# RENDERED BY `qops install` from qops/templates/digest.yml.tmpl + .qops/config.yml
+# Do not hand-edit: `qops doctor` fails on drift.
+#
+# NO LLM RUNS HERE. The digest is a rendering of state that already exists —
+# open issues, CI status, pending approvals. Anything needing judgement belongs
+# in a session, not in a cron.
+name: digest
+
+on:
+  schedule:
+    - cron: '{{digest_cron}}'
+  workflow_dispatch:
+
+jobs:
+  digest:
+    runs-on: {{runs_on}}
+    permissions:
+      issues: write
+      actions: read
+      checks: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: {{repo}}
+    steps:
+      - name: render
+        run: |
+          {
+            echo "*{{project}} — $(date -u '+%Y-%m-%d')*"
+            echo
+            echo "Open sorties:"
+            gh issue list --repo "$REPO" --state open --limit 15 \
+              --json number,title,labels \
+              --template '{{ range . }}- #{{ .number }} {{ .title }}{{ "\n" }}{{ end }}'
+            echo
+            echo "Awaiting the owner:"
+            gh pr list --repo "$REPO" --state open --limit 10 \
+              --json number,title,reviewDecision \
+              --template '{{ range . }}- PR #{{ .number }} {{ .title }} ({{ .reviewDecision }}){{ "\n" }}{{ end }}'
+            echo
+            echo "Last runs:"
+            gh run list --repo "$REPO" --limit 5 \
+              --json workflowName,conclusion,headBranch \
+              --template '{{ range . }}- {{ .workflowName }} {{ .conclusion }} ({{ .headBranch }}){{ "\n" }}{{ end }}'
+          } > digest.md
+          cat digest.md
+
+      - name: post to the dev Telegram bot
+        if: env.TELEGRAM_TOKEN != ''
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.QOPS_TELEGRAM_DEV_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.QOPS_TELEGRAM_DEV_CHAT_ID }}
+        run: |
+          curl -sS -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TELEGRAM_CHAT" \
+            --data-urlencode "parse_mode=Markdown" \
+            --data-urlencode "text@digest.md" > /dev/null
+
+      - name: update the pinned status issue
+        run: |
+          n=$(gh issue list --repo "$REPO" --label '{{status_issue_label}}' \
+                --state open --limit 1 --json number --jq '.[0].number')
+          if [ -z "$n" ] || [ "$n" = "null" ]; then
+            gh issue create --repo "$REPO" --title 'qops status' \
+              --label '{{status_issue_label}}' --body-file digest.md
+          else
+            gh issue edit "$n" --repo "$REPO" --body-file digest.md
+          fi
