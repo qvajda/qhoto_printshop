@@ -16,7 +16,22 @@ from pipeline.mockup_render import MockupRenderError, render_scene, load_bundle 
 from pipeline import image_crop  # noqa: E402
 from PIL import Image  # noqa: E402
 
-MASTER = ROOT / "db" / "base_artwork" / "39.png"
+FIXTURE = ROOT / "tests" / "fixtures" / "masters" / "portrait-0684.png"
+REAL_MASTER = ROOT / "db" / "base_artwork" / "39.png"     # candidate 39, approved
+
+
+def resolve_master(argv=()) -> Path:
+    """`--art PATH`, else the approved master, else the tracked fixture.
+
+    db/base_artwork/ is gitignored, so on CI the fixture is what runs. Same
+    ratio (0.6846 against 0.6842), 1024px instead of 9728."""
+    argv = list(argv)
+    if "--art" in argv:
+        return Path(argv[argv.index("--art") + 1])
+    return REAL_MASTER if REAL_MASTER.exists() else FIXTURE
+
+
+MASTER = resolve_master()
 # Read from the config rather than a list kept in step with it by hand: this
 # harness exists to render exactly what the pipeline would, and P4 is adding
 # bundles. Groups with no bundles yet simply contribute nothing.
@@ -28,10 +43,12 @@ SCENE_DIRS = [(group, ROOT / "assets" / "mockups" / group / orientation / scene)
 OUT_DIR = ROOT / "outputs" / "gl19_m1"
 
 
-def main():
+def main(argv=()):
+    master = resolve_master(argv)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    master_bytes = MASTER.read_bytes()
-    art_primary = Image.open(MASTER).convert("RGB")
+    print(f"master: {master}")
+    master_bytes = master.read_bytes()
+    art_primary = Image.open(master).convert("RGB")
     # group_product.py pre-crops the master to the group's print ratio for every
     # non-primary group before render_scene ever sees it (only primary skips that
     # step - CLAUDE.md: master's 0.6842 is close enough to primary's own range).
@@ -77,4 +94,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

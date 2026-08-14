@@ -46,6 +46,41 @@ the file. See §5.
 files**; the source trees hold **64** files under `.remember/` excluding `tmp/`
 plus **152** under `.superpowers/sdd/` = **216**. In and out agree.
 
+## 2b. Second archive — `.remember/` only, 2026-08-13 23:5x (supersedes §2 for `.remember/`)
+
+§2's archive was taken at midday **while the Remember plugin was still running**,
+and `.remember/` was written to repeatedly afterwards (last write 23:47:00). It is
+therefore incomplete for that tree. This second archive was taken **after the owner
+disabled the plugin** — quiescence confirmed two ways: no file under `.remember/`
+modified for ~5 minutes, and tool calls made during that window produced no
+post-tool hook write.
+
+| | |
+|---|---|
+| Filename | `qhoto_printshop-remember-snapshot-2-2026-08-13.tar.gz` |
+| Size | **463,211 bytes** |
+| `sha256` | `d86d38f59f7f62ed49752f118149b7a0a2d5e6ae968324542e9166f34c71b521` |
+| Entries | 65 (**62 files** + 3 directories) |
+| Scope | `.remember/` only, excluding `.remember/tmp/` — same method and same prune as §2/§5 |
+| Committed? | **No.** Handed to the owner, same as §2 |
+
+**Count verification, run rather than asserted:** archive holds **62** files;
+`find .remember -type f ! -path '.remember/tmp/*' \| wc -l` = **62**. In and out agree.
+
+**Precedence:** this archive **supersedes §2 for `.remember/`**. §2 remains the
+valid and only archive of **`.superpowers/sdd/`** — that tree was static, was
+already deleted from the working tree, and is not re-snapshotted here.
+
+**Delta against §2 (64 → 62 files under `.remember/`), recorded not explained
+away:** between the two snapshots the plugin rotated its daily logs — the
+`memory-2026-08-0[1-4].log` dailies are gone and the `logs-2026-08-part*.tar.gz`
+set grew — and `tmp/save-session.pid` and `.remember/.gitignore` are no longer
+present. The second archive is the authoritative one regardless: it is the state
+that actually existed at deletion time.
+
+**Consequence:** `.remember/` was deleted from the working tree immediately after
+this archive was verified. See `docs/adr/0014-retire-remember-plugin.md`.
+
 ## 3. Measured inventory — and three corrections to the kickoff's figures
 
 The kickoff's numbers were close but wrong in three places, and one of them moves

@@ -1,0 +1,167 @@
+"""The local guard. PreToolUse exit 2 blocks a call outright (ADR-0001).
+
+Not a security control — an agent can run with hooks disabled. It is the local
+half of a pair whose other half is server-side branch protection (PRD §5 B8).
+The tripwire list lives in .qops/config.yml and is read here AND by guard.yml,
+so there is one definition with two enforcement points.
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# git commands that write to the current branch
+_WRITES = re.compile(r"\bgit\s+(commit|push|merge|rebase)\b")
+_PUSH_ELSEWHERE = re.compile(r"\bgit\s+push\b[^|;&]*\s(?!-)(\S+)\s+(\S+)")
+_FORCE = re.compile(r"\bgit\s+push\b[^|;&]*(--force\b|--force-with-lease\b|\s-f\b)")
+_RESET_HARD = re.compile(r"\bgit\s+reset\b[^|;&]*--hard\b")
+_WORKTREE_ADD = re.compile(r"\bgit\s+worktree\s+add\b")
+
+_TEXT_FIELDS = ("content", "new_string", "command", "file_text")
+
+
+def _in_scope(path_hint: str, scope) -> bool:
+    """A tripwire with `paths:` applies only there. path_hint None = no path
+    context (a Bash command), where every tripwire applies."""
+    if not scope or path_hint is None:
+        return True
+    norm = path_hint.replace("\\", "/")
+    return any(norm.startswith(s.rstrip("/")) or norm.endswith(s) for s in scope)
+
+
+def _tripwire(text: str, path_hint, cfg: dict):
+    for tw in cfg.get("tripwires", []):
+        if not _in_scope(path_hint, tw.get("paths")):
+            continue
+        if re.search(tw["pattern"], text):
+            return f"tripwire {tw['name']}: {tw['why']}"
+    return None
+
+
+def check(tool_name: str, tool_input: dict, ctx: dict, cfg: dict) -> str | None:
+    """Return a refusal reason, or None to allow. Pure — ctx carries git state."""
+    branch = ctx.get("branch") or ""
+    protected = cfg.get("protected_branches", [])
+
+    if tool_name == "Bash":
+        cmd = tool_input.get("command", "")
+
+        if _FORCE.search(cmd):
+            return "force-push is blocked. Rebase and push normally, or ask the owner."
+        if _RESET_HARD.search(cmd):
+            return "git reset --hard discards uncommitted work. Use git stash or a soft reset."
+        if _WORKTREE_ADD.search(cmd) and ctx.get("worktrees", 0) >= cfg["max_worktrees"]:
+            return (f"worktree sprawl: {ctx['worktrees']} already live, cap is "
+                    f"{cfg['max_worktrees']}. Remove one first (git worktree remove).")
+        if _WRITES.search(cmd):
+            # a push naming another branch is fine even while master is checked out
+            named = re.findall(r"\bgit\s+push\s+(?:\S+\s+)?(\S+)", cmd)
+            target = named[-1] if named and not named[-1].startswith("-") else branch
+            if "push" in cmd and named:
+                if target in protected:
+                    return f"push to {target} is blocked. Open a PR."
+            elif branch in protected:
+                return (f"'{cmd.split()[1]}' on {branch} is blocked — {branch} is "
+                        f"protected. Branch first.")
+
+        # A commit message that quotes a tripwire is describing the constraint,
+        # not breaking it — same exemption the constraint docs get below.
+        if not re.match(r"\s*git\s+(commit|log|show|notes)\b", cmd):
+            hit = _tripwire(cmd, None, cfg)
+            if hit:
+                return hit
+        return None
+
+    if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+        path_hint = tool_input.get("file_path", "")
+        norm = path_hint.replace("\\", "/")
+        excluded = tuple(cfg.get("scan_exclude", []))
+        # The files that state the constraints have to be able to name them.
+        if excluded and any(norm.endswith(e) or f"/{e}" in norm for e in excluded):
+            return None
+        for field in _TEXT_FIELDS:
+            value = tool_input.get(field)
+            if isinstance(value, str):
+                hit = _tripwire(value, path_hint, cfg)
+                if hit:
+                    return hit
+        for edit in tool_input.get("edits", []) or []:
+            hit = _tripwire(str(edit.get("new_string", "")), path_hint, cfg)
+            if hit:
+                return hit
+    return None
+
+
+def git_context(root: Path) -> dict:
+    def run(*args):
+        try:
+            return subprocess.run(["git", *args], cwd=root, capture_output=True,
+                                  text=True, timeout=10).stdout.strip()
+        except Exception:
+            return ""
+    worktrees = len([l for l in run("worktree", "list").splitlines() if l.strip()])
+    return {"branch": run("rev-parse", "--abbrev-ref", "HEAD"),
+            "worktrees": max(worktrees - 1, 0)}
+
+
+# --- the CI half -----------------------------------------------------------
+
+def scan(root: Path, cfg: dict) -> list[dict]:
+    """Grep the tracked tree for tripwires. What guard.yml runs."""
+    root = Path(root)
+    hits = []
+    files = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True,
+                           text=True).stdout.split()
+    if not files:
+        files = [str(p.relative_to(root)) for p in root.rglob("*")
+                 if p.is_file() and ".git" not in p.parts]
+    excluded = tuple(cfg.get("scan_exclude", []))
+    for tw in cfg.get("tripwires", []):
+        rx = re.compile(tw["pattern"])
+        for rel in files:
+            norm = rel.replace("\\", "/")
+            if excluded and norm.startswith(excluded):
+                continue          # files that name the tripwires on purpose
+            if not _in_scope(norm, tw.get("paths")):
+                continue
+            p = root / rel
+            try:
+                text = p.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for n, line in enumerate(text.splitlines(), 1):
+                if rx.search(line):
+                    hits.append({"file": norm, "line": n, "pattern": tw["pattern"],
+                                 "name": tw["name"], "why": tw["why"]})
+    return hits
+
+
+# --- entry points ----------------------------------------------------------
+
+def hook(root: Path, cfg: dict) -> int:
+    """PreToolUse. Reads the payload on stdin; exit 2 blocks the call."""
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return 0
+    reason = check(payload.get("tool_name", ""), payload.get("tool_input") or {},
+                   git_context(root), cfg)
+    if reason:
+        print(f"qops guard: {reason}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def main(argv: list[str], root: Path, cfg: dict) -> int:
+    if argv and argv[0] == "scan":
+        hits = scan(root, cfg)
+        for h in hits:
+            print(f"{h['file']}:{h['line']}: {h['name']} — {h['why']}")
+        if hits:
+            print(f"\n{len(hits)} tripwire hit(s).", file=sys.stderr)
+            return 1
+        print("guard: no tripwires.")
+        return 0
+    return hook(root, cfg)

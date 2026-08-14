@@ -3,3 +3,4 @@ httpx[http2]==0.28.1
 pillow==12.3.0
 opencv-python-headless==4.11.0.86
 numpy==2.5.1
+PyYAML==6.0.3

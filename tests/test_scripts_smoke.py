@@ -95,3 +95,51 @@ def test_the_floor_check_can_see_the_defect():
     assert same_quote_nesting("""print(f"-> {sheet(out / f'{r['scene']}.png')}")""")
     assert not same_quote_nesting("""print(f"-> {sheet(out / (r['scene'] + '.png'))}")""")
     assert not same_quote_nesting("""x = f'''{d['k']}'''""")   # differing delimiters: fine
+
+
+# --------------------------------------------------------------------------
+# tests/fixtures/masters/ — the render harnesses must run without db/, which
+# is gitignored and therefore absent on CI (PRD v3 Phase 4).
+# --------------------------------------------------------------------------
+
+FIXTURE_DIR = ROOT / "tests" / "fixtures" / "masters"
+
+
+@pytest.mark.parametrize("name,ratio", [
+    ("portrait-0684.png", 0.6846),
+    ("landscape-1462.png", 1.4608),
+    ("awkward-square.png", 1.0),
+])
+def test_master_fixtures_exist_at_the_expected_shape(name, ratio):
+    from PIL import Image
+    p = FIXTURE_DIR / name
+    assert p.exists(), f"{name} missing"
+    im = Image.open(p)
+    assert max(im.size) == 1024
+    assert abs(im.width / im.height - ratio) < 0.001
+
+
+def test_both_render_harnesses_default_to_the_fixture_when_db_is_absent(monkeypatch):
+    """The CI default. Neither script may need db/base_artwork/ to run."""
+    import importlib
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        for mod_name, attr in (("gl19_m1_render", "REAL_MASTER"),
+                               ("mockup_qa", "REAL_MASTER")):
+            mod = importlib.import_module(mod_name)
+            assert mod.FIXTURE.exists()
+            assert mod.FIXTURE.is_relative_to(ROOT / "tests" / "fixtures")
+            # if the real master is absent, the fixture is what MASTER resolves to
+            if not mod.REAL_MASTER.exists():
+                assert mod.MASTER == mod.FIXTURE
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
+
+
+def test_gl19_harness_takes_an_explicit_master_path():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import gl19_m1_render as h
+        assert h.resolve_master(["--art", "x/y.png"]).name == "y.png"
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
