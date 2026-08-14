@@ -1,0 +1,47 @@
+{
+  "S1_resume_cost": {
+    "since": "2026-07-14",
+    "until": null,
+    "sessions": 92,
+    "scored": 82,
+    "no_productive_call": 10,
+    "median_reads": 4.0,
+    "mean_reads": 4.91,
+    "pct_with_big_read": 59,
+    "by_dir": {
+      "C--Users-QVajd-Documents-claude-qhoto-printshop": {
+        "sessions": 83,
+        "scored": 73,
+        "no_productive_call": 10,
+        "median_reads": 4,
+        "mean_reads": 4.81,
+        "pct_with_big_read": 55
+      },
+      "C--Users-QVajd-Documents-claude-qhoto-printshop--claude-worktrees-gl7-cron-orchestrator": {
+        "sessions": 9,
+        "scored": 9,
+        "no_productive_call": 0,
+        "median_reads": 5,
+        "mean_reads": 5.78,
+        "pct_with_big_read": 89
+      }
+    }
+  },
+  "S2_kickoff_docs": 45,
+  "S4_review_before_gate": {
+    "available": true,
+    "requests_without_green_gate": [],
+    "total": 18
+  },
+  "S9_planned_to_working": {
+    "available": true,
+    "in_flight": []
+  },
+  "S10_hot_path": {
+    "claude_md_lines": 136,
+    "claude_md_cap": 150,
+    "claude_md_tokens": 2156,
+    "brief_tokens": 89,
+    "within_cap": true
+  }
+}
