@@ -1,5 +1,15 @@
 {
   "$comment": "qops hooks. Wired per ADR-0001, which measured every event below. Commands invoke `qops <verb>` and nothing else; every project specific lives in .qops/config.yml. Invoked as `python -m qops` because a bare `qops` resolves in neither cmd.exe nor git-bash without a PATH edit, and a PATH edit is a machine fact that does not belong in a committed file.",
+  "permissions": {
+    "$comment": "Waiting on CI is the same five read-only commands every PR. They are machine-independent, so they belong here and not in settings.local.json.",
+    "allow": [
+      "Bash(gh pr checks:*)",
+      "Bash(gh run watch:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(sleep:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {

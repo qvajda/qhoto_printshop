@@ -15,6 +15,10 @@ on:
     - cron: '{{groom_cron}}'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   hot-path-cap:
     runs-on: {{runs_on}}

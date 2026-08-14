@@ -3,10 +3,16 @@
 name: test
 
 on:
+  # Branch pushes are covered by the PR run. Without this the same commit is
+  # tested twice and a PR costs twice the wall clock it needs to.
   push:
-    branches-ignore: []
+    branches: ['{{default_branch}}']
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
