@@ -43,6 +43,12 @@
       "skillPath": "skills/engineering/grill-with-docs/SKILL.md",
       "computedHash": "96718e0a89e48c7d76cc9759c7094a82ff34eb89ddc46a30388063fa9812356f"
     },
+    "grilling": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/grilling/SKILL.md",
+      "computedHash": "4eb5bf61b1e602f9cedbd3a5e4469dfba1db0247d5d40956d03299c455b91197"
+    },
     "loopy": {
       "source": "Forward-Future/loop-library",
       "sourceType": "github",
@@ -83,7 +89,8 @@
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/tdd/SKILL.md",
-      "computedHash": "140859ce43d1eb75823f67848c0cd0bc224ce7928ec33c55fa0c599f3bb3a4df"
+      "computedHash": "36023c75862487ce5628acf9eafaf18a97f13b930af3cfa5370674619cdd618c",
+      "localPatch": "upstream tdd references /codebase-design, the post-rename name for what we pin as domain-modeling (skills/engineering/domain-modeling/SKILL.md, unrenamed locally). Patched the reference to /domain-modeling so it resolves against what's actually installed. computedHash reflects this local edit, not upstream content — will mismatch on next `skills update` until the mattpocock set is re-pulled at a single commit (post-Phase-6)."
     },
     "to-spec": {
       "source": "mattpocock/skills",
