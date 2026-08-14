@@ -153,8 +153,14 @@ def s4(root: Path) -> dict:
     bad = []
     for pr in prs:
         rollup = pr.get("statusCheckRollup") or []
-        gate_green = any(c.get("name") in ("gate", "test")
-                         and c.get("conclusion") == "SUCCESS" for c in rollup)
+        # Every applicable gate, not two named ones: naming `gate` and `test`
+        # let a red guard.yml (tripwires, doc links) score as clean.
+        conclusions = [c.get("conclusion") for c in rollup]
+        gate_green = (bool(rollup)
+                      and not any(c in ("FAILURE", "TIMED_OUT", "CANCELLED",
+                                        "ACTION_REQUIRED", "STARTUP_FAILURE")
+                                  for c in conclusions)
+                      and "SUCCESS" in conclusions)
         if pr.get("reviewRequests") and not gate_green:
             bad.append(pr["number"])
     return {"available": True, "requests_without_green_gate": bad,

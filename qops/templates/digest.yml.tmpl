@@ -37,6 +37,13 @@ jobs:
               --json number,title,reviewDecision \
               --template '{{ range . }}- PR #{{ .number }} {{ .title }} ({{ .reviewDecision }}){{ "\n" }}{{ end }}'
             echo
+            # triage-loop's findings land here rather than in an Actions log
+            # nobody opens: a warning with no reader has no terminal state.
+            echo "Needs triage (no state: label):"
+            gh issue list --repo "$REPO" --state open --limit 50 \
+              --json number,title,labels \
+              --jq '[.[] | select([.labels[].name] | map(startswith("state:")) | any | not)] | .[] | "- #\(.number) \(.title)"'
+            echo
             echo "Last runs:"
             gh run list --repo "$REPO" --limit 5 \
               --json workflowName,conclusion,headBranch \
