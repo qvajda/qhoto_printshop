@@ -55,6 +55,7 @@ scan_exclude:
   - qops/
   - .qops/
   - tests/test_qops.py
+  - .github/workflows/guard.yml   # the workflow that runs the scan names them
 
 # --- hot path --------------------------------------------------------------
 # S6/S10. Enforced by groom.yml and by tests/test_qops.py, not by intention:
