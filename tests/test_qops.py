@@ -262,6 +262,41 @@ def test_s1_flags_reads_over_200_lines(tmp_path):
     assert metrics.s1_for_transcript(t)["big_read"] is True
 
 
+def _timed_transcript(dir_path, name, ts, records):
+    p = dir_path / name
+    lines = [json.dumps({"type": "user", "timestamp": ts,
+                          "isSidechain": False, "message": {"role": "user", "content": []}})]
+    lines += [json.dumps(r) for r in records]
+    p.write_text("\n".join(lines))
+    return p
+
+
+def test_s1_floors_transcript_on_first_user_assistant_record_and_windows_by_date(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    proj_dir = home / ".claude" / "projects" / "C--fake-project"
+    proj_dir.mkdir(parents=True)
+    monkeypatch.setattr(metrics.os.path, "expanduser", lambda p: str(home))
+    root = tmp_path / "project"
+    root.mkdir()
+
+    in_window = [_msg("assistant", [_read(), _read()]),
+                 _msg("assistant", [{"type": "tool_use", "name": "Edit", "input": {}}])]
+    before = [_msg("assistant", [_read()]),
+              _msg("assistant", [{"type": "tool_use", "name": "Edit", "input": {}}])]
+    after = [_msg("assistant", [_read()]),
+             _msg("assistant", [{"type": "tool_use", "name": "Edit", "input": {}}])]
+
+    _timed_transcript(proj_dir, "in.jsonl", "2026-07-20T10:00:00.000Z", in_window)
+    _timed_transcript(proj_dir, "before.jsonl", "2026-06-01T10:00:00.000Z", before)
+    _timed_transcript(proj_dir, "after.jsonl", "2026-09-01T10:00:00.000Z", after)
+
+    result = metrics.s1(root, since="2026-07-01", until="2026-08-01")
+    assert result["sessions"] == 1
+    assert result["median_reads"] == 2
+    assert "C--fake-project" in result["by_dir"]
+    assert result["by_dir"]["C--fake-project"]["sessions"] == 1
+
+
 def test_s2_counts_kickoff_class_docs():
     n = metrics.s2(REPO, since="2026-07-14")
     assert isinstance(n, int) and n >= 0

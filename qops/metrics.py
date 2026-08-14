@@ -95,24 +95,23 @@ def s1_for_transcript(path: Path) -> dict:
             "transcript": str(path)}
 
 
-def _transcript_dirs(root: Path) -> list[Path]:
-    home = Path(os.path.expanduser("~")) / ".claude" / "projects"
-    if not home.exists():
-        return []
-    slug = str(Path(root).resolve()).replace(":", "").replace("\\", "-").replace("/", "-")
-    slug = slug.replace("--", "-").lstrip("-")
-    return [d for d in home.iterdir()
-            if d.is_dir() and Path(root).name.replace("_", "-") in d.name.lower()]
+def _first_session_ts(path: Path) -> str | None:
+    """Timestamp of the transcript's first user/assistant record — floors the
+    session so a transcript sorts by when work started, not by mtime."""
+    for line in Path(path).read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") in ("user", "assistant") and rec.get("timestamp"):
+            return rec["timestamp"]
+    return None
 
 
-def s1(root: Path) -> dict:
-    rows = []
-    for d in _transcript_dirs(root):
-        for t in d.glob("*.jsonl"):
-            try:
-                rows.append(s1_for_transcript(t))
-            except OSError:
-                continue
+def _s1_summary(rows: list[dict]) -> dict:
     scored = [r for r in rows if r["productive"]]
     counts = [r["reads"] for r in scored]
     return {
@@ -123,6 +122,43 @@ def s1(root: Path) -> dict:
         "mean_reads": round(statistics.mean(counts), 2) if counts else None,
         "pct_with_big_read": round(100 * sum(r["big_read"] for r in scored)
                                    / len(scored)) if scored else None,
+    }
+
+
+def _transcript_dirs(root: Path) -> list[Path]:
+    home = Path(os.path.expanduser("~")) / ".claude" / "projects"
+    if not home.exists():
+        return []
+    slug = str(Path(root).resolve()).replace(":", "").replace("\\", "-").replace("/", "-")
+    slug = slug.replace("--", "-").lstrip("-")
+    return [d for d in home.iterdir()
+            if d.is_dir() and Path(root).name.replace("_", "-") in d.name.lower()]
+
+
+def s1(root: Path, since: str = "2026-07-14", until: str | None = None) -> dict:
+    by_dir: dict[str, list[dict]] = {}
+    for d in _transcript_dirs(root):
+        rows = []
+        for t in d.glob("*.jsonl"):
+            ts = _first_session_ts(t)
+            date = ts[:10] if ts else None
+            if date is None:
+                continue
+            if since and date < since:
+                continue
+            if until and date > until:
+                continue
+            try:
+                rows.append(s1_for_transcript(t))
+            except OSError:
+                continue
+        by_dir[d.name] = rows
+    all_rows = [r for rows in by_dir.values() for r in rows]
+    return {
+        "since": since,
+        "until": until,
+        **_s1_summary(all_rows),
+        "by_dir": {name: _s1_summary(rows) for name, rows in by_dir.items()},
     }
 
 
