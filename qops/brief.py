@@ -7,11 +7,10 @@ Two contracts, both asserted in tests/test_qops.py:
   2. it leads with a dirty-tree violation rather than papering over it.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
-
-from . import ledger
 
 TOKEN_CAP = 400
 BYTES_PER_TOKEN = 4          # PRD §2.1's own divisor, so the numbers compare
@@ -41,13 +40,59 @@ def _porcelain(root: Path) -> list[str]:
     return [line[3:] for line in out.splitlines() if len(line) > 3]
 
 
+def issue_from_branch(branch: str):
+    """The active sortie, from `<type>/<issue#>-<slug>` (ADR-0019).
+
+    The ledger cannot answer this: only `qops close` ever writes an `issue`, so
+    reading it back gives the last CLOSED sortie. `no-issue/` is the recorded
+    escape and deliberately has no number.
+    """
+    m = re.match(r"[a-z]+/(\d+)-", branch or "")
+    return int(m.group(1)) if m else None
+
+
+def routing(labels: list[str]) -> str:
+    """The ADR-0017 verdict for one issue, from its labels alone.
+
+    Pure, so it is testable without a network and cheap enough for hot path.
+    """
+    if "type:epic" in labels:
+        return "Mission - interview before any issue is written."
+    gate = next((l.split(":", 1)[1] for l in labels
+                 if l.startswith("gate:")), None)
+    if gate == "machine":
+        # ready:auto is the stronger claim - an unattended pickup - and is
+        # legal only on a gated issue. gate:none blocks it (finding B7).
+        auto = " `ready:auto`: proceed unattended." if "ready:auto" in labels else ""
+        return "gate:machine - no owner contact before review." + auto
+    if gate == "taste":
+        return ("gate:taste - the owner sees the artefact, not the diff; "
+                "machine gate green first.")
+    return "Unrouted - no `gate:` label, so not eligible for `ready:auto`."
+
+
+def _labels(root: Path, issue) -> list[str]:
+    """Labels for the active issue. Any failure is no labels: `gh` may be
+    absent, offline or slow, and a brief that fails is worse than one with no
+    verdict — it runs at SessionStart, before anything else."""
+    if not issue:
+        return []
+    try:
+        out = subprocess.run(
+            ["gh", "issue", "view", str(issue), "--json", "labels",
+             "-q", ".labels[].name"],
+            cwd=root, capture_output=True, text=True, timeout=5)
+    except Exception:
+        return []
+    return out.stdout.split() if out.returncode == 0 else []
+
+
 def collect(root: Path, cfg: dict) -> dict:
     dirty = _porcelain(root)
     worktrees = max(len(_git(root, "worktree", "list").splitlines()) - 1, 0)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     ahead = _git(root, "rev-list", "--count", "@{u}..HEAD") or "0"
-    events = ledger.read(root, 6)
-    issue = next((r.get("issue") for r in reversed(events) if r.get("issue")), None)
+    issue = issue_from_branch(branch)
     resume = ""
     p = Path(root) / ".qops" / "resume.md"
     if p.exists():
@@ -55,7 +100,8 @@ def collect(root: Path, cfg: dict) -> dict:
                 if l.startswith("- ")]
         resume = "\n".join(body[-3:])
     return {"branch": branch, "dirty": dirty, "worktrees": worktrees,
-            "ahead": int(ahead or 0), "issue": issue, "resume": resume}
+            "ahead": int(ahead or 0), "issue": issue, "resume": resume,
+            "labels": _labels(root, issue)}
 
 
 def render_from(state: dict, cfg: dict) -> str:
@@ -76,6 +122,8 @@ def render_from(state: dict, cfg: dict) -> str:
     if state.get("issue"):
         head += f" | sortie #{state['issue']}"
     lines.append(head)
+    if state.get("labels"):
+        lines.append(routing(state["labels"]))
     lines.append("Issues are the source of truth: `gh issue list`. "
                  "Vocabulary: CONTEXT.md | decisions: docs/adr/ | constraints: CLAUDE.md.")
     if state.get("resume"):
