@@ -187,6 +187,70 @@ def test_brief_is_quiet_when_the_tree_is_clean():
 
 
 # --------------------------------------------------------------------------
+# brief — the routing verdict (ADR-0017)
+#
+# The rule decides how much of the owner's time an issue may spend. In a skill
+# body it is a preference; here it is read unasked, every session.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("labels,expected", [
+    (["type:epic", "gate:taste"], "mission"),
+    (["type:code", "gate:machine"], "no owner contact"),
+    (["type:code", "gate:taste"], "artefact"),
+    (["type:code", "gate:none"], "unrouted"),
+    (["type:code"], "unrouted"),
+])
+def test_routing_verdict_per_gate(labels, expected):
+    assert expected in briefmod.routing(labels).lower()
+
+
+def test_routing_says_proceed_only_with_ready_auto():
+    """`gate:machine` alone means no contact before review. `ready:auto` is the
+    stronger claim — an unattended pickup — and needs both labels."""
+    assert "unattended" not in briefmod.routing(["gate:machine"]).lower()
+    assert "unattended" in briefmod.routing(["gate:machine", "ready:auto"]).lower()
+
+
+def test_routing_never_promises_autonomy_without_a_gate():
+    """gate:none blocks ready:auto (finding B7). A mislabelled issue must not
+    read as a licence to run unattended."""
+    for labels in (["ready:auto"], ["ready:auto", "gate:none"]):
+        assert "unattended" not in briefmod.routing(labels).lower()
+
+
+@pytest.mark.parametrize("branch,expected", [
+    ("feat/117-brief-routing-verdict", 117),
+    ("fix/110-ci-duplicate-runs", 110),
+    ("docs/112-phase7-proposal", 112),
+    ("no-issue/quick-look", None),
+    ("master", None),
+    ("gl45-telegram-drops", None),
+])
+def test_active_issue_comes_from_the_branch(branch, expected):
+    """The ledger only ever carried an `issue` on `qops close`, so the brief's
+    active sortie was the last CLOSED one — and a routing verdict for a closed
+    sortie is worse than none. The branch is the live fact (ADR-0019)."""
+    assert briefmod.issue_from_branch(branch) == expected
+
+
+def test_brief_prints_the_verdict_for_the_active_issue():
+    state = {"branch": "feat/117-x", "dirty": [], "worktrees": 1, "issue": 117,
+             "labels": ["type:code", "gate:machine"], "resume": "", "ahead": 0}
+    text = briefmod.render_from(state, qconfig.load(REPO))
+    assert "no owner contact" in text.lower()
+
+
+def test_brief_degrades_silently_when_labels_are_unavailable():
+    """`gh` may be absent, offline or slow. A brief that fails is worse than a
+    brief with no verdict — it is hot path and it runs before anything else."""
+    state = {"branch": "feat/117-x", "dirty": [], "worktrees": 1, "issue": 117,
+             "labels": [], "resume": "", "ahead": 0}
+    text = briefmod.render_from(state, qconfig.load(REPO))
+    assert "unrouted" not in text.lower()
+    assert "sortie #117" in text
+
+
+# --------------------------------------------------------------------------
 # metrics — S1 must reproduce the Phase -1 method exactly
 # --------------------------------------------------------------------------
 
