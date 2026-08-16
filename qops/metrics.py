@@ -258,11 +258,22 @@ def state_report(root: Path, cfg: dict) -> str:
     return text
 
 
+_FLAGS_WITH_VALUE = {"--since", "--until"}
+_FLAGS = {"--state", "--json"} | _FLAGS_WITH_VALUE
+
+
 def main(argv: list[str], root: Path, cfg: dict) -> int:
+    unknown = [a for a in argv if a.startswith("--") and a not in _FLAGS]
+    if unknown:
+        sys.stderr.write(f"qops metrics: unrecognised flag {unknown[0]}\n")
+        return 1
     if "--state" in argv:
         sys.stdout.write(state_report(root, cfg))
         return 0
-    report = {"S1_resume_cost": s1(root), "S2_kickoff_docs": s2(root),
+    since = argv[argv.index("--since") + 1] if "--since" in argv else "2026-07-14"
+    until = argv[argv.index("--until") + 1] if "--until" in argv else None
+    report = {"S1_resume_cost": s1(root, since=since, until=until),
+              "S2_kickoff_docs": s2(root, since=since),
               "S4_review_before_gate": s4(root), "S9_planned_to_working": s9(root),
               "S10_hot_path": s10(root, cfg)}
     if "--json" in argv:

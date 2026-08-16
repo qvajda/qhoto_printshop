@@ -420,6 +420,31 @@ def test_s2_counts_kickoff_class_docs():
     assert isinstance(n, int) and n >= 0
 
 
+def test_main_wires_since_through_to_s1(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_s1(root, since="2026-07-14", until=None):
+        seen["since"], seen["until"] = since, until
+        return {"since": since, "until": until}
+
+    monkeypatch.setattr(metrics, "s1", fake_s1)
+    monkeypatch.setattr(metrics, "s2", lambda root, since="2026-07-14": 0)
+    monkeypatch.setattr(metrics, "s4", lambda root: {"available": False})
+    monkeypatch.setattr(metrics, "s9", lambda root: {"available": False})
+    monkeypatch.setattr(metrics, "s10", lambda root, cfg: {})
+
+    rc = metrics.main(["--since", "2026-08-01", "--until", "2026-08-10", "--json"],
+                       tmp_path, {})
+    assert rc == 0
+    assert seen == {"since": "2026-08-01", "until": "2026-08-10"}
+
+
+def test_main_rejects_unrecognised_flag(tmp_path, capsys):
+    rc = metrics.main(["--bogus"], tmp_path, {})
+    assert rc != 0
+    assert "--bogus" in capsys.readouterr().err
+
+
 # --------------------------------------------------------------------------
 # install / doctor — rendered workflows, and drift is detectable
 # --------------------------------------------------------------------------
