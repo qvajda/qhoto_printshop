@@ -1,120 +1,55 @@
 {
+  "$comment": "ADR-0018. Only EXTERNAL skills appear here; the three qops-native bodies (interview, spec-to-issue, triage) are source under .claude/skills/ and are tracked. `ref` is the upstream commit the copy was verified against — ADR-0018's whole finding was that a lock with no ref cannot detect drift, so an entry without one is a defect. The refs below were verified on 2026-08-16 by fetching each skillPath at that sha and comparing it byte-for-byte (LF-normalised) with the installed copy: all seven matched. `computedHash` is npx-skills' own value and is left untouched.",
   "version": 1,
   "skills": {
     "build-models": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/build-models/SKILL.md",
       "computedHash": "35dbb6e36c1a8a471b3f5c424d5cc43908e745d73ca5ef8d3021d6d565026746"
-    },
-    "code-review": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/code-review/SKILL.md",
-      "computedHash": "591a274f7be02c24da6628b464b66be44c351adfccd7e8c12f550715c695e3fe"
     },
     "compare-models": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/compare-models/SKILL.md",
       "computedHash": "3e50d5a7caf707285a4d297a96982fe8a045741e31937da850bf74e3ef18f1bf"
-    },
-    "domain-modeling": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
-      "computedHash": "f54e391ce6cc28052af46840e3ef8519fd5e746331255510574f0270153186db"
     },
     "find-models": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/find-models/SKILL.md",
       "computedHash": "e5834aeab20d891725ac911dbb47a4f938d07682acf3561462280336ce627f01"
-    },
-    "grill-me": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/productivity/grill-me/SKILL.md",
-      "computedHash": "7edd436132b43ea2973710f0c28a9879c9b0910651eb89a991a7e98cb6dbbacb"
-    },
-    "grill-with-docs": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/grill-with-docs/SKILL.md",
-      "computedHash": "96718e0a89e48c7d76cc9759c7094a82ff34eb89ddc46a30388063fa9812356f"
-    },
-    "grilling": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/productivity/grilling/SKILL.md",
-      "computedHash": "4eb5bf61b1e602f9cedbd3a5e4469dfba1db0247d5d40956d03299c455b91197"
-    },
-    "loopy": {
-      "source": "Forward-Future/loop-library",
-      "sourceType": "github",
-      "skillPath": "skills/loopy/SKILL.md",
-      "computedHash": "2497f5f99b590d09f5d8ce9de557b954f80429b7ce901357ae6421e27035ad54"
     },
     "prompt-images": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/prompt-images/SKILL.md",
       "computedHash": "82253e3dea73850d33185aa2182c980fa86e34eb0dda50c9b071181123534c70"
     },
     "prompt-videos": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/prompt-videos/SKILL.md",
       "computedHash": "77f87ec498ef64115f7459c5501ceca7202ebcfd3b950b8f2d48c2c3fe1555b8"
     },
     "publish-models": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/publish-models/SKILL.md",
       "computedHash": "3aff39b6de3c10afe01320ce12c128c95d1e8ba8166223301f68a3d9af370030"
     },
     "run-models": {
       "source": "replicate/skills",
       "sourceType": "github",
+      "ref": "2f36e415965ae63baa1c9f6635888092bcd771d3",
       "skillPath": "skills/run-models/SKILL.md",
       "computedHash": "33bbebe173451d431541428f50c4b116036c0e84ff88ec58c4eb07a1e66930cc"
-    },
-    "setup-matt-pocock-skills": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
-      "computedHash": "91a64ff6b84297fc902d5c435436f9b5783e79c3f4e7073dd9d4af9c04a4ef50"
-    },
-    "tdd": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/tdd/SKILL.md",
-      "computedHash": "36023c75862487ce5628acf9eafaf18a97f13b930af3cfa5370674619cdd618c",
-      "localPatch": "upstream tdd references /codebase-design, the post-rename name for what we pin as domain-modeling (skills/engineering/domain-modeling/SKILL.md, unrenamed locally). Patched the reference to /domain-modeling so it resolves against what's actually installed. computedHash reflects this local edit, not upstream content — will mismatch on next `skills update` until the mattpocock set is re-pulled at a single commit (post-Phase-6)."
-    },
-    "to-spec": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/to-spec/SKILL.md",
-      "computedHash": "144cf30cf527faff7f9211ae81ad3de5aaa6390f639b87ca5a48f5e818a8d33e"
-    },
-    "to-tickets": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/to-tickets/SKILL.md",
-      "computedHash": "e817ecc8ffbb51dd5edd7cc141fe209f31c298dfd66b886e0c6c9aba2dd70266"
-    },
-    "triage": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/triage/SKILL.md",
-      "computedHash": "f844266a4d3b742b42045a162acb8eda26b8e9359a3b7a3526665c453148473a"
-    },
-    "wayfinder": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/wayfinder/SKILL.md",
-      "computedHash": "d6f094c4d06e575818049adf8206670d1412c6a8afd011fe59434d414f9f17ed"
     }
   }
 }

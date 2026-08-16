@@ -35,6 +35,60 @@ def test_config_carries_every_project_specific():
 
 
 # --------------------------------------------------------------------------
+# skills — ADR-0018. ADR-0013 made the count a mitigation a human was asked to
+# re-read; nobody did and 11 accepted became 19 installed. Here it is a check.
+# --------------------------------------------------------------------------
+
+def test_declared_skill_set_matches_what_is_installed():
+    assert install.skill_drift(REPO, qconfig.load(REPO)) == []
+
+
+def test_skill_drift_catches_an_undeclared_skill_and_a_refless_pin(tmp_path):
+    (tmp_path / ".claude" / "skills").mkdir(parents=True)
+    for name in ("interview", "grill-me"):
+        (tmp_path / ".claude" / "skills" / name).mkdir()
+    (tmp_path / "skills-lock.json").write_text(json.dumps({"skills": {
+        "run-models": {"source": "replicate/skills"},          # no ref
+    }}), encoding="utf-8")
+    cfg = {"skills": {"native": ["interview", "triage"],
+                      "external": ["run-models"]}}
+    problems = "\n".join(install.skill_drift(tmp_path, cfg))
+    assert "grill-me" in problems and "not declared" in problems
+    assert "triage" in problems and "missing" in problems
+    assert "run-models" in problems and "no upstream ref" in problems
+
+
+def test_gh_api_writes_are_never_allowlisted():
+    """Sign-off item 10. `gh api` bare is a GET and is allowlisted; a write to
+    repo settings is an owner decision, already taken. The allow rule is only
+    safe while the deny rules take the method flags back."""
+    perms = json.loads((REPO / ".claude" / "settings.json")
+                       .read_text(encoding="utf-8"))["permissions"]
+    denied = set(perms.get("deny", []))
+    for flag in ("-X", "--method", "-f", "--field", "-F", "--input"):
+        assert f"Bash(gh api {flag}:*)" in denied, f"gh api {flag} is not denied"
+    assert not any(a.startswith("Bash(gh api -X") for a in perms["allow"])
+
+
+@pytest.mark.parametrize("agent", ["planner", "interactor"])
+def test_owner_facing_asks_are_capped_at_one_page(agent):
+    """Sign-off item 9: enforced in the agent definitions, not as a wish."""
+    text = (REPO / ".claude" / "agents" / f"{agent}.md").read_text(encoding="utf-8")
+    assert "One page" in text
+    assert "four options" in text and "one recommendation" in text
+
+
+def test_triage_stays_owner_only_and_spec_to_issue_does_not():
+    """ADR-0019 decided the two by name. A decision with no assertion is a
+    preference (GL-53), so the frontmatter is asserted, not trusted."""
+    skills = REPO / ".claude" / "skills"
+    triage = (skills / "triage" / "SKILL.md").read_text(encoding="utf-8")
+    spec = (skills / "spec-to-issue" / "SKILL.md").read_text(encoding="utf-8")
+    assert "disable-model-invocation: true" in triage
+    assert "disable-model-invocation" not in spec
+
+
+# --------------------------------------------------------------------------
 # guard — the hard blocks. ADR-0001: PreToolUse exit 2 blocks for real.
 # --------------------------------------------------------------------------
 

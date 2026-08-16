@@ -5,6 +5,7 @@ A workflow nobody may hand-edit is the point: the CLAUDE.md line cap and the
 tripwire list live in config, and the workflow is a rendering of them.
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -93,8 +94,54 @@ def broken_doc_links(root: Path) -> list[str]:
     return sorted(missing)
 
 
+def skill_drift(root: Path, cfg: dict) -> list[str]:
+    """The installed skill set equals the declared one (ADR-0018).
+
+    ADR-0013 named the count as its mitigation and asked a human to re-read it.
+    Nobody did, and 11 accepted skills became 19 installed. So it is a check.
+
+    A MISSING external is not a problem: they are gitignored, reinstallable
+    copies, so a fresh checkout (CI) legitimately has none. An EXTRA is - that
+    is the drift that actually happened. The natives are tracked source and
+    must be there.
+    """
+    root, problems = Path(root), []
+    declared = cfg.get("skills") or {}
+    native = set(declared.get("native", []))
+    external = set(declared.get("external", []))
+    if not native and not external:
+        return ["`.qops/config.yml` declares no `skills:` set — ADR-0018"]
+
+    skills_dir = root / ".claude" / "skills"
+    installed = {p.name for p in skills_dir.iterdir() if p.is_dir()} \
+        if skills_dir.is_dir() else set()
+    for extra in sorted(installed - native - external):
+        problems.append(f"skill `{extra}` is installed and not declared in "
+                        f".qops/config.yml — uninstall it or declare it")
+    for missing in sorted(native - installed):
+        problems.append(f"native skill `{missing}` is declared and missing "
+                        f"from .claude/skills/")
+
+    lock_path = root / "skills-lock.json"
+    if not lock_path.exists():
+        return problems + ["skills-lock.json missing"]
+    lock = json.loads(lock_path.read_text(encoding="utf-8")).get("skills", {})
+    for name in sorted(external - set(lock)):
+        problems.append(f"external skill `{name}` is declared and absent from "
+                        f"skills-lock.json")
+    for name in sorted(set(lock) - external):
+        problems.append(f"skills-lock.json pins `{name}`, which is not in the "
+                        f"declared external set")
+    for name, entry in sorted(lock.items()):
+        if not entry.get("ref"):
+            problems.append(f"skills-lock.json: `{name}` has no upstream ref — "
+                            f"drift against it cannot be detected (ADR-0018)")
+    return problems
+
+
 def doctor(root: Path, cfg: dict) -> list[str]:
     problems = drift(root, cfg)
+    problems += skill_drift(root, cfg)
     problems += [f"broken doc citation: {m}" for m in broken_doc_links(root)]
     settings = Path(root) / ".claude" / "settings.json"
     if not settings.exists():

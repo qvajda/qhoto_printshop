@@ -49,6 +49,14 @@ db/group_preview_images/
 .claude/*
 !.claude/settings.json
 !.claude/agents/
+# The three qops-native skill bodies are OURS to maintain (ADR-0018), so they are
+# source and they are tracked. The surviving external copies are not: they are
+# reinstallable from skills-lock.json, which carries the ref they came from.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/interview/
+!.claude/skills/spec-to-issue/
+!.claude/skills/triage/
 
 # qops — the split is decided, not inherited (PRD v3 decision 21 / finding E1).
 # TRACKED, deliberately: .qops/config.yml and .qops/issues.md.
