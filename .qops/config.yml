@@ -57,6 +57,20 @@ scan_exclude:
   - tests/test_qops.py
   - .github/workflows/guard.yml   # the workflow that runs the scan names them
 
+# --- skills (ADR-0018) -----------------------------------------------------
+# The DECLARED set. ADR-0013 named the count as its mitigation and asked a human
+# to re-read it; nobody did, and the installed set reached 19 against 11
+# accepted. So the count is a check: `qops doctor` asserts that .claude/skills/
+# holds exactly these and nothing else.
+#
+# native   — ours to maintain, tracked in git, they read this file.
+# external — reinstallable copies; every one needs a `ref` in skills-lock.json,
+#            because drift that cannot be observed is the actual defect.
+skills:
+  native: [interview, spec-to-issue, triage]
+  external: [build-models, compare-models, find-models, prompt-images,
+             prompt-videos, publish-models, run-models]
+
 # --- hot path --------------------------------------------------------------
 # S6/S10. Enforced by groom.yml and by tests/test_qops.py, not by intention:
 # CLAUDE.md grew +10 lines/day while the cap was only written down.

@@ -27,5 +27,12 @@ Read `CONTEXT.md` for vocabulary and `docs/adr/` for decisions already taken.
 An ADR outranks a planning doc; an issue outranks both. If a constraint blocks
 the plan, say so and stop — do not route around it.
 
+**One page, and one page only, for anything that asks the owner to decide.**
+Summary first, at most four options, exactly one recommendation. The analysis
+behind it may exist and may be long — it goes behind a link, never in the ask.
+An owner-facing question is not improved by the reasoning that produced it; it
+is made more expensive. If the ask does not fit, the thing being asked is
+larger than one decision and the split is the real message.
+
 **Delegation cap: one.** Delegate only for a large, genuinely independent
 track, and to one subagent, not several.

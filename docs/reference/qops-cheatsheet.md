@@ -17,26 +17,32 @@ gh issue view <n>                                # the plan lives in the issue b
 
 ## Which command, when
 
-**Lost? `/ask-matt`.** It routes you to the right skill for your situation. Use it
-instead of reading this table.
+**qops owns three skills and no more** (ADR-0018). They are the three that carry
+sequencing and have to know *this* repo's taxonomy. Everything else is either
+the substrate — a hook handing you the next step at the moment it matters — or a
+skill your Claude install already carries, which this repo does not pin, ship or
+maintain.
 
-| You want to… | Type this |
-|---|---|
-| Decide *what* to build, when the design isn't settled | `/grill-me` — interviews you until every branch is resolved |
-| Same, and the project needs new vocabulary or an ADR out of it | `/grill-with-docs` — grills, then updates `CONTEXT.md` and `docs/adr/` inline |
-| Write up what you just decided, onto the issue tracker | `/to-spec` — no interview, synthesises the conversation and publishes |
-| Split a plan into several dependent tickets | `/to-tickets` — writes native blocking links between them |
-| Plan something bigger than one session | `/wayfinder` — decision tickets you resolve one at a time |
-| Build the thing | `/tdd` — red, green, refactor, one vertical slice |
-| Review a diff before merging | `/code-review` — two axes, standards and spec, in parallel |
-| Work out why something is broken | `/diagnosing-bugs` if installed, else `/grill-me` |
-| Sort out labels and stale issues | `/triage` |
-| Audit or repair one of the five loops | `/loopy` → Loop Doctor |
-| Sharpen a term the project keeps fumbling | `/domain-modeling` |
+| You want to… | Type this | Whose |
+|---|---|---|
+| Decide *what* to build, when the design isn't settled | `/interview` — rounds of 3–6 questions, ending in an ADR, a constraint record or an issue | qops |
+| Write up what you just decided, onto the issue tracker | `/spec-to-issue` — writes `.qops/config.yml`'s labels; the publish step waits for you | qops |
+| Sort out labels and stale issues | `/triage` — the state machine, owner-invoked only | qops |
+| Plan something bigger than one session | Nothing to type. An epic issue plus `qops brief`'s routing verdict (ADR-0017) is the whole mechanic |
+| Build the thing | Your install's TDD skill — red, green, refactor, one vertical slice. The gate is `ci.gate_command` in `.qops/config.yml` | install |
+| Review a diff before merging | Your install's `/code-review` | install |
+| Work out why something is broken | Your install's systematic-debugging skill; if there isn't one, `/interview` the failure | install |
+| Sharpen a term the project keeps fumbling | Your install's domain-modeling skill, then write it into `CONTEXT.md` | install |
 
-**A normal sortie is two skills:** `/grill-me` → `/to-spec` to plan it, then `/tdd`
-→ `/code-review` to build it. If you are reaching for a third, ask whether the
-ticket is too big.
+**A normal sortie is two qops skills:** `/interview` → `/spec-to-issue` to plan
+it, then build and review with whatever your install provides. If you are
+reaching for a third qops skill, the ticket is too big.
+
+**Why the list shrank from nineteen.** ADR-0013 installed eleven external skills
+as editable copies and owed a displacement it never paid; the installed set
+drifted to nineteen and nothing noticed, because the count was a mitigation a
+human was asked to re-read. `qops doctor` now asserts the installed set equals
+`.qops/config.yml`'s `skills:`, so it cannot drift again in silence.
 
 ---
 
@@ -66,6 +72,7 @@ Branch names carry the issue number: `<type>/<issue#>-<slug>`.
 | `qops guard` blocked a command | It is meant to. Committing to `master`, `push --force`, `reset --hard` are hard-blocked. If it blocked something legitimate, that is a qops bug — file it, don't work around it |
 | The brief looks stale after a crash | `python -m qops resume --write` rebuilds it from the ledger. The ledger is the durable record; `resume.md` is a view of it |
 | `qops doctor` reports drift | A rendered workflow no longer matches its template plus config. Re-run `python -m qops install` |
+| `qops doctor` reports a skill | An installed skill is not in `.qops/config.yml`'s `skills:`, a native one is missing, or an external pin has no upstream `ref`. Uninstall it, reinstall it, or declare it — do not widen the declared set to silence the check, which is how it reached nineteen |
 | A doc link broke | `qops doctor` checks every `docs/*.md` path cited from `pipeline/`, `scripts/` and `tests/`. Fix the citation, or move the doc back |
 | You want to know what changed | `python -m qops metrics` — and read the window it reports before comparing anything |
 

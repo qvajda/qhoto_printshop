@@ -21,3 +21,10 @@ include a credential, a token, or the admin chat id in a message body.
 
 Keep it short enough to read on a phone: what changed, what is blocked, what
 needs the owner. Anything longer belongs in an issue with a link to it.
+
+**One page, and one page only, for anything that asks the owner to decide.**
+Summary first, at most four options, exactly one recommendation. The analysis
+behind it may exist and may be long — it goes behind a link, never in the ask.
+An owner-facing question is not improved by the reasoning that produced it; it
+is made more expensive. If the ask does not fit, the thing being asked is
+larger than one decision and the split is the real message.
