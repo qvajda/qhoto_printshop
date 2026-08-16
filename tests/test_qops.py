@@ -529,6 +529,47 @@ def test_automerge_waits_for_the_gate_rather_than_merging_now():
 
 
 # --------------------------------------------------------------------------
+# automerge — the release-on-success half (#128)
+#
+# #122 released the claim on failure and on nothing else, so #116 shipped and
+# its issue stayed OPEN at `state:building` with `ready:auto` on it: not a
+# re-pick loop, a silent one-row leak that only grows, and `metrics.S9` counted
+# a finished sortie as in-flight. The mechanism is here rather than in the
+# launched agent's PR body — an instruction in a prompt is a preference, not a
+# control (GL-53).
+# --------------------------------------------------------------------------
+
+def test_a_merged_pr_advances_its_issue_off_the_claim():
+    text = _automerge_text()
+    advance = text.split("\n  advance:")[1]
+    assert "github.event.pull_request.merged == true" in advance
+    assert "--add-label state:done" in advance
+    assert "--remove-label ready:auto" in advance
+    assert "--remove-label state:building" in advance
+
+
+def test_advance_labels_but_never_closes_the_issue():
+    """A merged PR means the code landed, not that the sortie is judged. On
+    `gate:taste` work the owner's read is the only judgement there is."""
+    assert "gh issue close" not in _automerge_text()
+
+
+def test_advance_does_not_depend_on_the_agent_writing_closes():
+    """The branch already carries the issue number (ADR-0019) and the workflow
+    already parses it. #116's PR carried no `Closes` line and shipped anyway."""
+    advance = _automerge_text().split("\n  advance:")[1]
+    assert "^[a-z]+/([0-9]+)-" in advance
+    assert "$REF" in advance
+    assert "${{ github.event.pull_request.head.ref }}" not in advance.split("env:")[0]
+
+
+def test_automerge_hears_the_merge_without_re_merging_a_closed_pr():
+    text = _automerge_text()
+    assert "closed" in text.split("types: [")[1].split("]")[0]
+    assert "github.event.action != 'closed'" in text.split("\n  advance:")[0]
+
+
+# --------------------------------------------------------------------------
 # the two rules that are otherwise only stated in a workflow
 # --------------------------------------------------------------------------
 
@@ -659,6 +700,24 @@ def test_a_failed_run_releases_the_claim(monkeypatch, tmp_path):
     assert "state:building" in edit and "state:planned" in edit
     comment = next(c for c in calls if c[:3] == ["gh", "issue", "comment"])
     assert "exit 1" in comment[-1]
+
+
+def test_the_launch_prompt_names_the_branch_prefixes(monkeypatch):
+    """#116 branched `code/116-...` — it read `type:code` off the issue and used
+    a label where ADR-0019 wants a commit type. Prompt-only on purpose: a merge
+    rejected over a prefix nit would be worse than the drift."""
+    prompt = qops_pickup.launch_prompt("116")
+    for prefix in ("feat", "fix", "docs", "chore"):
+        assert prefix in prompt
+    assert "`<type>/116-<slug>`" in prompt
+
+
+def test_the_launch_prompt_does_not_ask_the_pr_to_close_the_issue():
+    """`Closes #n` would close it on merge. Closing is the owner's; the loop
+    advances the label (see the `advance` job)."""
+    prompt = qops_pickup.launch_prompt("116")
+    assert "Refs #116" in prompt
+    assert "Closes #116" not in prompt
 
 
 def test_no_branch_and_no_pr_is_a_failed_run(monkeypatch):

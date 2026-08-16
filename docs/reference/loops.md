@@ -13,7 +13,7 @@ is `pickup-loop`, and it is off.
 | `triage-loop` | Actions — `groom.yml` label-hygiene job | weekly + on demand | none | warns; may not label |
 | `groom-loop` | Actions — `groom.yml` hot-path job | on any `CLAUDE.md` change, weekly | none | fails the build |
 | `pickup-loop` | Windows scheduled task `qops-pickup-loop`, **disabled** | hourly when enabled | yes | branch + commit + PR; merges only via `automerge-loop` |
-| `automerge-loop` | Actions — `automerge.yml` | every PR event | none | turns on native auto-merge for a `gate:machine` PR; may not merge a `gate:taste` one |
+| `automerge-loop` | Actions — `automerge.yml` | every PR event | none | turns on native auto-merge for a `gate:machine` PR; may not merge a `gate:taste` one; labels a merged sortie `state:done`, may not close it |
 
 ## gate-loop
 
@@ -95,9 +95,10 @@ waited on an approval nobody was there to give. Three repairs:
 ## automerge-loop
 
 **Trigger:** any pull-request event — opened, reopened, synchronised, labelled,
-unlabelled, ready-for-review.
+unlabelled, ready-for-review, closed.
 **Does:** turns on GitHub's **native** auto-merge for a qualifying PR. It does
-not merge; branch protection's required checks do, when they go green.
+not merge; branch protection's required checks do, when they go green. On
+`closed` + merged it advances the linked issue instead (below).
 **Qualifies:** not a draft, not from a fork, a branch matching
 `<type>/<issue#>-<slug>` (ADR-0019), and the **linked issue** carrying
 `gate:machine` and no `no-auto`. The gate is read from the issue, not the PR —
@@ -111,6 +112,29 @@ judge — the gate judged it. A mindless approval button is not a control
 `master` unread. That is the same exposure every unread manual merge already
 carried, made honest — so a defect that lands this way is a **missing check**,
 and the fix is the check, not the restoration of the click.
+**Amended 2026-08-16 (#128): the merge releases the claim.** #122 released it on
+failure and on nothing else, so the first successful unattended run shipped and
+left its issue OPEN at `state:building` with `ready:auto` still on it —
+`metrics.S9` then reported a finished sortie as in-flight, and the instrument
+ADR-0013's re-decision depends on was counting wrong. The `advance` job now
+fires on a merged PR whose branch names an issue, sets `state:done` and drops
+`ready:auto` and every other `state:`.
+
+- **It labels; it never closes.** A merged PR means the code landed, not that
+  the sortie is judged. On `gate:taste` work the owner's read is the only
+  judgement there is, so closing stays the owner's.
+- **It does not rest on the agent writing `Closes #<n>`.** The branch already
+  carries the issue number (ADR-0019) and the workflow already parses it to
+  read the gate. #116's PR carried no such line and shipped anyway — an
+  instruction in a prompt is a preference, not a control (GL-53). The launch
+  prompt gained the instruction half too, as `Refs #<n>`: a link, not a close.
+- **It is not conditional on the gate.** However the PR was merged, by the job
+  above or by the owner, the row is no longer in flight.
+- **The launch prompt names the branch prefixes.** #116 branched
+  `code/116-...`: it read `type:code` off the issue and used a label where
+  ADR-0019 wants a commit type (`feat|fix|docs|chore|refactor|test`). This half
+  is prompt-only on purpose — a merge rejected over a prefix nit would be worse
+  than the drift.
 
 ## Audit
 

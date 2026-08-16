@@ -15,11 +15,17 @@
 # `github.event.pull_request.labels` and was structurally incapable of ever
 # firing. The issue number comes from the branch, per ADR-0019 — the same rule
 # `qops brief` uses.
+#
+# #128 added the other half: a merge released nothing, so a shipped sortie sat
+# at `state:building` with `ready:auto` still on it forever. The `advance` job
+# below closes that leak on the merge side, where it cannot depend on the
+# launched agent having remembered to write anything.
 name: automerge
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review,
+            closed]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,8 +37,11 @@ jobs:
     #   draft — a draft is not a claim that the work is done
     #   fork  — an outside contributor's PR is a taste decision, and a fork
     #           token cannot be trusted with this repo's merges
+    #   closed — `closed` is here for `advance`; there is nothing left to
+    #           auto-merge on a PR that is already gone
     if: >-
-      github.event.pull_request.draft == false
+      github.event.action != 'closed'
+      && github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: {{runs_on}}
     permissions:
@@ -66,3 +75,39 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
         run: gh pr merge --auto --squash --delete-branch --repo {{repo}} "$PR"
+
+  advance:
+    # #128. A merged PR means the code landed, so the sortie's issue reaches a
+    # terminal state and stops carrying `ready:auto` — the claim `pickup-loop`
+    # took is released on success, not only on failure.
+    #
+    # It labels; it does NOT close. A merge is not a judgement, and on a
+    # `gate:taste` sortie the owner's read is the only judgement there is.
+    # Closing stays the owner's.
+    #
+    # Unconditional on the gate: whoever merged it, by hand or by the job
+    # above, the code is on {{default_branch}} and the row is not in flight.
+    if: >-
+      github.event.action == 'closed'
+      && github.event.pull_request.merged == true
+    runs-on: {{runs_on}}
+    permissions:
+      issues: write
+    steps:
+      - name: the merged sortie reaches a terminal state
+        # REF is an environment variable for the same reason it is above.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          n=$(printf '%s' "$REF" | sed -nE 's|^[a-z]+/([0-9]+)-.*|\1|p')
+          # `no-issue/` branches carry no sortie and have nothing to advance.
+          [ -n "$n" ] || { echo "::notice::branch carries no issue number"; exit 0; }
+          # Removing a label the issue does not carry is a no-op, so the whole
+          # state: family goes in one call rather than a read-then-write.
+          gh issue edit "$n" --repo {{repo}} \
+            --add-label state:done \
+            --remove-label ready:auto \
+            --remove-label state:triage --remove-label state:planned \
+            --remove-label state:building --remove-label state:gate \
+            --remove-label state:review --remove-label state:blocked
