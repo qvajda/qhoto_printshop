@@ -370,10 +370,11 @@ def test_s2_counts_kickoff_class_docs():
 # install / doctor — rendered workflows, and drift is detectable
 # --------------------------------------------------------------------------
 
-def test_install_renders_the_five_workflows(tmp_path):
+def test_install_renders_the_six_workflows(tmp_path):
     written = install.render_all(tmp_path, qconfig.load(REPO))
     names = {Path(p).name for p in written}
-    assert names == {"test.yml", "gate.yml", "guard.yml", "digest.yml", "groom.yml"}
+    assert names == {"test.yml", "gate.yml", "guard.yml", "digest.yml",
+                     "groom.yml", "automerge.yml"}
     import re
     for p in written:
         # `${{ secrets.X }}` is GitHub's own syntax and stays; qops placeholders
@@ -396,6 +397,56 @@ def test_doctor_detects_drift(tmp_path):
 
 def test_the_repo_itself_is_installed_and_undrifted():
     assert install.drift(REPO, qconfig.load(REPO)) == []
+
+
+# --------------------------------------------------------------------------
+# automerge — ADR-0020's conditions, so loosening one fails a test
+#
+# The workflow decides, unattended, that no human will read a diff before it
+# reaches master. Each condition below is the reason that is safe.
+# --------------------------------------------------------------------------
+
+def _automerge_text() -> str:
+    return install.render_one("automerge.yml", qconfig.load(REPO))
+
+
+@pytest.mark.parametrize("condition", [
+    "gate:machine",                     # the gate that authorises it
+    "no-auto",                          # the standing per-issue veto
+    "draft == false",                   # a draft is not a claim of done
+    "head.repo.full_name == github.repository",   # never a fork
+])
+def test_automerge_keeps_every_adr_0020_condition(condition):
+    assert condition in _automerge_text()
+
+
+def test_automerge_reads_the_gate_from_the_issue_not_the_pr():
+    """The first cut read `github.event.pull_request.labels` and could never
+    fire: nothing labels a PR, and issues are the source of truth. The issue
+    number comes from the branch (ADR-0019), so `no-issue/` never qualifies."""
+    text = _automerge_text()
+    assert "gh issue view" in text
+    assert "pull_request.labels.*.name" not in text   # the expression form
+    assert "^[a-z]+/([0-9]+)-" in text
+
+
+def test_automerge_never_interpolates_the_branch_into_a_shell():
+    """A branch name is attacker-controlled on a public repo. It reaches the
+    shell as an environment variable or not at all."""
+    text = _automerge_text()
+    assert "${{ github.event.pull_request.head.ref }}" not in text.split("env:")[0]
+    assert "$REF" in text
+
+
+def test_automerge_squashes_and_deletes():
+    assert "--squash" in _automerge_text()
+    assert "--delete-branch" in _automerge_text()
+
+
+def test_automerge_waits_for_the_gate_rather_than_merging_now():
+    """`--auto` hands the merge to branch protection's required checks. Merging
+    directly would be the one thing ADR-0020 does not authorise."""
+    assert "--auto" in _automerge_text()
 
 
 # --------------------------------------------------------------------------
