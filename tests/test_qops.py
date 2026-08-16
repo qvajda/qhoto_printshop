@@ -575,3 +575,69 @@ def test_read_only_agents_cannot_write():
     for role in ("planner", "reviewer", "triager", "interactor"):
         tools = qconfig.load(REPO)["agents"][role]["tools"]
         assert not ({"Write", "Edit", "MultiEdit", "NotebookEdit"} & set(tools)), role
+
+
+# --------------------------------------------------------------------------
+# pickup-loop — the unattended write grant (#122). The 2026-08-16 acceptance
+# run read for 62 seconds and could not write a line: the launch carried no
+# permission mode, so every branch and every edit waited on a human who was
+# not there. The grant is per-launch and scoped; the guard stays the control.
+# --------------------------------------------------------------------------
+
+sys.path.insert(0, str(REPO / "scripts"))
+import qops_pickup  # noqa: E402
+
+
+def test_launch_carries_a_write_grant():
+    argv = qops_pickup.launch_argv("work #116")
+    assert "--permission-mode" in argv and argv[argv.index("--permission-mode") + 1] == "acceptEdits"
+    assert "--allowedTools" in argv
+
+
+def test_the_grant_is_the_coder_toolset_and_no_wider():
+    """#123 asks what each role may run. Until it answers, the launch borrows
+    the coder's answer rather than inventing a second one."""
+    granted = qops_pickup.launch_argv("x")[qops_pickup.launch_argv("x").index("--allowedTools") + 1]
+    assert set(granted.split(",")) == set(qconfig.load(REPO)["agents"]["coder"]["tools"])
+
+
+def test_launch_never_passes_a_blanket_bypass():
+    argv = qops_pickup.launch_argv("x")
+    for flag in qops_pickup.BLANKET_BYPASS:
+        assert flag not in argv
+    assert not any(a.startswith("--dangerously") for a in argv)
+
+
+def test_launch_marks_the_session_unattended():
+    assert qops_pickup.launch_env()["QOPS_UNATTENDED"] == "1"
+
+
+def test_guard_refuses_a_sandbox_escape_when_unattended():
+    cfg = qconfig.load(REPO)
+    payload = {"command": "git checkout -b feat/116-x", "dangerouslyDisableSandbox": True}
+    ctx = {"branch": "master", "worktrees": 1, "unattended": True}
+    assert "unattended" in (guard.check("Bash", payload, ctx, cfg) or "")
+    ctx["unattended"] = False
+    assert guard.check("Bash", payload, ctx, cfg) is None
+
+
+def test_a_failed_run_releases_the_claim(monkeypatch, tmp_path):
+    """The claim was a one-way door: a failed run left `state:building` and no
+    later fire could reach the issue again (GL-46 — a swallowed failure must
+    leave a state change behind)."""
+    calls = []
+    monkeypatch.setattr(qops_pickup.subprocess, "run",
+                        lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(qops_pickup.ledger, "append", lambda *a, **k: None)
+    qops_pickup.release(tmp_path, "116", "exit 1")
+    edit = next(c for c in calls if c[:3] == ["gh", "issue", "edit"])
+    assert "state:building" in edit and "state:planned" in edit
+    comment = next(c for c in calls if c[:3] == ["gh", "issue", "comment"])
+    assert "exit 1" in comment[-1]
+
+
+def test_no_branch_and_no_pr_is_a_failed_run(monkeypatch):
+    """The 62-second run exited 0. Exit code alone would have kept the claim."""
+    monkeypatch.setattr(qops_pickup.subprocess, "run",
+                        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "", ""))
+    assert qops_pickup.produced_work(REPO, "999999") is False

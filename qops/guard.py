@@ -7,6 +7,7 @@ so there is one definition with two enforcement points.
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -47,6 +48,13 @@ def check(tool_name: str, tool_input: dict, ctx: dict, cfg: dict) -> str | None:
 
     if tool_name == "Bash":
         cmd = tool_input.get("command", "")
+
+        # #122: a denied unattended session retried with the sandbox off. An
+        # owner at a keyboard can still make that call; a pickup-loop launch
+        # (which sets QOPS_UNATTENDED) cannot, because nobody is reading.
+        if tool_input.get("dangerouslyDisableSandbox") and ctx.get("unattended"):
+            return ("dangerouslyDisableSandbox is refused in an unattended run. "
+                    "Report the blocked command on the issue instead.")
 
         if _FORCE.search(cmd):
             return "force-push is blocked. Rebase and push normally, or ask the owner."
@@ -103,7 +111,8 @@ def git_context(root: Path) -> dict:
             return ""
     worktrees = len([l for l in run("worktree", "list").splitlines() if l.strip()])
     return {"branch": run("rev-parse", "--abbrev-ref", "HEAD"),
-            "worktrees": max(worktrees - 1, 0)}
+            "worktrees": max(worktrees - 1, 0),
+            "unattended": os.environ.get("QOPS_UNATTENDED") == "1"}
 
 
 # --- the CI half -----------------------------------------------------------

@@ -74,6 +74,23 @@ by the owner alone; the triager is forbidden from applying it.
 **Runtime note:** `scripts/qops_pickup.py` without `--launch` prints what it
 would pick and starts nothing, which is how the wiring is proved without
 spending anything.
+**Amended 2026-08-16 (#122):** the first acceptance run read for 62 seconds and
+wrote nothing — the launch carried no permission mode, so every branch and edit
+waited on an approval nobody was there to give. Three repairs:
+
+- **A scoped launch grant.** `--permission-mode acceptEdits` plus
+  `--allowedTools` set to the *coder role's* toolset and no wider. It removes
+  the interactive prompt; it widens nothing. The PreToolUse guard and branch
+  protection remain the controls, and a blanket bypass
+  (`--dangerously-skip-permissions`) is asserted absent, not merely omitted. If
+  the grant later needs a per-role shape, that is #123 arriving.
+- **The claim is released on failure.** A non-zero exit, *or* an exit with no
+  branch and no PR, reverts `state:building` → `state:planned` and comments why.
+  The 62-second run exited 0, so exit code alone would have kept the door shut.
+- **No sandbox escape unattended.** The denied session retried with
+  `dangerouslyDisableSandbox`. The launch sets `QOPS_UNATTENDED=1` and `qops
+  guard` refuses that flag when it is set. An owner at a keyboard may still
+  make that call; a loop with nobody reading may not.
 
 ## automerge-loop
 
