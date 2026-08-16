@@ -89,13 +89,30 @@ def main(argv: list[str]) -> int:
               f"{claim.stderr.strip()}", file=sys.stderr)
         return 1
     ledger.append(root, "pickup", {"issue": num})
-    prompt = (f"Work sortie #{issue['number']} to its stated acceptance criteria. "
-              f"Branch first, commit, open a PR, request review. Do not merge.")
-    rc = subprocess.run(launch_argv(prompt), cwd=root, env=launch_env()).returncode
+    rc = subprocess.run(launch_argv(launch_prompt(num)),
+                        cwd=root, env=launch_env()).returncode
     if rc or not produced_work(root, num):
         release(root, num, f"exit {rc}" if rc else "no branch and no PR")
         return rc or 1
     return 0
+
+
+BRANCH_PREFIXES = ("feat", "fix", "docs", "chore", "refactor", "test")
+
+
+def launch_prompt(num: str) -> str:
+    """The instruction half of #128. `automerge-loop` is the assertion half —
+    an instruction in a prompt is a preference, not a control (GL-53).
+
+    The branch clause exists because the first unattended run read `type:code`
+    off the issue and branched `code/116-...`: the pattern matched, but a label
+    is not a commit type. The link line is `Refs`, never `Closes` — a merge is
+    not a judgement, so the loop advances the label and the owner closes."""
+    return (f"Work sortie #{num} to its stated acceptance criteria. "
+            f"Branch first as `<type>/{num}-<slug>` where <type> is a commit "
+            f"type — one of {'|'.join(BRANCH_PREFIXES)} — never an issue label. "
+            f"Commit, open a PR whose body says `Refs #{num}` (not `Closes`), "
+            f"request review. Do not merge.")
 
 
 def launch_argv(prompt: str) -> list[str]:
