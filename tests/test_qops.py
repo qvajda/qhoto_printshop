@@ -420,6 +420,62 @@ def test_s2_counts_kickoff_class_docs():
     assert isinstance(n, int) and n >= 0
 
 
+# --------------------------------------------------------------------------
+# metrics — S11/S12/S13, usage not ROI (issue #115)
+# --------------------------------------------------------------------------
+
+def test_owner_minutes_pairs_session_start_with_next_stop():
+    events = [
+        {"ts": "2026-08-01T10:00:00Z", "event": "session_start", "branch": "feat/1-x"},
+        {"ts": "2026-08-01T10:05:00Z", "event": "stop", "branch": "feat/1-x"},
+        {"ts": "2026-08-01T11:00:00Z", "event": "session_start", "branch": "feat/1-x"},
+        {"ts": "2026-08-01T11:02:00Z", "event": "session_end", "branch": "feat/1-x"},
+    ]
+    got = metrics.owner_minutes(events)
+    assert got == {"total_minutes": 7.0, "sessions": 2}
+
+
+def test_owner_minutes_respects_since():
+    events = [
+        {"ts": "2026-07-01T10:00:00Z", "event": "session_start", "branch": "feat/1-x"},
+        {"ts": "2026-07-01T10:05:00Z", "event": "stop", "branch": "feat/1-x"},
+    ]
+    got = metrics.owner_minutes(events, since="2026-08-01")
+    assert got == {"total_minutes": 0.0, "sessions": 0}
+
+
+def test_full_flow_share_requires_convention_gate_and_deleted_branch():
+    prs = [
+        {"headRefName": "feat/1-x", "statusCheckRollup": [{"conclusion": "SUCCESS"}]},
+        {"headRefName": "feat/2-y", "statusCheckRollup": [{"conclusion": "SUCCESS"}]},
+        {"headRefName": "no-issue/z", "statusCheckRollup": [{"conclusion": "SUCCESS"}]},
+        {"headRefName": "feat/3-w", "statusCheckRollup": [{"conclusion": "FAILURE"}]},
+    ]
+    gone = {"feat/1-x": True, "feat/2-y": False, "no-issue/z": True, "feat/3-w": True}
+    got = metrics.full_flow_share(prs, lambda b: gone[b])
+    assert got == {"total": 4, "full_flow": 1, "pct": 25}
+
+
+def test_full_flow_share_empty_prs():
+    assert metrics.full_flow_share([], lambda b: True) == {
+        "total": 0, "full_flow": 0, "pct": None}
+
+
+def test_owner_interruptions_counts_extra_session_starts_per_branch():
+    events = [
+        {"ts": "2026-08-01T10:00:00Z", "event": "session_start", "branch": "feat/1-x"},
+        {"ts": "2026-08-01T12:00:00Z", "event": "session_start", "branch": "feat/1-x"},
+        {"ts": "2026-08-02T10:00:00Z", "event": "session_start", "branch": "feat/2-y"},
+    ]
+    got = metrics.owner_interruptions(events)
+    assert got == {"sorties": 2, "interruptions": 1, "per_sortie": 0.5}
+
+
+def test_owner_interruptions_no_sessions():
+    assert metrics.owner_interruptions([]) == {
+        "sorties": 0, "interruptions": 0, "per_sortie": None}
+
+
 def test_main_wires_since_through_to_s1(tmp_path, monkeypatch):
     seen = {}
 
@@ -432,6 +488,9 @@ def test_main_wires_since_through_to_s1(tmp_path, monkeypatch):
     monkeypatch.setattr(metrics, "s4", lambda root: {"available": False})
     monkeypatch.setattr(metrics, "s9", lambda root: {"available": False})
     monkeypatch.setattr(metrics, "s10", lambda root, cfg: {})
+    monkeypatch.setattr(metrics, "s11", lambda root, since=None: {"available": False})
+    monkeypatch.setattr(metrics, "s12", lambda root, since=None: {"available": False})
+    monkeypatch.setattr(metrics, "s13", lambda root, since=None: {})
 
     rc = metrics.main(["--since", "2026-08-01", "--until", "2026-08-10", "--json"],
                        tmp_path, {})

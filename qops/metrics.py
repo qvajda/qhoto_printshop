@@ -23,7 +23,10 @@ import re
 import statistics
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
+
+from . import ledger as ledgermod
 
 READ_TOOLS = {"Read", "NotebookRead"}
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -180,25 +183,25 @@ def _gh(root: Path, *args: str):
         return None
 
 
+def _gate_green(rollup: list[dict]) -> bool:
+    # Every applicable gate, not two named ones: naming `gate` and `test`
+    # let a red guard.yml (tripwires, doc links) score as clean.
+    conclusions = [c.get("conclusion") for c in rollup]
+    return (bool(rollup)
+            and not any(c in ("FAILURE", "TIMED_OUT", "CANCELLED",
+                              "ACTION_REQUIRED", "STARTUP_FAILURE")
+                        for c in conclusions)
+            and "SUCCESS" in conclusions)
+
+
 def s4(root: Path) -> dict:
     """PRs where review was requested before the gate check went green."""
     prs = _gh(root, "pr", "list", "--state", "all", "--limit", "50",
               "--json", "number,reviewRequests,statusCheckRollup,createdAt")
     if prs is None:
         return {"available": False}
-    bad = []
-    for pr in prs:
-        rollup = pr.get("statusCheckRollup") or []
-        # Every applicable gate, not two named ones: naming `gate` and `test`
-        # let a red guard.yml (tripwires, doc links) score as clean.
-        conclusions = [c.get("conclusion") for c in rollup]
-        gate_green = (bool(rollup)
-                      and not any(c in ("FAILURE", "TIMED_OUT", "CANCELLED",
-                                        "ACTION_REQUIRED", "STARTUP_FAILURE")
-                                  for c in conclusions)
-                      and "SUCCESS" in conclusions)
-        if pr.get("reviewRequests") and not gate_green:
-            bad.append(pr["number"])
+    bad = [pr["number"] for pr in prs
+           if pr.get("reviewRequests") and not _gate_green(pr.get("statusCheckRollup") or [])]
     return {"available": True, "requests_without_green_gate": bad,
             "total": len(prs)}
 
@@ -222,6 +225,110 @@ def s10(root: Path, cfg: dict) -> dict:
             "claude_md_tokens": -(-claude_md.stat().st_size // 4) if claude_md.exists() else 0,
             "brief_tokens": brief_tokens,
             "within_cap": lines <= cfg["claude_md_max_lines"]}
+
+
+# --- S11 / S12 / S13 — usage, not ROI (issue #115) --------------------------
+#
+# Payback-weeks is retired as the headline: it measured a projected saving,
+# never whether the thing got used. These three measure use.
+
+BRANCH_RE = re.compile(r"^(feat|fix|docs|chore|refactor|test)/\d+-")
+
+
+def _minutes(start_ts: str, end_ts: str) -> float:
+    try:
+        start = datetime.fromisoformat(start_ts.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_ts.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return max(0.0, (end - start).total_seconds() / 60)
+
+
+def owner_minutes(events: list[dict], since: str | None = None) -> dict:
+    """Sums each `session_start` -> next `stop`/`session_end` pair. This is a
+    ceiling, not a clock on the owner alone: a `gate:machine` session that runs
+    unattended still counts, so a low number needs S13 alongside it to mean
+    "unattended", not just "short"."""
+    total = 0.0
+    sessions = 0
+    pending = None
+    for rec in events:
+        if since and rec.get("ts", "") < since:
+            continue
+        event = rec.get("event")
+        if event == "session_start":
+            pending = rec.get("ts")
+        elif event in ("stop", "session_end") and pending:
+            total += _minutes(pending, rec["ts"])
+            sessions += 1
+            pending = None
+    return {"total_minutes": round(total, 1), "sessions": sessions}
+
+
+def s11(root: Path, since: str | None = None) -> dict:
+    """S11 — owner-minutes per merged PR."""
+    prs = _gh(root, "pr", "list", "--state", "merged", "--limit", "50",
+              "--json", "number,mergedAt")
+    if prs is None:
+        return {"available": False}
+    if since:
+        prs = [pr for pr in prs if pr.get("mergedAt", "")[:10] >= since]
+    minutes = owner_minutes(ledgermod.read(root), since=since)
+    merged = len(prs)
+    return {"available": True, "merged_prs": merged, **minutes,
+            "per_merged_pr": round(minutes["total_minutes"] / merged, 1) if merged else None}
+
+
+def full_flow_share(prs: list[dict], branch_gone) -> dict:
+    """Share of merged PRs whose branch matches `<type>/<issue>-<slug>`, whose
+    gate ran green, and whose branch is gone post-merge — the direct read on
+    what ADR-0019's hook and auto-delete enforce end to end."""
+    full = [pr for pr in prs
+            if BRANCH_RE.match(pr.get("headRefName", ""))
+            and _gate_green(pr.get("statusCheckRollup") or [])
+            and branch_gone(pr["headRefName"])]
+    total = len(prs)
+    return {"total": total, "full_flow": len(full),
+            "pct": round(100 * len(full) / total) if total else None}
+
+
+def _remote_branch_gone(root: Path, branch: str) -> bool:
+    out = subprocess.run(["git", "ls-remote", "--heads", "origin", branch],
+                         cwd=root, capture_output=True, text=True, timeout=15)
+    return out.returncode == 0 and not out.stdout.strip()
+
+
+def s12(root: Path, since: str | None = None) -> dict:
+    """S12 — share of merged PRs that ran the full flow."""
+    prs = _gh(root, "pr", "list", "--state", "merged", "--limit", "50",
+              "--json", "number,headRefName,mergedAt,statusCheckRollup")
+    if prs is None:
+        return {"available": False}
+    if since:
+        prs = [pr for pr in prs if pr.get("mergedAt", "")[:10] >= since]
+    return {"available": True,
+            **full_flow_share(prs, lambda b: _remote_branch_gone(root, b))}
+
+
+def owner_interruptions(events: list[dict], since: str | None = None) -> dict:
+    """Extra `session_start`s on the same branch, beyond the first, are the
+    owner (or a resumed agent) coming back mid-sortie. ADR-0017 wants this at
+    zero on `gate:machine`: plan, build, PR, CI, one owner touch at review."""
+    by_branch: dict[str, int] = {}
+    for rec in events:
+        if since and rec.get("ts", "") < since:
+            continue
+        if rec.get("event") == "session_start" and rec.get("branch"):
+            by_branch[rec["branch"]] = by_branch.get(rec["branch"], 0) + 1
+    sorties = len(by_branch)
+    interruptions = sum(n - 1 for n in by_branch.values())
+    return {"sorties": sorties, "interruptions": interruptions,
+            "per_sortie": round(interruptions / sorties, 2) if sorties else None}
+
+
+def s13(root: Path, since: str | None = None) -> dict:
+    """S13 — owner interruptions per sortie."""
+    return owner_interruptions(ledgermod.read(root), since=since)
 
 
 # --- --state: PRD §1.2, the table becomes generated ------------------------
@@ -275,7 +382,10 @@ def main(argv: list[str], root: Path, cfg: dict) -> int:
     report = {"S1_resume_cost": s1(root, since=since, until=until),
               "S2_kickoff_docs": s2(root, since=since),
               "S4_review_before_gate": s4(root), "S9_planned_to_working": s9(root),
-              "S10_hot_path": s10(root, cfg)}
+              "S10_hot_path": s10(root, cfg),
+              "S11_owner_minutes_per_merged_pr": s11(root, since=since),
+              "S12_full_flow_share": s12(root, since=since),
+              "S13_owner_interruptions_per_sortie": s13(root, since=since)}
     if "--json" in argv:
         print(json.dumps(report, indent=2))
         return 0
