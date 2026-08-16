@@ -1,9 +1,9 @@
-# The five loops
+# The six loops
 
 Cold storage. One row of prose per loop was all v2 ever had; this file is the
 definition the runtimes are built from, so an audit has something to read.
 
-Four of the five are **LLM-free** and run in Actions. The one that costs money
+Five of the six are **LLM-free** and run in Actions. The one that costs money
 is `pickup-loop`, and it is off.
 
 | Loop | Runtime | Cadence | LLM | Authority |
@@ -12,7 +12,8 @@ is `pickup-loop`, and it is off.
 | `review-loop` | a session, on request — `/code-review` | per PR | yes, owner-initiated | reports; may not commit |
 | `triage-loop` | Actions — `groom.yml` label-hygiene job | weekly + on demand | none | warns; may not label |
 | `groom-loop` | Actions — `groom.yml` hot-path job | on any `CLAUDE.md` change, weekly | none | fails the build |
-| `pickup-loop` | Windows scheduled task `qops-pickup-loop`, **disabled** | hourly when enabled | yes | branch + commit + PR; **never merge** |
+| `pickup-loop` | Windows scheduled task `qops-pickup-loop`, **disabled** | hourly when enabled | yes | branch + commit + PR; merges only via `automerge-loop` |
+| `automerge-loop` | Actions — `automerge.yml` | every PR event | none | turns on native auto-merge for a `gate:machine` PR; may not merge a `gate:taste` one |
 
 ## gate-loop
 
@@ -61,19 +62,42 @@ fails before CI sees it.
 `ready:auto`, with a real gate (`gate:none` is not one) and no `no-auto` /
 `blocked` flag, then starts a session on it.
 **Acceptance check:** it branches, commits, opens a PR and requests review —
-and stops there. It never merges, never activates a listing, never touches
-`master`.
+and stops there. It never merges by hand, never activates a listing, never
+pushes to `master`.
+**Amended 2026-08-16 (ADR-0020):** its PR may still be merged, by
+`automerge-loop`, if the issue is `gate:machine` and every required check is
+green. `pickup-loop` itself gained no authority — it opens a PR and stops; the
+merge is a separate loop with its own conditions, and neither can merge a
+`gate:taste` PR.
 **Every eligibility condition is the owner's to grant.** `ready:auto` is granted
 by the owner alone; the triager is forbidden from applying it.
 **Runtime note:** `scripts/qops_pickup.py` without `--launch` prints what it
 would pick and starts nothing, which is how the wiring is proved without
 spending anything.
 
+## automerge-loop
+
+**Trigger:** any pull-request event — opened, reopened, synchronised, labelled,
+unlabelled, ready-for-review.
+**Does:** turns on GitHub's **native** auto-merge for a qualifying PR. It does
+not merge; branch protection's required checks do, when they go green.
+**Qualifies:** `gate:machine`, no `no-auto`, not a draft, not from a fork, and a
+branch matching `<type>/<issue#>-<slug>` or `no-issue/<slug>` (ADR-0019).
+**Acceptance check:** a `gate:taste` PR is never merged by it, and a red gate
+never merges anything.
+**Why it exists:** on a `gate:machine` PR the owner's click had nothing left to
+judge — the gate judged it. A mindless approval button is not a control
+(ADR-0020).
+**Failure mode it accepts:** a defect the machine gate cannot see reaches
+`master` unread. That is the same exposure every unread manual merge already
+carried, made honest — so a defect that lands this way is a **missing check**,
+and the fix is the check, not the restoration of the click.
+
 ## Audit
 
 Loop Doctor, 2026-08-14, once (PRD v3 Phase 4 item 10). A **design** audit —
-none of the five had fired yet, so no finding is connected to an observed
-failure. Verdict: repair needed. `groom-loop` and `review-loop` were sound and
+none of the five then defined had fired yet, so no finding is connected to an
+observed failure. Verdict: repair needed. `groom-loop` and `review-loop` were sound and
 were left alone. Three material findings, all fixed in the same commit:
 
 1. **`pickup-loop` re-picked the same sortie forever.** It chose the

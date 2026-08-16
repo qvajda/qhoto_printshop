@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 
 TEMPLATES = Path(__file__).parent / "templates"
-WORKFLOWS = ("test.yml", "gate.yml", "guard.yml", "digest.yml", "groom.yml")
+WORKFLOWS = ("test.yml", "gate.yml", "guard.yml", "digest.yml", "groom.yml",
+             "automerge.yml")
 
 _DOC_LINK = re.compile(r"docs/[A-Za-z0-9_./-]+\.md")
 
