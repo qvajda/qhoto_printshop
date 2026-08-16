@@ -34,10 +34,22 @@ removed, one step later.
 | `guard` green — `tripwires` and `doc-links` | the constraints hold |
 | `test` green | required check (ADR-0016) |
 | label `gate:machine` | `gate:taste` is a human judgement and never auto-merges |
-| branch matches `<type>/<issue#>-<slug>` or `no-issue/<slug>` | ADR-0019's convention; an unrouted branch is not autonomous work |
+| branch matches `<type>/<issue#>-<slug>` | ADR-0019's convention; an unrouted branch is not autonomous work |
 | no `no-auto` label | the standing per-issue veto, already in the taxonomy |
 
 Squash merge, delete the branch. **Owner review is reserved for `gate:taste`.**
+
+**Amended 2026-08-16, during implementation (#119).** The labels are read from
+the **linked issue**, not from the pull request. The first cut read
+`github.event.pull_request.labels` and was structurally incapable of firing:
+nothing labels a PR, `gh pr create` inherits nothing from the issue, and issues
+are the source of truth (CLAUDE.md). The issue number comes from the branch, by
+the same rule `qops brief` uses.
+
+**Consequence, and it tightens the ADR rather than loosening it:**
+`no-issue/<slug>` has no linked issue, so it has no gate to read and **never
+auto-merges**. The recorded escape hatch stays a human decision, which is the
+right answer for a branch that opted out of routing.
 
 ## Consequences
 

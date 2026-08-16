@@ -81,8 +81,10 @@ spending anything.
 unlabelled, ready-for-review.
 **Does:** turns on GitHub's **native** auto-merge for a qualifying PR. It does
 not merge; branch protection's required checks do, when they go green.
-**Qualifies:** `gate:machine`, no `no-auto`, not a draft, not from a fork, and a
-branch matching `<type>/<issue#>-<slug>` or `no-issue/<slug>` (ADR-0019).
+**Qualifies:** not a draft, not from a fork, a branch matching
+`<type>/<issue#>-<slug>` (ADR-0019), and the **linked issue** carrying
+`gate:machine` and no `no-auto`. The gate is read from the issue, not the PR —
+nothing labels a PR. `no-issue/` has no issue, so it never auto-merges.
 **Acceptance check:** a `gate:taste` PR is never merged by it, and a red gate
 never merges anything.
 **Why it exists:** on a `gate:machine` PR the owner's click had nothing left to

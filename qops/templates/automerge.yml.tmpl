@@ -9,6 +9,12 @@
 # waits for branch protection's required checks (test, gate, tripwires,
 # doc-links). The workflow is the control — it fires without anyone
 # remembering — and the gate stays the thing that decides.
+#
+# The gate is read from the LINKED ISSUE, not from the PR. Issues are the
+# source of truth (CLAUDE.md) and nothing labels a PR: the first cut read
+# `github.event.pull_request.labels` and was structurally incapable of ever
+# firing. The issue number comes from the branch, per ADR-0019 — the same rule
+# `qops brief` uses.
 name: automerge
 
 on:
@@ -21,39 +27,41 @@ concurrency:
 
 jobs:
   enable:
-    # Every condition here is a reason it is safe for no human to read the
-    # diff. Loosening one fails a test in tests/test_qops.py.
-    #   gate:machine  — the label that authorises it; gate:taste never merges
-    #   no-auto       — the standing per-issue veto, already in the taxonomy
-    #   draft         — a draft is not a claim that the work is done
-    #   fork          — an outside contributor's PR is a taste decision, and a
-    #                   fork token cannot be trusted with this repo's merges
+    # Two conditions can be settled without an API call:
+    #   draft — a draft is not a claim that the work is done
+    #   fork  — an outside contributor's PR is a taste decision, and a fork
+    #           token cannot be trusted with this repo's merges
     if: >-
       github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
-      && contains(github.event.pull_request.labels.*.name, 'gate:machine')
-      && !contains(github.event.pull_request.labels.*.name, 'no-auto')
     runs-on: {{runs_on}}
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - name: the branch carries an issue number (ADR-0019)
-        id: branch
+      - name: the linked issue authorises an unread merge
+        id: check
         # REF is an environment variable, never interpolated into the script:
         # a branch name is attacker-controlled on a public repo.
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          if printf '%s' "$REF" | grep -Eq '^[a-z]+/[0-9]+-|^no-issue/'; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::branch does not carry an issue number - not auto-merging"
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-          fi
+          stop() { echo "::notice::$1 - not auto-merging"
+                   echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          n=$(printf '%s' "$REF" | sed -nE 's|^[a-z]+/([0-9]+)-.*|\1|p')
+          # No number includes `no-issue/`, which by definition has no gate.
+          [ -n "$n" ] || stop "branch carries no issue number"
+          labels=$(gh issue view "$n" --repo {{repo}} --json labels \
+                     -q '.labels[].name' || true)
+          case "$labels" in *no-auto*) stop "issue #$n carries no-auto" ;; esac
+          case "$labels" in
+            *gate:machine*) echo "ok=true" >> "$GITHUB_OUTPUT" ;;
+            *) stop "issue #$n is not gate:machine - the owner merges this one" ;;
+          esac
 
       - name: hand the merge to the required checks
-        if: steps.branch.outputs.ok == 'true'
+        if: steps.check.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}

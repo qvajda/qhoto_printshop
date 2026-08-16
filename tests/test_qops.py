@@ -420,11 +420,14 @@ def test_automerge_keeps_every_adr_0020_condition(condition):
     assert condition in _automerge_text()
 
 
-def test_automerge_requires_an_issue_bearing_branch():
-    """ADR-0019's convention. GitHub expressions have no regex, so the branch
-    check is a step, and the pattern is the thing worth asserting."""
-    assert "^[a-z]+/[0-9]+-" in _automerge_text()
-    assert "^no-issue/" in _automerge_text()
+def test_automerge_reads_the_gate_from_the_issue_not_the_pr():
+    """The first cut read `github.event.pull_request.labels` and could never
+    fire: nothing labels a PR, and issues are the source of truth. The issue
+    number comes from the branch (ADR-0019), so `no-issue/` never qualifies."""
+    text = _automerge_text()
+    assert "gh issue view" in text
+    assert "pull_request.labels.*.name" not in text   # the expression form
+    assert "^[a-z]+/([0-9]+)-" in text
 
 
 def test_automerge_never_interpolates_the_branch_into_a_shell():
