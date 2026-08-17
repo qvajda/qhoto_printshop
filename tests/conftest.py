@@ -7,6 +7,7 @@ from PIL import Image
 
 import pipeline.config as config
 import pipeline.telegram_client as telegram_client
+import telegram_listener
 
 MASTER_ASPECT = 6656 / 9728   # db/base_artwork/39.png - the approved master
 
@@ -26,6 +27,25 @@ def isolate_getupdates_raw_log(monkeypatch, tmp_path_factory):
         telegram_client, "RAW_LOG_PATH",
         tmp_path_factory.mktemp("getupdates") / "telegram_getupdates.log",
     )
+
+
+@pytest.fixture(autouse=True)
+def never_spawn_a_real_listener(monkeypatch):
+    """#142: `telegram_listener.ensure_alive` starts a DETACHED process, and a test that
+    reaches it for real leaves a live listener behind after pytest exits. That happened
+    once: a run spawned one against the test env's fake token, it polled Telegram with
+    `tok`, 404'd every time, and wrote a failed `listener` heartbeat into the REAL
+    database - which would then have had the hourly job trying to restart it every hour.
+
+    Nothing survives a test run. A test that wants to observe the spawn patches
+    `telegram_listener._spawn` itself, which overrides this.
+    """
+    def _refuse():
+        raise AssertionError(
+            "a test reached telegram_listener._spawn - patch it, never let it run"
+        )
+
+    monkeypatch.setattr(telegram_listener, "_spawn", _refuse)
 
 
 @pytest.fixture(autouse=True)

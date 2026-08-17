@@ -86,8 +86,25 @@ def _cadence_detail(conn, *, now=None) -> str | None:
 
 
 def _findings(conn, *, now=None) -> list:
-    return [d for d in (_cadence_detail(conn, now=now),
-                        telegram_listener.stale_detail(conn, now=now)) if d]
+    # GL-132b: the listener is NOT reported here. It is ensured after the cycle, and
+    # what gets reported is the outcome of that - "started one" rather than "one is
+    # missing". Reporting both would send two messages about one episode.
+    return [d for d in (_cadence_detail(conn, now=now),) if d]
+
+
+def _ensure_listener(conn, admin_chat_id, bot_token, *, token_lock_path=None,
+                      previous_detail="") -> str | None:
+    """Start a listener if none is breathing, and report what happened - once per
+    episode, like every other finding this job reports (ADR-0018)."""
+    result = telegram_listener.ensure_alive(conn, bot_token=bot_token,
+                                            token_lock_path=token_lock_path)
+    if result["status"] == "alive":
+        return None
+    detail = result["detail"]
+    print(f"{JOB_NAME}: {detail}")
+    if detail.split(":")[0] not in previous_detail:
+        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {detail}")
+    return detail
 
 
 def _notify_admin(admin_chat_id, bot_token, message):
@@ -191,6 +208,17 @@ def main(*, db_path=None, lock_path=None, token_lock_path=None, load_dotenv=True
                 heartbeat.record(conn, JOB_NAME, ok=False, detail=str(exc))
                 _notify_admin(admin_chat_id, bot_token, _admin_error_text(exc))
                 return 1
+            # GL-132b (#142): AFTER the cycle, deliberately - the poll above may still
+            # have been holding the cursor lock, and a listener spawned into that would
+            # find the lock held and exit 2 immediately. This is also why there is no
+            # separate supervisor task: this job and the batch already run on a cadence,
+            # and a listener that dies is restarted by whichever comes first.
+            listener_detail = _ensure_listener(conn, admin_chat_id, bot_token,
+                                               token_lock_path=token_lock,
+                                               previous_detail=previous_detail)
+            if listener_detail:
+                detail = "; ".join(d for d in (detail, listener_detail) if d)
+
             heartbeat.record(conn, JOB_NAME, ok=True, detail=detail)
             return 0
     except lock.LockHeldError as exc:
