@@ -150,6 +150,20 @@ CREATE TABLE IF NOT EXISTS telegram_offset (
   last_update_id INTEGER NOT NULL
 );
 
+-- GL-131 (#139): the seam between the always-on ack listener and the scheduled
+-- stages. The listener records the decision and enqueues one row here; it never
+-- calls Gelato or Etsy (ADR-0005 amendment). update_id is UNIQUE so a
+-- re-delivered update cannot queue the same decision twice.
+CREATE TABLE IF NOT EXISTS pending_decisions (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  action TEXT NOT NULL,
+  update_id INTEGER UNIQUE,
+  created_at TEXT NOT NULL,
+  dispatched_at TEXT,
+  error TEXT
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   version INTEGER NOT NULL

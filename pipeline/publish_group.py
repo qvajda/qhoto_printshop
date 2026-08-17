@@ -33,9 +33,11 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
                      etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
                      dry_run=None, now=None) -> dict:
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    # One map, shared with the listener that may have recorded this decision already.
+    decision = publish_primary_group.DECISION_BY_ACTION.get(action)
 
     if action == "approve":
-        publish_primary_group.record_decision(conn, group_id, "approved", decision_notes, now=now)
+        publish_primary_group.record_decision(conn, group_id, decision, decision_notes, now=now)
         static_config = static_config if static_config is not None else config.load_static_config()
         # v4.12 [D1]: a secondary approval doesn't publish anything by itself - it just
         # settles one more group. The candidate's single listing is created once, when
@@ -49,7 +51,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         return {"action": "approve", **result}
 
     if action == "reject":
-        publish_primary_group.record_decision(conn, group_id, "rejected", decision_notes, now=now)
+        publish_primary_group.record_decision(conn, group_id, decision, decision_notes, now=now)
         # Rejecting a secondary group deletes NOTHING shared (CLAUDE.md v4.12): its own
         # sizes and images leave the candidate's listing build, the product/listing and
         # every other group's rows are untouched.
@@ -73,7 +75,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         return {"action": "reject", **result}
 
     if action == "edit":
-        publish_primary_group.record_decision(conn, group_id, "edited", decision_notes, now=now)
+        publish_primary_group.record_decision(conn, group_id, decision, decision_notes, now=now)
         _discard_group_contribution(
             conn, candidate_id, group_id, store_id=store_id, gelato_api_key=gelato_api_key,
         )

@@ -91,6 +91,29 @@ def _is_stale(lock_path: Path, stale_after_seconds: float, now: float) -> bool:
     return not _pid_alive(pid)
 
 
+def refresh(lock_path) -> bool:
+    """Push the lock's mtime forward so a long-lived holder is not declared stale by
+    the age ceiling in _is_stale (GL-131).
+
+    The ceiling exists because a killed process leaves its file behind, and every
+    holder until now finished in minutes. The always-on listener does not: after
+    stale_after_seconds it would be robbed of the lock *while still polling*, giving
+    the single Telegram cursor two readers - the exact hazard the lock exists to
+    prevent. A holder that is alive says so by touching the file each loop.
+
+    No-op (returns False) if the file is gone or already belongs to someone else, so
+    a holder whose lock WAS stolen cannot keep the new owner's lock alive by accident.
+    """
+    lock_path = Path(lock_path)
+    try:
+        if lock_path.read_text().strip() != str(os.getpid()):
+            return False
+        os.utime(lock_path, None)
+    except (FileNotFoundError, OSError):
+        return False
+    return True
+
+
 @contextlib.contextmanager
 def acquire(lock_path, *, stale_after_seconds: float = 3600, now=None):
     lock_path = Path(lock_path)

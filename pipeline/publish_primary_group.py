@@ -13,6 +13,13 @@ import pipeline.publish_group as publish_group
 import pipeline.telegram_client as telegram_client
 
 
+class PendingDecisionDispatchError(RuntimeError):
+    """Raised once at the end of dispatch_pending_decisions if any queued decision
+    failed to dispatch. The row keeps its error and stays pending, so the next
+    scheduled cycle retries it (CLAUDE.md: a swallowed per-item exception leaves a
+    state change behind AND still fails the stage once)."""
+
+
 class PublishFailedRetryError(RuntimeError):
     """Raised once at the end of retry_publish_failed_groups if any retry failed.
     (a) is already satisfied here - publish_candidate marks the group
@@ -101,6 +108,84 @@ def record_decision(conn, group_id, decision, decision_notes=None, *, now=None) 
         (decision, decision_notes, timestamp, timestamp, group_id),
     )
     conn.commit()
+
+
+# The one place an owner-facing action maps to a groups.decision value. Both
+# handle_decision functions and the listener read it, so "redraft means edited"
+# cannot drift between the process that records the decision and the one that
+# acts on it (GL-131).
+DECISION_BY_ACTION = {"approve": "approved", "edit": "edited",
+                      "redraft": "edited", "reject": "rejected"}
+
+
+def enqueue_decision(conn, group_id, action, update_id=None, *, now=None) -> None:
+    """GL-131 (#139): the listener records the decision and queues the work here;
+    the scheduled cycle drains the queue. OR IGNORE + a UNIQUE update_id is the
+    restart guard - an update re-delivered because the process died before the
+    offset advanced cannot queue the same decision twice."""
+    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO pending_decisions (group_id, action, update_id, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (group_id, action, update_id, timestamp),
+    )
+    conn.commit()
+
+
+def _dispatch_decision(conn, candidate_id, group_id, group_type, action, **kwargs) -> dict:
+    """Route one decision to the stage that does the slow work. The only place
+    that routing lives - process_update dispatches inline (the scheduled backstop),
+    dispatch_pending_decisions dispatches from the queue (the listener's path)."""
+    if group_type == "primary":
+        return handle_decision(conn, candidate_id, group_id, action, **kwargs)
+    kwargs.pop("replicate_api_token", None)
+    kwargs.pop("anthropic_api_key", None)
+    return publish_group.handle_decision(conn, candidate_id, group_id, action, **kwargs)
+
+
+def dispatch_pending_decisions(conn, *, static_config=None, store_id=None, gelato_api_key=None,
+                                shop_id=None, etsy_api_key=None, etsy_api_secret=None,
+                                etsy_access_token=None, replicate_api_token=None,
+                                anthropic_api_key=None, dry_run=None, now=None) -> list:
+    """Drain the queue the listener writes. This is where an approved group actually
+    publishes: the listener never touches Gelato or Etsy (ADR-0005 amendment), so the
+    tap and the work are deliberately on two different clocks."""
+    timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+
+    rows = conn.execute(
+        "SELECT p.id, p.group_id, p.action, g.candidate_id, g.group_type "
+        "FROM pending_decisions p JOIN groups g ON g.id = p.group_id "
+        "WHERE p.dispatched_at IS NULL ORDER BY p.id"
+    ).fetchall()
+
+    dispatched, failures = [], []
+    for row in rows:
+        try:
+            _dispatch_decision(
+                conn, row["candidate_id"], row["group_id"], row["group_type"], row["action"],
+                static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+                shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+                etsy_access_token=etsy_access_token, replicate_api_token=replicate_api_token,
+                anthropic_api_key=anthropic_api_key, dry_run=dry_run, now=now,
+            )
+        except Exception as exc:
+            print(f"pending decision {row['id']} (group {row['group_id']}, {row['action']}) failed: {exc}")
+            conn.execute("UPDATE pending_decisions SET error = ? WHERE id = ?", (str(exc), row["id"]))
+            conn.commit()
+            failures.append(f"{row['group_id']}: {exc}")
+            continue
+        conn.execute(
+            "UPDATE pending_decisions SET dispatched_at = ?, error = NULL WHERE id = ?",
+            (timestamp, row["id"]),
+        )
+        conn.commit()
+        dispatched.append(row["group_id"])
+
+    if failures:
+        raise PendingDecisionDispatchError(
+            f"{len(failures)} of {len(rows)} queued decision(s) failed to dispatch - " + "; ".join(failures)
+        )
+    return dispatched
 
 
 _SECONDARY_GROUP_TYPES = ("5x7", "10x24")
@@ -258,9 +343,12 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
                      etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
                      replicate_api_token=None, anthropic_api_key=None, dry_run=None, now=None) -> dict:
     timestamp = (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
+    # Same map the listener records from, so a decision recorded at tap time and one
+    # recorded here are the same value by construction (GL-131).
+    decision = DECISION_BY_ACTION.get(action)
 
     if action == "approve":
-        record_decision(conn, group_id, "approved", decision_notes, now=now)
+        record_decision(conn, group_id, decision, decision_notes, now=now)
         result = publish_primary_group(
             conn, candidate_id, static_config=static_config, store_id=store_id,
             gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
@@ -270,7 +358,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         return {"action": "approve", **result}
 
     if action == "edit":
-        record_decision(conn, group_id, "edited", decision_notes, now=now)
+        record_decision(conn, group_id, decision, decision_notes, now=now)
         resolved_static_config = static_config if static_config is not None else config.load_static_config()
 
         publish_group._discard_group_contribution(
@@ -307,7 +395,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         # Retry budget: RESET (owner decision, PRD 2026-08-10 §6.3). The attempts rows are
         # deleted, so an owner-initiated copy redo starts from attempt 1. The owner is the
         # gatekeeper on this path, so there is no unattended loop to bound.
-        record_decision(conn, group_id, "edited", decision_notes, now=now)
+        record_decision(conn, group_id, decision, decision_notes, now=now)
         resolved_static_config = static_config if static_config is not None else config.load_static_config()
 
         conn.execute("DELETE FROM critic_pass_attempts WHERE group_id = ?", (group_id,))
@@ -335,7 +423,7 @@ def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *
         return {"action": "redraft"}
 
     if action == "reject":
-        record_decision(conn, group_id, "rejected", decision_notes, now=now)
+        record_decision(conn, group_id, decision, decision_notes, now=now)
 
         publish_group._discard_group_contribution(
             conn, candidate_id, group_id, store_id=store_id, gelato_api_key=gelato_api_key,
@@ -373,7 +461,10 @@ def set_telegram_offset(conn, last_update_id: int) -> None:
 def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_config=None,
                     store_id=None, gelato_api_key=None, shop_id=None, etsy_api_key=None,
                     etsy_api_secret=None, etsy_access_token=None, replicate_api_token=None,
-                    anthropic_api_key=None, dry_run=None, now=None) -> dict | None:
+                    anthropic_api_key=None, dispatch=True, dry_run=None, now=None) -> dict | None:
+    """dispatch=False is the listener's mode (ADR-0005 amendment, GL-131): record the
+    decision, acknowledge, queue the work, return to polling. Nothing downstream of
+    the decision runs in that process - no Gelato, no Etsy, no generation."""
     admin_chat_id = admin_chat_id or config.require_env("TELEGRAM_ADMIN_CHAT_ID")
     parsed = resolve_callback(update)
     if parsed is None:
@@ -450,7 +541,21 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
         _set_markup(parsed, digest.build_digest_keyboard(parsed["group_id"]), bot_token=bot_token)
         return None
 
+    if parsed["action"] not in DECISION_BY_ACTION:
+        raise ValueError(f"Unknown action {parsed['action']!r}")
+
     log_telegram_event(conn, parsed["telegram_user_id"], update, True, parsed["action"], now=now)
+
+    if not dispatch:
+        # GL-131: the decision and the queue row land in one commit, BEFORE the ack -
+        # a listener killed between them must not leave a decided group with no work
+        # queued, which the terminal guard above would then discard forever.
+        enqueue_decision(conn, parsed["group_id"], parsed["action"], update.get("update_id"), now=now)
+        record_decision(conn, parsed["group_id"], DECISION_BY_ACTION[parsed["action"]], now=now)
+        _ack(parsed["callback_query_id"], f"Got it - {parsed['action']}...", bot_token=bot_token)
+        _mark_decided(parsed, bot_token=bot_token)
+        return {"candidate_id": candidate_id, "group_id": parsed["group_id"],
+                "action": parsed["action"], "queued": True}
 
     # Acknowledge BEFORE dispatching: handle_decision can spend minutes in Gelato and
     # Etsy, and a callback query the bot answers that late has usually expired - which
@@ -458,21 +563,13 @@ def process_update(conn, update, *, admin_chat_id=None, bot_token=None, static_c
     _ack(parsed["callback_query_id"], f"Got it - {parsed['action']}...", bot_token=bot_token)
     _mark_decided(parsed, bot_token=bot_token)
 
-    if group_row["group_type"] == "primary":
-        result = handle_decision(
-            conn, candidate_id, parsed["group_id"], parsed["action"], static_config=static_config,
-            store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
-            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-            replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
-            dry_run=dry_run, now=now,
-        )
-    else:
-        result = publish_group.handle_decision(
-            conn, candidate_id, parsed["group_id"], parsed["action"], static_config=static_config,
-            store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id, etsy_api_key=etsy_api_key,
-            etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-            dry_run=dry_run, now=now,
-        )
+    result = _dispatch_decision(
+        conn, candidate_id, parsed["group_id"], group_row["group_type"], parsed["action"],
+        static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+        shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+        etsy_access_token=etsy_access_token, replicate_api_token=replicate_api_token,
+        anthropic_api_key=anthropic_api_key, dry_run=dry_run, now=now,
+    )
 
     return {"candidate_id": candidate_id, "group_id": parsed["group_id"], **result}
 
@@ -564,6 +661,21 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
         # it must not come back.
         set_telegram_offset(conn, update_id)
 
+    # GL-131: drain whatever the always-on listener recorded since the last cycle. The
+    # listener acks in under a second and queues; this is where an approved group
+    # actually publishes. Held, not raised, so a failing dispatch cannot skip the
+    # publish_failed retry below - both surface as a failed stage.
+    dispatch_error = None
+    try:
+        dispatch_pending_decisions(
+            conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+            shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+            etsy_access_token=etsy_access_token, replicate_api_token=replicate_api_token,
+            anthropic_api_key=anthropic_api_key, dry_run=dry_run, now=now,
+        )
+    except PendingDecisionDispatchError as exc:
+        dispatch_error = exc
+
     # Once per poll cycle, re-attempt any group stuck at publish_failed after an
     # approved decision - a transient patch failure shouldn't strand it forever (H1).
     # GL-54: this used to catch-and-print, swallowing retry_publish_failed_groups'
@@ -576,5 +688,8 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
         etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
         dry_run=dry_run, now=now,
     )
+
+    if dispatch_error is not None:
+        raise dispatch_error
 
     return processed
