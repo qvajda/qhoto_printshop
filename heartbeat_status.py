@@ -9,7 +9,7 @@ import pipeline.db as db
 import pipeline.heartbeat as heartbeat
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
-JOB_NAMES = ("hourly", "batch")
+JOB_NAMES = ("hourly", "batch", "listener")
 
 
 def format_status(job_name: str, row: dict | None) -> str:

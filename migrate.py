@@ -23,6 +23,7 @@ import migrate_generation_attempts_table
 import migrate_gl36_listing_missing
 import migrate_gl45_db_identity
 import migrate_group_products_candidate_id
+import migrate_pending_decisions
 import migrate_v412_gallery
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
@@ -41,6 +42,7 @@ MIGRATIONS = [
     (6, "v412_gallery", migrate_v412_gallery.migrate),
     (7, "gl36_listing_missing", migrate_gl36_listing_missing.migrate),
     (8, "gl45_db_identity", migrate_gl45_db_identity.migrate),
+    (9, "pending_decisions", migrate_pending_decisions.migrate),
 ]
 
 

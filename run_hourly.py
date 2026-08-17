@@ -44,6 +44,15 @@ EXPECTED_CADENCE_MINUTES = 5
 CADENCE_STALE_MULTIPLIER = 3
 CADENCE_DEGRADED_PREFIX = "cadence-degraded"
 
+# GL-131 (#139): the listener is the thing that answers the owner's button in under a
+# second, so a listener that dies silently is the same five-day outage GL-130 was. It
+# writes a heartbeat every completed long poll (~25s), so a gap this wide is not a slow
+# poll, it is a dead process. Never having run at all is NOT reported - before the
+# listener is installed on the machine there is nothing to be down.
+LISTENER_JOB_NAME = "listener"
+LISTENER_STALE_MINUTES = 5
+LISTENER_DOWN_PREFIX = "listener-down"
+
 
 def _admin_error_text(exc):
     """GL-61 knob 2: 'brief' keeps the exception text out of Telegram (it is still in
@@ -68,6 +77,28 @@ def _cadence_detail(conn, *, now=None) -> str | None:
         return None
     return (f"{CADENCE_DEGRADED_PREFIX}: last run was {gap_minutes:.0f} min ago, "
             f"expected every {EXPECTED_CADENCE_MINUTES} min (E10a)")
+
+
+def _listener_detail(conn, *, now=None) -> str | None:
+    """Return a detail string if the always-on listener looks dead, else None."""
+    row = heartbeat.last(conn, LISTENER_JOB_NAME)
+    if row is None:
+        return None
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        gap_minutes = (now - datetime.fromisoformat(row["ran_at"])).total_seconds() / 60
+    except (TypeError, ValueError):
+        return None
+    if not row["ok"]:
+        return f"{LISTENER_DOWN_PREFIX}: last poll failed - {row['detail']}"
+    if gap_minutes <= LISTENER_STALE_MINUTES:
+        return None
+    return (f"{LISTENER_DOWN_PREFIX}: no poll for {gap_minutes:.0f} min - taps are only "
+            f"collected by this job now (#139)")
+
+
+def _findings(conn, *, now=None) -> list:
+    return [d for d in (_cadence_detail(conn, now=now), _listener_detail(conn, now=now)) if d]
 
 
 def _notify_admin(admin_chat_id, bot_token, message):
@@ -124,14 +155,18 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         with lock.acquire(lock_path):
             conn = db.get_connection(db_path)
             # Measured before the cycle runs, so a cycle that then fails still leaves the
-            # cadence finding on its heartbeat. Notified at most once per episode: the
-            # previous heartbeat's detail is the "already told them" marker, so a poll
-            # stuck at hourly reports once, not 24 times a day (ADR-0018).
-            cadence_detail = _cadence_detail(conn)
-            previously_degraded = (heartbeat.last(conn, JOB_NAME) or {}).get("detail", "")
-            if cadence_detail and not str(previously_degraded or "").startswith(CADENCE_DEGRADED_PREFIX):
-                print(f"{JOB_NAME}: {cadence_detail}")
-                _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {cadence_detail}")
+            # findings on its heartbeat. Each is notified at most once per episode: the
+            # previous heartbeat's detail carries the prefixes already reported, so a poll
+            # stuck at hourly (or a listener down all night) says so once, not 24 times
+            # a day (ADR-0018).
+            findings = _findings(conn)
+            previous_detail = str((heartbeat.last(conn, JOB_NAME) or {}).get("detail") or "")
+            for finding in findings:
+                if finding.split(":")[0] in previous_detail:
+                    continue
+                print(f"{JOB_NAME}: {finding}")
+                _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {finding}")
+            detail = "; ".join(findings) or None
             try:
                 publish_primary_group.run_publish_primary_group_cycle(
                     conn, admin_chat_id=admin_chat_id, bot_token=bot_token,
@@ -145,7 +180,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 heartbeat.record(conn, JOB_NAME, ok=False, detail=str(exc))
                 _notify_admin(admin_chat_id, bot_token, _admin_error_text(exc))
                 return 1
-            heartbeat.record(conn, JOB_NAME, ok=True, detail=cadence_detail)
+            heartbeat.record(conn, JOB_NAME, ok=True, detail=detail)
             return 0
     except lock.LockHeldError as exc:
         print(f"{JOB_NAME}: {exc}")
