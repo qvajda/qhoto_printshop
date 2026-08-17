@@ -165,14 +165,16 @@ def test_main_reports_a_degraded_poll_cadence(tmp_path, monkeypatch):
     # one look identical from inside the job.
     db_path = _migrated_db(tmp_path)
     _set_required_env(monkeypatch)
-    _record_previous_run(db_path, minutes_ago=60)
+    # GL-132: the trigger is PT1H again (the listener owns tap latency now), so the
+    # gap that counts as degraded moved with it - 4 hours, not 1.
+    _record_previous_run(db_path, minutes_ago=240)
 
     exit_code, mock_send = _run_ok(db_path, tmp_path)
 
     assert exit_code == 0
     mock_send.assert_called_once()
     assert "cadence-degraded" in mock_send.call_args[0][1]
-    assert "expected every 5 min" in mock_send.call_args[0][1]
+    assert "expected every 60 min" in mock_send.call_args[0][1]
 
     conn = db.get_connection(db_path)
     assert heartbeat.last(conn, "hourly")["detail"].startswith("cadence-degraded")
@@ -183,7 +185,7 @@ def test_main_reports_a_degraded_cadence_once_per_episode(tmp_path, monkeypatch)
     # times a day. The previous heartbeat's detail is the "already told them" marker.
     db_path = _migrated_db(tmp_path)
     _set_required_env(monkeypatch)
-    _record_previous_run(db_path, minutes_ago=60, detail="cadence-degraded: told you already")
+    _record_previous_run(db_path, minutes_ago=240, detail="cadence-degraded: told you already")
 
     exit_code, mock_send = _run_ok(db_path, tmp_path)
 
@@ -194,7 +196,7 @@ def test_main_reports_a_degraded_cadence_once_per_episode(tmp_path, monkeypatch)
 def test_main_is_silent_when_the_cadence_is_on_spec(tmp_path, monkeypatch):
     db_path = _migrated_db(tmp_path)
     _set_required_env(monkeypatch)
-    _record_previous_run(db_path, minutes_ago=5)
+    _record_previous_run(db_path, minutes_ago=60)
 
     exit_code, mock_send = _run_ok(db_path, tmp_path)
 
