@@ -151,7 +151,12 @@ def _record_previous_run(db_path, minutes_ago, detail=None):
 
 
 def _run_ok(db_path, tmp_path):
+    # ensure_alive stubbed alive: these tests are about the CADENCE finding, and a run
+    # against a database with no listener heartbeat would otherwise also report starting
+    # one (#142). Listener behaviour has its own tests in test_telegram_listener.py.
     with patch("run_hourly.publish_primary_group.run_publish_primary_group_cycle", return_value=[]), \
+         patch("run_hourly.telegram_listener.ensure_alive",
+               return_value={"status": "alive", "detail": None}), \
          patch("run_hourly.telegram_client.send_message") as mock_send:
         exit_code = run_hourly.main(
             db_path=db_path, lock_path=tmp_path / "hourly.lock", load_dotenv=False,

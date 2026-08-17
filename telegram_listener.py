@@ -104,6 +104,14 @@ def ensure_alive(conn, *, bot_token, token_lock_path=None, now=None, spawn=None)
     is stale": a listener whose heartbeat is stale but whose token lock is still held by
     a live process is wedged, not absent, and starting a second one would only produce
     an immediate exit 2. That case is reported, never spawned over.
+
+    A database with NO listener heartbeat at all starts one. `stale_detail` stays silent
+    about that case because it is the reporting path and an alarm about a listener that
+    was never installed is an alarm nobody keeps reading - but silence is the wrong
+    answer for the ensuring path, and conflating the two left the listener permanently
+    off: every scheduled run looked at an empty heartbeats table, concluded there was
+    nothing to be down, and did nothing. Only ever restarting one is not the same as
+    keeping one running.
     """
     # Resolved here, not as a default argument: a default binds the function object at
     # import time, so patching the module attribute in a test would silently miss.
@@ -111,7 +119,9 @@ def ensure_alive(conn, *, bot_token, token_lock_path=None, now=None, spawn=None)
 
     detail = stale_detail(conn, now=now)
     if detail is None:
-        return {"status": "alive", "detail": None}
+        if heartbeat.last(conn, JOB_NAME) is not None:
+            return {"status": "alive", "detail": None}
+        detail = f"{DOWN_PREFIX}: no listener has ever run against this database"
 
     if lock.is_held(token_lock_path or lock.token_lock_path(bot_token)):
         return {"status": "wedged",
