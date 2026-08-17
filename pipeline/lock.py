@@ -40,6 +40,38 @@ def token_lock_path(bot_token: str) -> Path:
     return Path(tempfile.gettempdir()) / f"qhoto-telegram-{digest}.lock"
 
 
+def pipeline_lock_path(db_path) -> Path:
+    """GL-132 (#142): the OTHER thing the single lock was doing.
+
+    `token_lock_path` says "one reader of the Telegram cursor". That was also, by
+    accident of there being one lock, saying "one writer of the database" - which is
+    what kept the hourly poll and the twice-daily batch from interleaving stages. The
+    always-on listener holds the token lock for its lifetime, so a batch that waits on
+    the same lock never runs at all: research, generation and the digest all stop
+    because a button got faster.
+
+    Two locks, because they are two properties. The listener takes the token lock only
+    (it never runs a stage). The batch takes this one only (it never polls). The hourly
+    takes this one, then tries the token lock on top for its poll - and simply skips
+    polling if a live listener already owns the cursor.
+
+    Keyed on the database it protects, resolved to an absolute path, for the same
+    reason token_lock_path is keyed on the token: two checkouts sharing one DB must
+    take one lock, and two DBs must not share one.
+    """
+    digest = hashlib.sha256(str(Path(db_path).resolve()).encode("utf-8")).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / f"qhoto-pipeline-{digest}.lock"
+
+
+def is_held(lock_path, *, stale_after_seconds: float = 3600, now=None) -> bool:
+    """True if a live process holds this lock. The read-only half of acquire's own
+    check - for a caller that needs to know without taking it (GL-132: the batch asks
+    'is a listener alive?' before deciding to start one)."""
+    lock_path = Path(lock_path)
+    now_ts = now if now is not None else time.time()
+    return lock_path.exists() and not _is_stale(lock_path, stale_after_seconds, now_ts)
+
+
 def _pid_alive(pid: int) -> bool:
     if sys.platform == "win32":
         # os.kill(pid, 0) on Windows is special-cased to CTRL_C_EVENT (a

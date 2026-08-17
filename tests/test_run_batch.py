@@ -271,14 +271,18 @@ def test_stall_predicate_fires_through_run_batch_when_constant_lowered(tmp_path,
     # by temporarily lowering GROUP_REVIEW_STALL_DAYS, never by waiting 14 days.
     #
     # candidate_publish_plan is only reached from one place: publish_primary_group(),
-    # which only runs off a real admin "approve" tap on the PRIMARY group (handle_decision
-    # -> publish_primary_group -> candidate_publish_plan). So this test leaves
+    # which only runs off an admin "approve" on the PRIMARY group (handle_decision ->
+    # publish_primary_group -> candidate_publish_plan). So this test leaves
     # run_publish_primary_group_cycle UNstubbed (unlike every other stage) and drives it
-    # with a synthetic Telegram callback update instead of mocking the function away.
-    # telegram_client.get_updates/answer_callback_query are mocked (no real Telegram call),
-    # and publish_primary_group.publish_candidate is mocked (no real Gelato/Etsy call) -
-    # everything else in the approve path (record_decision, publish_primary_group,
-    # candidate_publish_plan) runs for real.
+    # with a real decision.
+    #
+    # GL-132: that decision now arrives through the listener's queue, not through a
+    # synthetic getUpdates response - the batch no longer polls (poll=False), because the
+    # cursor belongs to the listener. Enqueueing is therefore the production path this
+    # test should exercise. publish_primary_group.publish_candidate is mocked (no real
+    # Gelato/Etsy call); everything else in the approve path (dispatch_pending_decisions,
+    # handle_decision, record_decision, publish_primary_group, candidate_publish_plan)
+    # runs for real.
     from contextlib import ExitStack
     from datetime import datetime, timedelta
 
@@ -309,15 +313,7 @@ def test_stall_predicate_fires_through_run_batch_when_constant_lowered(tmp_path,
     )
     conn.commit()
 
-    approve_update = {
-        "update_id": 1,
-        "callback_query": {
-            "id": "cbq1",
-            "from": {"id": "admin1"},
-            "message": {"message_id": 202, "chat": {"id": "admin1"}},
-            "data": "approve:1",
-        },
-    }
+    publish_primary_group.enqueue_decision(conn, 1, "approve", 1)
 
     stage_patches_without_publish_primary_group = [
         target for target in STAGE_PATCHES
@@ -329,11 +325,8 @@ def test_stall_predicate_fires_through_run_batch_when_constant_lowered(tmp_path,
             stack.enter_context(patch(target, return_value=[]))
         stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
         stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
-        stack.enter_context(
-            patch("pipeline.telegram_client.get_updates", side_effect=[[approve_update], []])
-        )
-        stack.enter_context(patch("pipeline.telegram_client.answer_callback_query"))
-        stack.enter_context(patch("pipeline.telegram_client.edit_message_reply_markup"))
+        # No getUpdates stub on purpose: a batch that polls at all is the defect this
+        # test would otherwise stop catching. An unstubbed call would try real HTTP.
         stack.enter_context(
             patch(
                 "pipeline.publish_primary_group.publish_candidate",

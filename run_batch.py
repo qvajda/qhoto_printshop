@@ -32,6 +32,7 @@ import pipeline.reconcile as reconcile
 import pipeline.research as research
 import pipeline.runlog as runlog
 import pipeline.telegram_client as telegram_client
+import telegram_listener
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
 JOB_NAME = "batch"
@@ -64,6 +65,24 @@ def _run_stage(name, fn, admin_chat_id, bot_token, failures):
         _notify_admin(admin_chat_id, bot_token, _admin_error_text(name, exc))
         failures.append(name)
         return None
+
+
+def _ensure_listener(conn, admin_chat_id, bot_token) -> dict:
+    """GL-132 (#142): run immediately before each digest stage. A digest asks the owner
+    for a decision, so a dead listener costs the most at exactly this moment - the
+    buttons go out attached to nothing that can answer them in under a second.
+
+    Deliberately NOT a stage and deliberately not fatal: a listener that cannot be
+    started is a slow button, not a broken pipeline, and holding the digest back would
+    turn a latency problem into a starved shop. Report it and send anyway - the hourly
+    job is still the backstop that collects the taps.
+    """
+    result = telegram_listener.ensure_alive(conn, bot_token=bot_token)
+    if result["status"] == "alive":
+        return result
+    print(f"{JOB_NAME}: {result['detail']}")
+    _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {result['detail']}")
+    return result
 
 
 def _reconcile_detail(result: dict | None) -> str | None:
@@ -102,8 +121,13 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         print(f"{JOB_NAME}: {exc}")
         return 1
 
-    # GL-45: shared with run_hourly.py, keyed on the bot token - see that file.
-    lock_path = lock_path or lock.token_lock_path(bot_token)
+    # GL-132: the PIPELINE lock, not the token lock. This job never polls Telegram -
+    # its two publish stages run with poll=False - so it has no business holding the
+    # cursor, and holding it was fatal: the always-on listener owns that lock for its
+    # lifetime, so a batch waiting on it never ran at all. Research, generation and the
+    # digest all stopped because the button got faster. What the batch does need is
+    # mutual exclusion with the hourly job, which is what this lock is.
+    lock_path = lock_path or lock.pipeline_lock_path(db_path)
 
     try:
         replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
@@ -165,6 +189,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 ),
                 admin_chat_id, bot_token, failures,
             )
+            _ensure_listener(conn, admin_chat_id, bot_token)
             _run_stage(
                 "digest",
                 lambda: digest.run_digest_cycle(
@@ -180,6 +205,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                     etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
                     etsy_access_token=etsy_access_token,
                     replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
+                    poll=False,
                 ),
                 admin_chat_id, bot_token, failures,
             )
@@ -198,6 +224,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 ),
                 admin_chat_id, bot_token, failures,
             )
+            _ensure_listener(conn, admin_chat_id, bot_token)
             _run_stage(
                 "group_digest",
                 lambda: group_digest.run_group_digest_cycle(
@@ -213,6 +240,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                     etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
                     etsy_access_token=etsy_access_token,
                     replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
+                    poll=False,
                 ),
                 admin_chat_id, bot_token, failures,
             )

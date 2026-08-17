@@ -209,24 +209,82 @@ def test_a_failing_poll_leaves_a_failed_heartbeat_and_keeps_polling(tmp_path):
     conn.close()
 
 
-def test_main_holds_the_token_lock_for_its_lifetime(tmp_path, monkeypatch):
+def test_the_hourly_backstop_skips_polling_but_still_dispatches(tmp_path, monkeypatch):
+    """GL-132: losing the cursor to a live listener must not cost the hourly its other
+    two jobs. Before this, run_hourly took the token lock for its whole run and exited 2
+    - so a resident listener meant nothing ever drained the queue it was filling."""
     db_path = _migrated_db(tmp_path)
     _set_required_env(monkeypatch)
-    lock_path = tmp_path / "listener.lock"
-    held = {}
+    token_lock = tmp_path / "token.lock"
 
-    def _one_poll(conn, **kwargs):
-        held["hourly_exit"] = run_hourly.main(db_path=db_path, lock_path=lock_path, load_dotenv=False)
-        return 0
+    conn = db.get_connection(db_path)
+    _, group_id = _seed_group(conn)
+    publish_primary_group.enqueue_decision(conn, group_id, "approve", 500)
+    conn.close()
 
-    with patch("telegram_listener.poll_once", _one_poll), \
-         patch("run_hourly.telegram_client.send_message"):
-        exit_code = telegram_listener.main(db_path=db_path, lock_path=lock_path, load_dotenv=False,
-                                           stop=_stop_after(1))
+    with lock.acquire(token_lock):  # stands in for the live listener
+        with patch("pipeline.telegram_client.get_updates") as mock_get,              patch("pipeline.publish_primary_group.handle_decision",
+                   return_value={"action": "approve", "published": False}) as mock_handle,              patch("run_hourly.telegram_client.send_message"):
+            exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                        token_lock_path=token_lock, load_dotenv=False)
 
     assert exit_code == 0
-    # The scheduled poll is kept as a backstop and loses to a live listener (exit 2).
-    assert held["hourly_exit"] == 2
+    mock_get.assert_not_called()          # exactly one reader of the cursor
+    mock_handle.assert_called_once()      # and the decision still got dispatched
+    conn = db.get_connection(db_path)
+    assert conn.execute("SELECT dispatched_at FROM pending_decisions").fetchone()["dispatched_at"]
+    conn.close()
+
+
+def test_the_hourly_polls_when_no_listener_holds_the_cursor(tmp_path, monkeypatch):
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with patch("pipeline.telegram_client.get_updates", return_value=[]) as mock_get,          patch("run_hourly.telegram_client.send_message"):
+        exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                    token_lock_path=tmp_path / "token.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    mock_get.assert_called_once()
+
+
+def test_the_batch_runs_while_the_listener_holds_the_cursor(tmp_path, monkeypatch):
+    """The #142 blocker: run_batch used to wrap its whole run in the TOKEN lock, so a
+    resident listener stopped research, generation and the digest outright."""
+    from contextlib import ExitStack
+
+    import run_batch
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with lock.acquire(lock.token_lock_path("tok")):  # the live listener
+        with ExitStack() as stack:
+            for target in _BATCH_STAGE_PATCHES:
+                stack.enter_context(patch(target, return_value=[]))
+            stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+            stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+            mock_digest = stack.enter_context(
+                patch("run_batch.digest.run_digest_cycle", return_value=[]))
+            exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                       load_dotenv=False)
+
+    assert exit_code == 0
+    mock_digest.assert_called_once()
+
+
+_BATCH_STAGE_PATCHES = [
+    "run_batch.research.run_research_cycle",
+    "run_batch.generate.run_generate_cycle",
+    "run_batch.primary_mockup.run_primary_mockup_cycle",
+    "run_batch.compliance_draft.run_compliance_draft_cycle",
+    "run_batch.critic_pass.run_critic_pass_cycle",
+    "run_batch.digest.run_digest_cycle",
+    "run_batch.publish_primary_group.run_publish_primary_group_cycle",
+    "run_batch.group_mockup.run_group_mockup_cycle",
+    "run_batch.group_critic_pass.run_group_critic_pass_cycle",
+    "run_batch.group_digest.run_group_digest_cycle",
+]
 
 
 def test_the_lock_does_not_go_stale_under_a_live_listener(tmp_path, monkeypatch):
@@ -436,3 +494,135 @@ def test_hourly_says_nothing_when_no_listener_has_ever_run(tmp_path, monkeypatch
 
     assert exit_code == 0
     mock_send.assert_not_called()
+
+
+# --- ensure_alive: the batch keeps a listener up at digest time ------------
+
+def _record_listener(conn, minutes_ago, ok=True, detail=None):
+    heartbeat.record(conn, telegram_listener.JOB_NAME, ok=ok, detail=detail,
+                     now=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes_ago))
+
+
+def test_ensure_alive_does_nothing_when_the_listener_is_breathing(tmp_path):
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+    _record_listener(conn, minutes_ago=0)
+    spawned = []
+
+    result = telegram_listener.ensure_alive(conn, bot_token="tok", spawn=lambda: spawned.append(1))
+
+    assert result["status"] == "alive"
+    assert spawned == []
+    conn.close()
+
+
+def test_ensure_alive_starts_one_when_the_heartbeat_is_stale(tmp_path):
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+    _record_listener(conn, minutes_ago=30)
+
+    result = telegram_listener.ensure_alive(conn, bot_token="tok-nobody-holds", spawn=lambda: 4242)
+
+    assert result["status"] == "started" and result["pid"] == 4242
+    assert "listener-down" in result["detail"]
+    conn.close()
+
+
+def test_ensure_alive_does_not_start_a_second_listener_over_a_wedged_one(tmp_path):
+    # A stale heartbeat with the token lock still held by a live process means wedged,
+    # not absent. A second listener would only exit 2 - and would say "started" while
+    # the button stayed dead, which is worse than saying nothing.
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+    _record_listener(conn, minutes_ago=30)
+    spawned = []
+
+    with lock.acquire(lock.token_lock_path("tok-held")):
+        result = telegram_listener.ensure_alive(conn, bot_token="tok-held",
+                                                spawn=lambda: spawned.append(1))
+
+    assert result["status"] == "wedged"
+    assert spawned == []
+    conn.close()
+
+
+def test_ensure_alive_reports_a_spawn_that_fails(tmp_path):
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+    _record_listener(conn, minutes_ago=30)
+
+    def _boom():
+        raise OSError("no python here")
+
+    result = telegram_listener.ensure_alive(conn, bot_token="tok-nobody", spawn=_boom)
+
+    assert result["status"] == "failed"
+    assert "no python here" in result["detail"]
+    conn.close()
+
+
+def test_ensure_alive_says_nothing_when_no_listener_has_ever_run(tmp_path):
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+    spawned = []
+
+    result = telegram_listener.ensure_alive(conn, bot_token="tok", spawn=lambda: spawned.append(1))
+
+    assert result["status"] == "alive"
+    assert spawned == []
+    conn.close()
+
+
+def test_the_batch_checks_the_listener_before_it_sends_a_digest(tmp_path, monkeypatch):
+    """The owner's ask: a digest is a request for a decision, so the listener has to be
+    alive at the moment the buttons go out, not five minutes later."""
+    from contextlib import ExitStack
+
+    import run_batch
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    order = []
+
+    with ExitStack() as stack:
+        for target in _BATCH_STAGE_PATCHES:
+            stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+        stack.enter_context(patch("run_batch.digest.run_digest_cycle",
+                                  side_effect=lambda *a, **k: order.append("digest") or []))
+        stack.enter_context(patch("run_batch.telegram_listener.ensure_alive",
+                                  side_effect=lambda *a, **k: order.append("ensure") or
+                                  {"status": "alive", "detail": None}))
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                   load_dotenv=False)
+
+    assert exit_code == 0
+    assert order[:2] == ["ensure", "digest"]
+
+
+def test_a_dead_listener_is_reported_but_does_not_hold_the_digest(tmp_path, monkeypatch):
+    # A listener that cannot be started is a slow button, not a broken pipeline. Holding
+    # the digest back would turn a latency problem into a starved shop.
+    from contextlib import ExitStack
+
+    import run_batch
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        for target in _BATCH_STAGE_PATCHES:
+            stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+        mock_digest = stack.enter_context(patch("run_batch.digest.run_digest_cycle", return_value=[]))
+        stack.enter_context(patch("run_batch.telegram_listener.ensure_alive",
+                                  return_value={"status": "failed", "detail": "listener-down: nope"}))
+        mock_send = stack.enter_context(patch("run_batch.telegram_client.send_message"))
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                   load_dotenv=False)
+
+    assert exit_code == 0
+    mock_digest.assert_called_once()
+    assert any("listener-down" in str(call) for call in mock_send.call_args_list)

@@ -22,8 +22,10 @@ a listener that is down means taps arrive late, never that they are lost.
 Exit codes match run_hourly.py: 0 clean stop, 1 missing config, 2 lock held,
 3 stale schema.
 """
+import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import migrate
@@ -46,6 +48,77 @@ LONG_POLL_TIMEOUT = 25
 # hot against a network outage, and a dead listener is already visible through the
 # failed heartbeat run_hourly checks.
 POLL_ERROR_BACKOFF_SECONDS = 5
+
+
+# GL-132: how long a gap in the listener's heartbeat means "dead" rather than "busy".
+# It writes one every completed poll, so ~25s is the healthy interval.
+STALE_MINUTES = 5
+DOWN_PREFIX = "listener-down"
+
+SCRIPT_PATH = Path(__file__).resolve()
+
+
+def stale_detail(conn, *, now=None) -> str | None:
+    """Return a detail string if the listener looks dead, else None. The single
+    definition of 'the listener is down', read by run_hourly (which reports it) and by
+    run_batch (which does something about it).
+
+    Never having run at all reads as None on purpose: before the listener is installed
+    on a machine there is nothing to be down, and an alarm that fires on a fresh
+    checkout is an alarm nobody keeps reading.
+    """
+    row = heartbeat.last(conn, JOB_NAME)
+    if row is None:
+        return None
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        gap_minutes = (now - datetime.fromisoformat(row["ran_at"])).total_seconds() / 60
+    except (TypeError, ValueError):
+        return None
+    if not row["ok"]:
+        return f"{DOWN_PREFIX}: last poll failed - {row['detail']}"
+    if gap_minutes <= STALE_MINUTES:
+        return None
+    return (f"{DOWN_PREFIX}: no poll for {gap_minutes:.0f} min - taps are only collected "
+            f"by the scheduled poll now (#139)")
+
+
+def _spawn() -> int:
+    """Start a detached listener and return its pid. Detached on purpose: the parent
+    here is a scheduled batch that exits in minutes, and the listener must outlive it."""
+    kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+              "stderr": subprocess.DEVNULL, "cwd": str(SCRIPT_PATH.parent)}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    return subprocess.Popen([sys.executable, str(SCRIPT_PATH)], **kwargs).pid
+
+
+def ensure_alive(conn, *, bot_token, now=None, spawn=_spawn) -> dict:
+    """GL-132: called by the batch immediately before it sends digests. A digest is a
+    request for a decision, so sending one into a dead button is the one moment a dead
+    listener costs the most.
+
+    Three outcomes, and the middle one is why this is not just "spawn if the heartbeat
+    is stale": a listener whose heartbeat is stale but whose token lock is still held by
+    a live process is wedged, not absent, and starting a second one would only produce
+    an immediate exit 2. That case is reported, never spawned over.
+    """
+    detail = stale_detail(conn, now=now)
+    if detail is None:
+        return {"status": "alive", "detail": None}
+
+    if lock.is_held(lock.token_lock_path(bot_token)):
+        return {"status": "wedged",
+                "detail": f"{detail} - but the token lock is held by a live process; "
+                          f"not starting a second listener"}
+
+    try:
+        pid = spawn()
+    except Exception as exc:
+        return {"status": "failed", "detail": f"{detail} - could not start one: {exc}"}
+    return {"status": "started", "detail": f"{detail} - started a new listener (pid {pid})", "pid": pid}
 
 
 def poll_once(conn, *, admin_chat_id, bot_token, timeout=LONG_POLL_TIMEOUT, now=None) -> int:

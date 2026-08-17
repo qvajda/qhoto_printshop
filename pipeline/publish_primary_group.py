@@ -620,7 +620,61 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
                                      store_id=None, gelato_api_key=None, shop_id=None,
                                      etsy_api_key=None, etsy_api_secret=None, etsy_access_token=None,
                                      replicate_api_token=None, anthropic_api_key=None,
-                                     dry_run=None, now=None) -> list:
+                                     poll=True, dry_run=None, now=None) -> list:
+    """poll=False (GL-132) runs everything except the getUpdates half: drain the
+    listener's queue, retry publish_failed. The cursor has exactly one reader, so a
+    caller that does not hold the token lock must not poll - but it can and must still
+    do the work, or a decision recorded by the listener waits for the next caller that
+    does. The batch runs this way always; the hourly falls back to it when a live
+    listener already owns the cursor."""
+    processed = []
+    if poll:
+        processed = _poll_and_process(
+            conn, admin_chat_id=admin_chat_id, bot_token=bot_token, static_config=static_config,
+            store_id=store_id, gelato_api_key=gelato_api_key, shop_id=shop_id,
+            etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+            etsy_access_token=etsy_access_token, replicate_api_token=replicate_api_token,
+            anthropic_api_key=anthropic_api_key, dry_run=dry_run, now=now,
+        )
+
+    # GL-131: drain whatever the always-on listener recorded since the last cycle. The
+    # listener acks in under a second and queues; this is where an approved group
+    # actually publishes. Held, not raised, so a failing dispatch cannot skip the
+    # publish_failed retry below - both surface as a failed stage.
+    dispatch_error = None
+    try:
+        dispatch_pending_decisions(
+            conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+            shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
+            etsy_access_token=etsy_access_token, replicate_api_token=replicate_api_token,
+            anthropic_api_key=anthropic_api_key, dry_run=dry_run, now=now,
+        )
+    except PendingDecisionDispatchError as exc:
+        dispatch_error = exc
+
+    # Once per cycle, re-attempt any group stuck at publish_failed after an approved
+    # decision - a transient patch failure shouldn't strand it forever (H1). GL-54: this
+    # used to catch-and-print, swallowing retry_publish_failed_groups' own
+    # PublishFailedRetryError and reporting the stage successful. Let it propagate - the
+    # per-update loop already advanced the Telegram offset for every update it saw, so
+    # nothing here is re-delivered by the raise.
+    retry_publish_failed_groups(
+        conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
+        shop_id=shop_id, etsy_api_key=etsy_api_key,
+        etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
+        dry_run=dry_run, now=now,
+    )
+
+    if dispatch_error is not None:
+        raise dispatch_error
+
+    return processed
+
+
+def _poll_and_process(conn, *, admin_chat_id=None, bot_token=None, static_config=None,
+                       store_id=None, gelato_api_key=None, shop_id=None, etsy_api_key=None,
+                       etsy_api_secret=None, etsy_access_token=None, replicate_api_token=None,
+                       anthropic_api_key=None, dry_run=None, now=None) -> list:
     # GL-45: this is the only place in the pipeline that consumes the bot's single,
     # server-side update cursor. A poll from a copy of the database deletes updates
     # the canonical database will never see, so the identity check belongs here,
@@ -660,36 +714,5 @@ def run_publish_primary_group_cycle(conn, *, admin_chat_id=None, bot_token=None,
         # as an error. Either the update is handled or its outcome is logged; both mean
         # it must not come back.
         set_telegram_offset(conn, update_id)
-
-    # GL-131: drain whatever the always-on listener recorded since the last cycle. The
-    # listener acks in under a second and queues; this is where an approved group
-    # actually publishes. Held, not raised, so a failing dispatch cannot skip the
-    # publish_failed retry below - both surface as a failed stage.
-    dispatch_error = None
-    try:
-        dispatch_pending_decisions(
-            conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
-            shop_id=shop_id, etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
-            etsy_access_token=etsy_access_token, replicate_api_token=replicate_api_token,
-            anthropic_api_key=anthropic_api_key, dry_run=dry_run, now=now,
-        )
-    except PendingDecisionDispatchError as exc:
-        dispatch_error = exc
-
-    # Once per poll cycle, re-attempt any group stuck at publish_failed after an
-    # approved decision - a transient patch failure shouldn't strand it forever (H1).
-    # GL-54: this used to catch-and-print, swallowing retry_publish_failed_groups'
-    # own PublishFailedRetryError and reporting the stage successful. Let it
-    # propagate - the per-update loop above already advanced the Telegram offset
-    # for every update it saw, so nothing here is re-delivered by the raise.
-    retry_publish_failed_groups(
-        conn, static_config=static_config, store_id=store_id, gelato_api_key=gelato_api_key,
-        shop_id=shop_id, etsy_api_key=etsy_api_key,
-        etsy_api_secret=etsy_api_secret, etsy_access_token=etsy_access_token,
-        dry_run=dry_run, now=now,
-    )
-
-    if dispatch_error is not None:
-        raise dispatch_error
 
     return processed

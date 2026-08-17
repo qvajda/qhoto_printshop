@@ -9,14 +9,20 @@ function per stage, the runner sequences, it does not absorb).
 Windows Task Scheduler invokes this hourly; exit code is the signal it acts
 on (see docs/2026-08-05-gl7-cron-prd-and-kickoff.md §2 item 1 and item 7).
 
-E10a: the trigger is now every 5 minutes, and JOB_NAME stays "hourly" as a
-deliberate misnomer - renaming it churns heartbeats.job_name, the log filename
-and the Task Scheduler task name for zero functional gain. The cadence is the
-dominant term in tap-to-toast latency (the ack in process_update has been
-pre-dispatch since GL-45, so it was never the dispatch), and Telegram expires a
-callback_query_id in minutes, not an hour. A run that collides with a batch
-raises lock.LockHeldError, prints, and exits 2 with no alert and no heartbeat
-row, so 12x the cadence adds no noise. See docs/2026-08-11-e10-kickoff.md §1.
+GL-132 (#142): the name is honest again. E10a had moved the trigger to PT5M for
+exactly one reason - the cron poll WAS the owner's button, and a callback_query_id
+expires in minutes. The listener owns that latency now (#139), so the trigger is back
+to PT1H and this job is what it is named after.
+
+What it still is, and what nothing else covers between the 09:00 and 21:00 batches:
+drain the decisions the listener recorded, retry publish_failed candidates, and notice
+a listener that has stopped breathing.
+
+Two locks, and which one it takes when is the whole design (see pipeline/lock.py):
+it holds the PIPELINE lock for its run, so it and the batch never interleave stages;
+it takes the TOKEN lock on top only to poll, and if a live listener already owns the
+cursor it skips polling and does the rest anyway. A poll it cannot do is not a reason
+to leave a recorded decision undispatched.
 """
 import sys
 from datetime import datetime, timezone
@@ -30,6 +36,7 @@ import pipeline.lock as lock
 import pipeline.publish_primary_group as publish_primary_group
 import pipeline.runlog as runlog
 import pipeline.telegram_client as telegram_client
+import telegram_listener
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
 JOB_NAME = "hourly"
@@ -39,19 +46,18 @@ JOB_NAME = "hourly"
 # the moment logs/telegram_getupdates.log drops from 12 polls an hour to 1 agree to the
 # minute. Nothing in the pipeline noticed for five days, because a slow poll looks
 # exactly like a quiet one. The job now measures its own interval against the cadence
-# E10a set, from the heartbeat it already writes, and says so once per episode.
-EXPECTED_CADENCE_MINUTES = 5
+# it expects, from the heartbeat it already writes, and says so once per episode.
+# GL-132: PT5M -> PT1H, so this moved 5 -> 60 with the Task Scheduler trigger. These
+# two are one decision written in two places; changing either alone means the job
+# either cries wolf every run or never notices a real reversion.
+EXPECTED_CADENCE_MINUTES = 60
 CADENCE_STALE_MULTIPLIER = 3
 CADENCE_DEGRADED_PREFIX = "cadence-degraded"
 
-# GL-131 (#139): the listener is the thing that answers the owner's button in under a
-# second, so a listener that dies silently is the same five-day outage GL-130 was. It
-# writes a heartbeat every completed long poll (~25s), so a gap this wide is not a slow
-# poll, it is a dead process. Never having run at all is NOT reported - before the
-# listener is installed on the machine there is nothing to be down.
-LISTENER_JOB_NAME = "listener"
-LISTENER_STALE_MINUTES = 5
-LISTENER_DOWN_PREFIX = "listener-down"
+# GL-131 (#139): the listener answers the owner's button in under a second, so a
+# listener that dies silently is the same five-day outage GL-130 was. The threshold and
+# the wording live in telegram_listener.stale_detail - one definition, read here (which
+# reports it) and by run_batch (which restarts it).
 
 
 def _admin_error_text(exc):
@@ -79,26 +85,9 @@ def _cadence_detail(conn, *, now=None) -> str | None:
             f"expected every {EXPECTED_CADENCE_MINUTES} min (E10a)")
 
 
-def _listener_detail(conn, *, now=None) -> str | None:
-    """Return a detail string if the always-on listener looks dead, else None."""
-    row = heartbeat.last(conn, LISTENER_JOB_NAME)
-    if row is None:
-        return None
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
-    try:
-        gap_minutes = (now - datetime.fromisoformat(row["ran_at"])).total_seconds() / 60
-    except (TypeError, ValueError):
-        return None
-    if not row["ok"]:
-        return f"{LISTENER_DOWN_PREFIX}: last poll failed - {row['detail']}"
-    if gap_minutes <= LISTENER_STALE_MINUTES:
-        return None
-    return (f"{LISTENER_DOWN_PREFIX}: no poll for {gap_minutes:.0f} min - taps are only "
-            f"collected by this job now (#139)")
-
-
 def _findings(conn, *, now=None) -> list:
-    return [d for d in (_cadence_detail(conn, now=now), _listener_detail(conn, now=now)) if d]
+    return [d for d in (_cadence_detail(conn, now=now),
+                        telegram_listener.stale_detail(conn, now=now)) if d]
 
 
 def _notify_admin(admin_chat_id, bot_token, message):
@@ -108,7 +97,7 @@ def _notify_admin(admin_chat_id, bot_token, message):
         print(f"failed to notify admin of {JOB_NAME} failure: {exc}")
 
 
-def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
+def main(*, db_path=None, lock_path=None, token_lock_path=None, load_dotenv=True) -> int:
     if load_dotenv:
         config.load_env()
 
@@ -125,10 +114,13 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
         print(f"{JOB_NAME}: {exc}")
         return 1
 
-    # GL-45: shared with run_batch.py, and now keyed on the bot token rather than on
-    # this file's directory - the cursor being protected is per-token and global, so a
-    # per-tree lock let a second checkout poll straight past it.
-    lock_path = lock_path or lock.token_lock_path(bot_token)
+    # GL-132: two locks, two properties. `lock_path` is the pipeline lock, shared with
+    # run_batch.py so the two cron jobs never interleave stages. `token_lock` is the
+    # Telegram cursor, shared with the listener - keyed on the bot token since GL-45,
+    # because the cursor is per-token and global and a per-tree lock let a second
+    # checkout poll straight past it.
+    lock_path = lock_path or lock.pipeline_lock_path(db_path)
+    token_lock = token_lock_path or lock.token_lock_path(bot_token)
 
     try:
         replicate_api_token = config.require_env("REPLICATE_API_TOKEN")
@@ -167,7 +159,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 print(f"{JOB_NAME}: {finding}")
                 _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {finding}")
             detail = "; ".join(findings) or None
-            try:
+            def _cycle(poll):
                 publish_primary_group.run_publish_primary_group_cycle(
                     conn, admin_chat_id=admin_chat_id, bot_token=bot_token,
                     static_config=config.load_static_config(),
@@ -175,7 +167,26 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                     etsy_api_key=etsy_api_key, etsy_api_secret=etsy_api_secret,
                     etsy_access_token=etsy_access_token,
                     replicate_api_token=replicate_api_token, anthropic_api_key=anthropic_api_key,
+                    poll=poll,
                 )
+
+            try:
+                # GL-132: losing the cursor to a live listener is the normal, designed
+                # case - not a failure and not a reason to skip the work. The probe is
+                # racy by nature, so the LockHeldError below is the real guard; the
+                # probe only keeps the common path from writing a lock file it would
+                # immediately have to give back.
+                if lock.is_held(token_lock):
+                    print(f"{JOB_NAME}: a live listener holds the cursor - not polling, "
+                          f"dispatching what it recorded")
+                    _cycle(poll=False)
+                else:
+                    try:
+                        with lock.acquire(token_lock):
+                            _cycle(poll=True)
+                    except lock.LockHeldError:
+                        print(f"{JOB_NAME}: a listener took the cursor mid-run - not polling")
+                        _cycle(poll=False)
             except Exception as exc:
                 heartbeat.record(conn, JOB_NAME, ok=False, detail=str(exc))
                 _notify_admin(admin_chat_id, bot_token, _admin_error_text(exc))

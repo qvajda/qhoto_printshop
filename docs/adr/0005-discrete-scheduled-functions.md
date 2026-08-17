@@ -62,3 +62,30 @@ they must never poll concurrently — the existing token lock (`lock.token_lock_
 is the mechanism, and the backstop must lose to a live listener.
 
 Executed by issue #139.
+
+### Refinement, 2026-08-17 — "the backstop loses to a live listener" means its *poll*, not its run (#142)
+
+The amendment above said the scheduled poll must lose to a live listener, and #139
+implemented that as the whole job exiting 2. Building the listener as an actual
+resident showed that reading to be wrong in a way that costs more than it protects.
+
+One lock was doing two jobs: "one reader of the Telegram cursor" and, by accident of
+there being only one lock, "one writer of the database". A listener holding it for its
+lifetime therefore stopped **every** scheduled run — the twice-daily batch never
+acquired it at all, so research, generation and the digest all stopped because the
+button got faster. And the hourly job, having lost the lock, also stopped draining the
+decisions the listener was recording: the queue filled and nothing emptied it.
+
+So there are two locks, because they are two properties. The listener takes the
+**cursor** lock only — it never runs a stage. The batch takes the **pipeline** lock
+only — it never polls. The hourly job takes the pipeline lock, then tries the cursor
+lock on top for its poll alone, and if a live listener already owns the cursor it skips
+polling and does the rest anyway.
+
+The invariant is unchanged and is the only one that ever mattered: **exactly one reader
+of the cursor.** What changed is the recognition that a poll a job cannot do is not a
+reason for it to leave a recorded decision undispatched.
+
+A lifetime holder also breaks the lock's staleness rule, which declares a holder dead on
+file age alone after an hour — correct for jobs that finish in minutes, fatal for one
+that does not. A live holder now says so by touching its lock file each loop.
