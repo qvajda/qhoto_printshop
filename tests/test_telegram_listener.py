@@ -626,3 +626,62 @@ def test_a_dead_listener_is_reported_but_does_not_hold_the_digest(tmp_path, monk
     assert exit_code == 0
     mock_digest.assert_called_once()
     assert any("listener-down" in str(call) for call in mock_send.call_args_list)
+
+
+# --- no supervisor task: the cron jobs are the supervisor ------------------
+
+def test_the_hourly_starts_a_listener_that_is_not_running(tmp_path, monkeypatch):
+    """#142 follow-up: a separate qhoto-listener task would only duplicate this. The
+    hourly and the batch already run on a cadence, so whichever comes first restarts a
+    dead listener - one mechanism, not two."""
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    conn = db.get_connection(db_path)
+    _record_listener(conn, minutes_ago=30)
+    conn.close()
+
+    with patch("pipeline.telegram_client.get_updates", return_value=[]),          patch("telegram_listener._spawn", return_value=4242) as mock_spawn,          patch("run_hourly.telegram_client.send_message") as mock_send:
+        exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                    token_lock_path=tmp_path / "token.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    mock_spawn.assert_called_once()
+    assert any("started a new listener" in str(call) for call in mock_send.call_args_list)
+
+
+def test_the_hourly_starts_the_listener_only_after_it_has_let_go_of_the_cursor(tmp_path, monkeypatch):
+    """The ordering IS the feature: spawn while still holding the token lock and the new
+    listener finds it held and exits 2 - a restart that silently never happens."""
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    conn = db.get_connection(db_path)
+    _record_listener(conn, minutes_ago=30)
+    conn.close()
+    token_lock = tmp_path / "token.lock"
+    held_at_spawn = {}
+
+    def _spy():
+        held_at_spawn["held"] = lock.is_held(token_lock)
+        return 4242
+
+    with patch("pipeline.telegram_client.get_updates", return_value=[]),          patch("telegram_listener._spawn", _spy),          patch("run_hourly.telegram_client.send_message"):
+        run_hourly.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                        token_lock_path=token_lock, load_dotenv=False)
+
+    assert held_at_spawn["held"] is False
+
+
+def test_the_hourly_says_nothing_when_the_listener_is_alive(tmp_path, monkeypatch):
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    conn = db.get_connection(db_path)
+    _record_listener(conn, minutes_ago=0)
+    conn.close()
+
+    with patch("pipeline.telegram_client.get_updates", return_value=[]),          patch("telegram_listener._spawn") as mock_spawn,          patch("run_hourly.telegram_client.send_message") as mock_send:
+        exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                    token_lock_path=tmp_path / "token.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    mock_spawn.assert_not_called()
+    mock_send.assert_not_called()

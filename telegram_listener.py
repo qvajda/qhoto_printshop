@@ -95,7 +95,7 @@ def _spawn() -> int:
     return subprocess.Popen([sys.executable, str(SCRIPT_PATH)], **kwargs).pid
 
 
-def ensure_alive(conn, *, bot_token, now=None, spawn=_spawn) -> dict:
+def ensure_alive(conn, *, bot_token, token_lock_path=None, now=None, spawn=None) -> dict:
     """GL-132: called by the batch immediately before it sends digests. A digest is a
     request for a decision, so sending one into a dead button is the one moment a dead
     listener costs the most.
@@ -105,11 +105,15 @@ def ensure_alive(conn, *, bot_token, now=None, spawn=_spawn) -> dict:
     a live process is wedged, not absent, and starting a second one would only produce
     an immediate exit 2. That case is reported, never spawned over.
     """
+    # Resolved here, not as a default argument: a default binds the function object at
+    # import time, so patching the module attribute in a test would silently miss.
+    spawn = spawn or _spawn
+
     detail = stale_detail(conn, now=now)
     if detail is None:
         return {"status": "alive", "detail": None}
 
-    if lock.is_held(lock.token_lock_path(bot_token)):
+    if lock.is_held(token_lock_path or lock.token_lock_path(bot_token)):
         return {"status": "wedged",
                 "detail": f"{detail} - but the token lock is held by a live process; "
                           f"not starting a second listener"}
