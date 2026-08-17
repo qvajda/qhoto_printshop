@@ -5,6 +5,8 @@ getUpdates, checks the admin, records the decision and acks - and nothing else.
 The slow work stays in the scheduled stage, which drains the queue the listener
 writes.
 """
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -225,6 +227,35 @@ def test_main_holds_the_token_lock_for_its_lifetime(tmp_path, monkeypatch):
     assert exit_code == 0
     # The scheduled poll is kept as a backstop and loses to a live listener (exit 2).
     assert held["hourly_exit"] == 2
+
+
+def test_the_lock_does_not_go_stale_under_a_live_listener(tmp_path, monkeypatch):
+    # lock.acquire declares a holder stale purely on file age after an hour, whatever
+    # its PID says - every holder before this one finished in minutes. A listener that
+    # is merely blocked on a 25s long poll must not be robbed of the cursor.
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+    lock_path = tmp_path / "listener.lock"
+
+    with lock.acquire(lock_path):
+        old = time.time() - 7200
+        os.utime(lock_path, (old, old))
+        with patch("pipeline.telegram_client.get_updates", return_value=[]):
+            telegram_listener.run(conn, admin_chat_id="987654321", bot_token="tok",
+                                  lock_path=lock_path, stop=_stop_after(1))
+        assert lock_path.stat().st_mtime > old
+        with pytest.raises(lock.LockHeldError):
+            with lock.acquire(lock_path):
+                pass
+    conn.close()
+
+
+def test_refresh_does_not_touch_a_lock_owned_by_someone_else(tmp_path):
+    lock_path = tmp_path / "other.lock"
+    lock_path.write_text("999999")
+
+    assert lock.refresh(lock_path) is False
+    assert lock.refresh(tmp_path / "missing.lock") is False
 
 
 def test_main_returns_2_when_the_lock_is_already_held(tmp_path, monkeypatch):

@@ -78,12 +78,19 @@ def poll_once(conn, *, admin_chat_id, bot_token, timeout=LONG_POLL_TIMEOUT, now=
     return len(updates)
 
 
-def run(conn, *, admin_chat_id, bot_token, stop=None, sleep=time.sleep, timeout=LONG_POLL_TIMEOUT) -> None:
+def run(conn, *, admin_chat_id, bot_token, lock_path=None, stop=None, sleep=time.sleep,
+        timeout=LONG_POLL_TIMEOUT) -> None:
     # GL-45: one cursor per bot token. A poll from a copy of the database deletes
     # updates the canonical one will never see.
     db.assert_canonical(conn)
 
     while not (stop is not None and stop()):
+        # Before the poll, not after: a poll blocks for up to LONG_POLL_TIMEOUT, and
+        # lock.acquire's age ceiling has no idea a holder is merely waiting on Telegram.
+        # Without this the lock goes stealable after an hour and the scheduled jobs take
+        # the cursor from a live listener (GL-131).
+        if lock_path is not None:
+            lock.refresh(lock_path)
         try:
             poll_once(conn, admin_chat_id=admin_chat_id, bot_token=bot_token, timeout=timeout)
         except KeyboardInterrupt:
@@ -127,7 +134,8 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True, stop=None) -> int:
             conn = db.get_connection(db_path)
             print(f"{JOB_NAME}: polling (long poll {LONG_POLL_TIMEOUT}s, lock {lock_path})")
             try:
-                run(conn, admin_chat_id=admin_chat_id, bot_token=bot_token, stop=stop)
+                run(conn, admin_chat_id=admin_chat_id, bot_token=bot_token,
+                    lock_path=lock_path, stop=stop)
             except KeyboardInterrupt:
                 print(f"{JOB_NAME}: stopped")
             return 0
