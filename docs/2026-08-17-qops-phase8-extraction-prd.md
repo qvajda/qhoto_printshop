@@ -1,0 +1,262 @@
+# PRD — Phase 8: extract qops into its own repo
+
+Status: **draft, awaiting owner sign-off.** No work starts until signed.
+Written against the owner's instruction of 2026-08-17 ("full extraction now").
+
+**Revision 2, 2026-08-17.** Answers the owner's question "will qops in its own
+repo be able to use its own automated way of working to continue tackling the
+open issues?" As drafted, no — the substrate was portable but the *runtime* was
+not, and no success criterion tested for it. Six gaps closed: criterion 8 added,
+the pickup runtime moved out of §Scope-out, P8.1 gained a third leak and the
+empty-tripwire test, **P8.4b** is new, two risk rows added, and P8.0's stale
+acceptance-run clause is struck. **P8.2 is pre-authorised** by the owner in the
+same exchange — creating `qvajda/qops` public no longer stops for a go-ahead. The
+one irreversible act inside it stays flagged: a public repo cannot be made
+un-public in the eyes of anyone who cloned it, and its licence choice is a
+one-way door for contributions.
+
+## Problem
+
+`qops` is a general ways-of-working substrate — brief, ledger, guard, install,
+doctor, metrics, the label taxonomy, the agent roster, three native skills, six
+rendered workflows — and it lives inside the repo of the one project it happens
+to serve. Three costs follow:
+
+1. **The shop's tracker is no longer the shop's.** ADR-0015 decided qops's work
+   leaves this repo and set an interim: qops issues stay here carrying
+   `mission:qops`. When that ADR was written the migration query returned
+   nothing. **Today it returns 12 open issues** — the interim has become the
+   arrangement.
+2. **Shared CI and shared hot path.** `test/gate/guard/groom/digest/automerge`,
+   `.claude/`, `skills-lock.json` and the 150-line CLAUDE.md cap all serve both
+   concerns at once, so a qops change and a pipeline change contend for the same
+   green build.
+3. **No second consumer can exist.** Phase 8's actual object — meta-orchestration
+   across projects — is unreachable while the substrate is a subdirectory of one
+   project.
+
+**Amended 2026-08-17 (owner):** consumer #2 is no longer hypothetical. New
+projects start within days, and `myThirdwheel` is the named integration target.
+This removes the "packaging cost for one user" objection that the Phase 7
+sign-off rested on — and it moves the deadline. **The extraction is now paced by
+the first new project, not by the acceptance run:** a project started before the
+package exists will copy `qops/` and `.qops/` by hand, and two divergent
+substrates with no merge path is a materially worse outcome than extracting one
+week early. P8.1 and P8.2 become the critical path.
+
+## What the portability audit says (measured 2026-08-17)
+
+Better than expected. The split is packaging, not a rewrite:
+
+- `qops/*.py` (1,124 lines across 9 modules): **zero** project-specific strings.
+- `.github/workflows/*.yml` contain `qvajda/qhoto_printshop`, but every one is
+  headed `RENDERED BY 'qops install' from qops/templates/... + .qops/config.yml`.
+  Generated output, not source.
+- **Two real leaks only:** `qops/templates/guard.yml.tmpl:29` names Gelato in a
+  comment, and `tests/test_qops.py` carries `etsy`/`replicate` fixture strings.
+- `.qops/config.yml` is, as designed, the single project-specific surface.
+
+Phase 7's portability proof therefore holds by measurement. Technical risk is low;
+the real cost is workflow, in §Risks.
+
+**Amended 2026-08-17 — what the audit measured, and what it did not.** The audit
+asked "does anything project-specific exist outside `.qops/config.yml`". It did
+**not** ask "can the extracted substrate run its own backlog autonomously", and
+the two are different questions. Four findings from a second pass:
+
+- **The CLI is portable by construction, better than the audit claimed.**
+  `qops/__main__.py:43` resolves the repo through `config.find_root()` — the
+  nearest ancestor holding `.qops/config.yml`. Installed as a package in any
+  repo, every verb finds the right root from cwd.
+- **The two `scripts/` entry points are not.** `scripts/qops_pickup.py:30` and
+  `scripts/qops_import.py:28` derive `ROOT` from `Path(__file__)`. Once qops is a
+  pinned dependency that root is site-packages, not the consuming repo. This is a
+  third leak the audit missed because it grepped for project *strings*, not for
+  project *rooting*.
+- **The pickup runtime is a per-machine registration, not a file.** The loop is a
+  Windows scheduled task (`qops-pickup-loop`, disabled — `docs/reference/loops.md`),
+  bound to one root. Copying `qops_pickup.py` into a new repo copies the picker
+  and not the thing that fires it.
+- **`qops doctor` has unconditional preconditions.** `install.doctor` reads
+  `CLAUDE.md` (`install.py:151`), requires `.claude/settings.json` to invoke qops,
+  and `skill_drift` (`install.py:109–137`) asserts installed skills == declared
+  and demands a `skills-lock.json` ref per external. A fresh repo satisfies none
+  of these, so criterion 5 is not free.
+
+Consequence for the plan: criterion 1 proves *packaging*. It does not prove
+*autonomy*, and until 2026-08-17 nothing in this PRD did — see criterion 8 and
+P8.4b.
+
+## Success criteria
+
+Measurable, checked in this order:
+
+1. `qops install` in a **fresh** repo containing only `.qops/config.yml` renders
+   all six workflows and they run green.
+2. `qhoto_printshop` consumes qops as a pinned dependency; **no qops source in
+   this repo** beyond `.qops/config.yml`.
+3. Re-rendering the six workflows from the extracted package produces output
+   **byte-identical** to what is on disk today. This is the acceptance test for
+   the move itself.
+4. `gh issue list --label mission:qops --state all` here returns only closed
+   migration records; all live qops issues exist in the qops repo. **The count is
+   read at migration time, not from this document** — the 2026-08-17 triage sweep
+   retypes #49 from `mission:post-launch` to `mission:qops`, so the set is 13 if
+   that sweep has landed and 12 if it has not. P8.5 re-runs the query rather than
+   trusting either number.
+5. `qops doctor` clean in both repos. In the new repo this requires its own
+   `CLAUDE.md`, its own `.claude/settings.json` invoking qops, and a `skills:`
+   block declaring **native-only** — the seven external skills are model and
+   image tooling with no use in a substrate repo, and `skill_drift` fails on a
+   declared-but-absent native or a lock entry outside the declared set.
+6. `tests/test_qops.py` passes in the qops repo with no pipeline fixtures; this
+   repo retains only its own tripwire/guard tests.
+7. Owner CI attention does not double: one digest, not two (see open question 4).
+8. **The new repo works its own backlog unattended.** An issue in `qvajda/qops`
+   carrying `state:planned` + `ready:auto` + `gate:machine` is picked by
+   `pickup-loop`, branched, committed, opened as a PR, and auto-merged by
+   `automerge-loop` with no owner keystroke between pick and merge. This is the
+   criterion that makes the extraction worth doing rather than a filing exercise,
+   and it is the only one that exercises the runtime rather than the package.
+   Its preconditions are P8.4b's checklist.
+
+## Scope
+
+**In:** `qops/` package + `qops/templates/`, `scripts/qops_import.py`,
+`scripts/qops_pickup.py`, `tests/test_qops.py`, `.claude/agents/*` (6 roles), the
+three native skills (`interview`, `spec-to-issue`, `triage`), `skills-lock.json`,
+the enforcement hooks, the label taxonomy + importer, ADRs 0013–0020, `docs/agents/`.
+
+**Out:** `.qops/config.yml` (stays with each project, by design); the tripwire
+list (those are *pipeline* constraints — Gelato, FLUX licence, placeholder
+template ids — and must not travel); pipeline ADRs 0001–0012; the seven external
+skills (reinstallable, tracked by `skills-lock.json`); **any rewrite of this
+repo's git history** (closed decision); qrchardist / meta-orchestration itself —
+Phase 8 *enables* it, it is not the deliverable.
+
+**Moved out of "Out" on 2026-08-17 — the pickup runtime.** This list previously
+excluded "the Windows scheduled tasks (ADR-0009)" wholesale, which quietly
+excluded the only thing that makes the substrate autonomous. Corrected split:
+
+- **Stays here:** the pipeline's own scheduled tasks — the two cron cadences of
+  ADR-0005, the Telegram listener. Those are shop runtime and never travel.
+- **Travels, and must be re-registered per repo:** `qops-pickup-loop`. The task
+  binds to a single repo root, so a second consumer needs either its own
+  registered task or one task taking a repo argument. Neither exists today.
+  Built in P8.4b; ADR-0009 gets amended, because "the cron host is the local
+  Windows desktop" now has to say *how many roots* that host serves.
+
+## Constraints
+
+- **No history rewrite.** The extraction therefore copies files into a fresh
+  initial commit and records provenance in the new repo's README, pointing at
+  source commits here. No `filter-repo`, no subtree surgery on this repo.
+- **Subscription-only, no API billing.** Distribution must not need hosted infra
+  or LLM-node billing (the reason n8n was rejected).
+- **ADR-0012 keeps this repo public.** The new repo inherits that decision
+  explicitly or amends it — it does not get to be silent.
+- **ADR-0009: the cron host is the local Windows desktop.** Hooks invoke `py -3`.
+  Nothing in the extracted package may assume POSIX.
+- **Owner-facing asks are capped at one page**, four options, one recommendation
+  (Phase 7 sign-off item 9). This PRD's open questions obey it.
+
+## Plan
+
+Each phase is independently revertible; each ends in a checkable state.
+
+- **P8.0 — prereq gate.** The dirty tree (#142 follow-up) is committed and #142 is
+  closed. ~~and the Phase 7 acceptance run has happened~~ — **struck 2026-08-17:**
+  this clause contradicted open question 4, which resolves the acceptance run to a
+  parallel qhoto-repo experiment and explicitly not a gate on packaging. OQ4 is
+  the later decision and carries the owner amendment; this clause was residue from
+  the pre-amendment draft.
+- **P8.1 — freeze the contract.** Document the config schema and the CLI
+  contract. Fix the leaks — now **three**, not two: `guard.yml.tmpl:29`'s Gelato
+  comment, `tests/test_qops.py`'s `etsy`/`replicate` fixtures, and the
+  `Path(__file__)` rooting in `scripts/qops_pickup.py:30` +
+  `scripts/qops_import.py:28`, which both move to `config.find_root()`. Add a
+  portability test that fails on any project-specific string outside
+  `.qops/config.yml`, so the property is enforced rather than measured once. Add
+  a test that `qops guard scan` exits 0 against an **empty** `tripwires:` list —
+  the substrate repo has no tripwires, that path has never been exercised, and a
+  crashing guard job fails every build in the new repo on day one.
+  *Ships value even if P8.2+ never happen.*
+- **P8.2 — create the repo.** Outward-facing act; needs its own explicit
+  go-ahead separate from signing this PRD. `qvajda/qops`, public, licence,
+  README with provenance, its own gate running `tests/test_qops.py`.
+- **P8.3 — move.** Copy the §Scope-in paths, fresh initial commit. Success
+  criterion 3 (byte-identical rendering) is the gate.
+- **P8.4 — rewire.** This repo installs the pinned package, deletes qops source,
+  `qops doctor` clean, workflows unchanged.
+- **P8.4b — stand up autonomy in the new repo.** New phase, 2026-08-17. Without
+  it the substrate is filed but inert, and criterion 8 is what proves otherwise.
+  Ordered, because each step's failure is invisible until the next one runs:
+  1. Author `.qops/config.yml` for the new repo: `project: qops`,
+     `repo: qvajda/qops`, `tripwires: []`, `doc_link_roots: [qops, scripts,
+     tests]`, `skills.native` only and `skills.external: []`, `gate_command`
+     pointing at `tests/test_qops.py`. Everything else copies.
+  2. Add its own `CLAUDE.md` (doctor reads it unconditionally) and
+     `.claude/settings.json` invoking `python -m qops` (doctor reads CLAUDE.md at
+     `install.py:151` and checks the settings file at `:147–150`).
+  3. `python scripts/qops_import.py` to create the label taxonomy. A repo with no
+     labels cannot hold a `ready:auto` and the picker's query returns empty
+     forever without erroring — a silent failure by construction.
+  4. **Branch protection on `master`, with the gate as a required check.** Not
+     previously in scope or criteria, and load-bearing:
+     `automerge-loop` only switches on GitHub's *native* auto-merge; required
+     checks are what actually merge (ADR-0016, ADR-0020). Skip this and every
+     `gate:machine` sortie opens a PR that sits forever, which reads exactly like
+     a broken picker. **Owner action, not the agent's** — `.claude/settings.json`
+     denies `gh api -X` against branch protection on purpose, and that denial is
+     a taken decision. Also enable the repo's "Allow auto-merge" setting.
+  5. Register the second `qops-pickup-loop` task, or give the existing one a
+     `--repo` argument, per §Scope. Leave it **disabled**, as it ships here.
+  6. Then criterion 8: one real issue, end to end, unattended.
+- **P8.5 — migrate the issues.** ADR-0015's exact query
+  (`gh issue list --label mission:qops --state all`) — **re-run it, do not trust a
+  count.** 12 today, 13 once the triage sweep retypes #49. **P8.5 must not run
+  before that sweep has landed**, or #49 is stranded in the wrong tracker with
+  both trackers believing they own it. Each issue closes here with a pointer to
+  its new home.
+- **P8.6 — record.** Amend ADR-0015 (interim ends), new ADR for the split, update
+  the ways-of-working section of CLAUDE.md: **there are now two trackers**, and
+  the brief must say which one it read.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| Two trackers double the "issues are the source of truth" surface — the failure mode is a session reading the wrong one. | `qops brief` states which repo it queried, every time. Non-negotiable, lands in P8.4. |
+| Version skew: the pipeline pinned to a stale qops while the substrate moves. | Pin a tag, not a branch. A substrate mutating under a live pipeline is the GL-53 failure mode. |
+| Rendered-workflow drift between the two repos. | `qops doctor` already detects drift; criterion 3 makes it the move's gate. |
+| ~~One consumer.~~ Superseded: `myThirdwheel` + the new projects are consumer #2 and are the design review. The live risk inverts — the seams get judged by a caller that doesn't exist yet at freeze time. | Freeze the contract (P8.1) *before* project #2 starts, then treat its first week as the review window. No config-schema changes inside that week; collect complaints instead of patching. |
+| **Hand-copying.** A new project started before the package exists copies `qops/` and `.qops/` and diverges immediately, with no merge path back. | This is now the dominant risk and it has a date on it. P8.2 lands before the first new project is scaffolded, or the first new project is deliberately started *without* qops. |
+| Extracting an unproven autonomy substrate — the hands-off sortie has never run. | Overstated as written: it *has* run, once, successfully — #116 was picked, shipped and advanced by `automerge-loop` (`docs/reference/loops.md`, ADR-0020 amendment). The mechanism is proven; what is unproven is the mechanism in a *second* repo. Run the acceptance sortie inside P8.1's window on this repo, then criterion 8 on the new one. Neither gates P8.2 (open question 4). |
+| **The substrate is extracted and cannot work its own backlog.** The failure is silent: the picker's query returns empty against a repo with no labels, no `ready:auto` and no branch protection, and exits 0 while doing so. An hourly task reporting "nothing eligible" looks identical to a healthy idle queue. | Criterion 8 and P8.4b. The queue's health is asserted by a sortie completing, never by the loop's own output. |
+| qops's own backlog is *more* auto-eligible than the pipeline's — local code, a real test suite, no vendor endpoint, so triage R6 excludes nothing — which makes an over-permissive `gate:machine` cheap to apply and expensive to be wrong about. | Triage R3 stands unchanged in the new repo: when unsure, `gate:taste`. A wrong `machine` label on substrate work ships a change to the thing that governs every other project. |
+
+## Open questions
+
+1. **Distribution mechanism?** *Recommendation: Claude Code plugin repo*, since
+   the skills and agents are already consumed that way, plus `pip install -e` for
+   the CLI during development. Alternatives: pip-from-git, submodule.
+2. **Pin or track?** *Recommendation: pin a tag* in this repo, per §Risks.
+3. **Do all 12 `mission:qops` issues migrate, or does open work finish here
+   first?** *Recommendation: migrate all 12.* ADR-0015 already says the next qops
+   issue filed here is a migration item, not a resident — there are 12, and a
+   partial migration keeps both trackers authoritative, which is the worst state.
+4. ~~**Sequencing — extract first, or run the Phase 7 acceptance run first?**~~
+   **Resolved 2026-08-17.** *Recommendation: extract first, acceptance run in
+   parallel.* The Phase 7 sign-off parked this until "a second project exists";
+   a second project now exists in the next few days, so the condition it named
+   is met rather than overridden — the contradiction I recorded this morning
+   dissolves on its own terms. The acceptance run still matters, but it is a
+   qhoto-repo experiment and no longer a gate on packaging.
+
+5. **Does `myThirdwheel` want all of qops, or only the taxonomy and the brief?**
+   *Recommendation: only the taxonomy, brief and ledger at first.* The guard's
+   tripwire mechanism is valuable but its content is per-project, the six
+   workflows assume a Python test suite, and `myThirdwheel` is a different shape
+   of project. Forcing the whole substrate onto consumer #2 is how the abstraction
+   gets hardened around the wrong seams. Ship the package with an explicit
+   minimum-viable subset and let it grow by request.
