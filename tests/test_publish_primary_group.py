@@ -1494,3 +1494,33 @@ def test_run_cycle_advances_the_offset_per_update_not_once_at_the_end(tmp_path):
     assert offsets_when_called == [None, 700]
     assert publish_primary_group.get_telegram_offset(conn) == 700
     conn.close()
+
+
+def test_every_emitted_callback_data_round_trips_to_a_dispatched_action():
+    """GL-130: the emitter and the parser are two files apart and only agree by
+    convention - `digest` writes the callback_data, `publish_primary_group` parses it,
+    and nothing failed if they drifted. Every button the owner can be shown must parse
+    back to the group it names and to an action process_update actually branches on."""
+    group_id = 101
+    dispatched = (set(publish_primary_group._DECIDED_LABELS)
+                  | {publish_primary_group.NOOP_ACTION,
+                     publish_primary_group.CONFIRM_REJECT_ACTION,
+                     publish_primary_group.KEEP_ACTION})
+
+    keyboards = [
+        digest.build_digest_keyboard(group_id),
+        digest.build_reject_confirm_keyboard(group_id),
+        # what _mark_decided leaves behind on a message that has been decided
+        {"inline_keyboard": [[{"text": "✅ Approved",
+                               "callback_data": f"{publish_primary_group.NOOP_ACTION}:{group_id}"}]]},
+    ]
+    buttons = [button for keyboard in keyboards
+               for row in keyboard["inline_keyboard"] for button in row]
+    assert len(buttons) == 7
+
+    for button in buttons:
+        parsed = publish_primary_group.resolve_callback(
+            _callback_update(data=button["callback_data"])
+        )
+        assert parsed["group_id"] == group_id, button
+        assert parsed["action"] in dispatched, button

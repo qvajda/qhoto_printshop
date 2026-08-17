@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pipeline.db as db
@@ -140,3 +141,64 @@ def test_main_notifies_telegram_on_stale_schema(tmp_path, monkeypatch):
     args, kwargs = mock_send.call_args
     assert args[0] == "admin1"
     assert "stale schema" in args[1]
+
+
+def _record_previous_run(db_path, minutes_ago, detail=None):
+    conn = db.get_connection(db_path)
+    ran_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes_ago)
+    heartbeat.record(conn, "hourly", ok=True, detail=detail, now=ran_at)
+    conn.close()
+
+
+def _run_ok(db_path, tmp_path):
+    with patch("run_hourly.publish_primary_group.run_publish_primary_group_cycle", return_value=[]), \
+         patch("run_hourly.telegram_client.send_message") as mock_send:
+        exit_code = run_hourly.main(
+            db_path=db_path, lock_path=tmp_path / "hourly.lock", load_dotenv=False,
+        )
+    return exit_code, mock_send
+
+
+def test_main_reports_a_degraded_poll_cadence(tmp_path, monkeypatch):
+    # GL-130: the Task Scheduler trigger silently went from PT5M back to PT1H on
+    # 2026-08-12 and nothing noticed for five days, because a slow poll and a quiet
+    # one look identical from inside the job.
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    _record_previous_run(db_path, minutes_ago=60)
+
+    exit_code, mock_send = _run_ok(db_path, tmp_path)
+
+    assert exit_code == 0
+    mock_send.assert_called_once()
+    assert "cadence-degraded" in mock_send.call_args[0][1]
+    assert "expected every 5 min" in mock_send.call_args[0][1]
+
+    conn = db.get_connection(db_path)
+    assert heartbeat.last(conn, "hourly")["detail"].startswith("cadence-degraded")
+
+
+def test_main_reports_a_degraded_cadence_once_per_episode(tmp_path, monkeypatch):
+    # ADR-0018 caps owner-facing asks: a poll stuck at hourly says so once, not 24
+    # times a day. The previous heartbeat's detail is the "already told them" marker.
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    _record_previous_run(db_path, minutes_ago=60, detail="cadence-degraded: told you already")
+
+    exit_code, mock_send = _run_ok(db_path, tmp_path)
+
+    assert exit_code == 0
+    mock_send.assert_not_called()
+
+
+def test_main_is_silent_when_the_cadence_is_on_spec(tmp_path, monkeypatch):
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+    _record_previous_run(db_path, minutes_ago=5)
+
+    exit_code, mock_send = _run_ok(db_path, tmp_path)
+
+    assert exit_code == 0
+    mock_send.assert_not_called()
+    conn = db.get_connection(db_path)
+    assert heartbeat.last(conn, "hourly")["detail"] is None

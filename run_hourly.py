@@ -19,6 +19,7 @@ raises lock.LockHeldError, prints, and exits 2 with no alert and no heartbeat
 row, so 12x the cadence adds no noise. See docs/2026-08-11-e10-kickoff.md §1.
 """
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import migrate
@@ -33,6 +34,16 @@ import pipeline.telegram_client as telegram_client
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "db" / "qhoto.sqlite3"
 JOB_NAME = "hourly"
 
+# GL-130: the cadence is a fact about the host (a Task Scheduler trigger), and on
+# 2026-08-12T13:06 it silently went from PT5M back to PT1H - the task file's mtime and
+# the moment logs/telegram_getupdates.log drops from 12 polls an hour to 1 agree to the
+# minute. Nothing in the pipeline noticed for five days, because a slow poll looks
+# exactly like a quiet one. The job now measures its own interval against the cadence
+# E10a set, from the heartbeat it already writes, and says so once per episode.
+EXPECTED_CADENCE_MINUTES = 5
+CADENCE_STALE_MULTIPLIER = 3
+CADENCE_DEGRADED_PREFIX = "cadence-degraded"
+
 
 def _admin_error_text(exc):
     """GL-61 knob 2: 'brief' keeps the exception text out of Telegram (it is still in
@@ -40,6 +51,23 @@ def _admin_error_text(exc):
     if config.telegram_error_verbosity() == "brief":
         return f"[{JOB_NAME}] stage failed - see logs/{JOB_NAME}.log"
     return f"[{JOB_NAME}] stage failed: {exc}"
+
+
+def _cadence_detail(conn, *, now=None) -> str | None:
+    """Return a detail string if this run came too long after the last one, else None.
+    Reads the heartbeat this job already writes - no new state, no new table."""
+    previous = heartbeat.last(conn, JOB_NAME)
+    if previous is None:
+        return None
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        gap_minutes = (now - datetime.fromisoformat(previous["ran_at"])).total_seconds() / 60
+    except (TypeError, ValueError):
+        return None
+    if gap_minutes <= EXPECTED_CADENCE_MINUTES * CADENCE_STALE_MULTIPLIER:
+        return None
+    return (f"{CADENCE_DEGRADED_PREFIX}: last run was {gap_minutes:.0f} min ago, "
+            f"expected every {EXPECTED_CADENCE_MINUTES} min (E10a)")
 
 
 def _notify_admin(admin_chat_id, bot_token, message):
@@ -95,6 +123,15 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
     try:
         with lock.acquire(lock_path):
             conn = db.get_connection(db_path)
+            # Measured before the cycle runs, so a cycle that then fails still leaves the
+            # cadence finding on its heartbeat. Notified at most once per episode: the
+            # previous heartbeat's detail is the "already told them" marker, so a poll
+            # stuck at hourly reports once, not 24 times a day (ADR-0018).
+            cadence_detail = _cadence_detail(conn)
+            previously_degraded = (heartbeat.last(conn, JOB_NAME) or {}).get("detail", "")
+            if cadence_detail and not str(previously_degraded or "").startswith(CADENCE_DEGRADED_PREFIX):
+                print(f"{JOB_NAME}: {cadence_detail}")
+                _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {cadence_detail}")
             try:
                 publish_primary_group.run_publish_primary_group_cycle(
                     conn, admin_chat_id=admin_chat_id, bot_token=bot_token,
@@ -108,7 +145,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 heartbeat.record(conn, JOB_NAME, ok=False, detail=str(exc))
                 _notify_admin(admin_chat_id, bot_token, _admin_error_text(exc))
                 return 1
-            heartbeat.record(conn, JOB_NAME, ok=True)
+            heartbeat.record(conn, JOB_NAME, ok=True, detail=cadence_detail)
             return 0
     except lock.LockHeldError as exc:
         print(f"{JOB_NAME}: {exc}")
