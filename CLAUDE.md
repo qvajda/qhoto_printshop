@@ -53,7 +53,9 @@ its record, not editing this list.
   render.** The injected niche is subject/style only — never scene words, never
   a dated event. → `docs/adr/0010-flat-full-bleed-artwork.md`
 - **Runtime is discrete scheduled functions on two cron cadences**, one function
-  per stage — not a persistent service, not one agent loop.
+  per stage — not a persistent service, not one agent loop. **One exemption
+  (2026-08-17): the Telegram ack** — poll, admin check, record decision, ack — may
+  be an always-on listener. It never publishes.
   → `docs/adr/0005-discrete-scheduled-functions.md`
 - **Telegram digest = `sendMediaGroup` + a separate `sendMessage`**, one pair
   per entry, never one combined call. Up to **three** entries per design.
