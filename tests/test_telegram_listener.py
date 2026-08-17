@@ -485,15 +485,18 @@ def test_hourly_is_silent_while_the_listener_is_alive(tmp_path, monkeypatch):
     mock_send.assert_not_called()
 
 
-def test_hourly_says_nothing_when_no_listener_has_ever_run(tmp_path, monkeypatch):
-    # Before the listener is installed on the machine there is nothing to be down.
+def test_hourly_starts_a_listener_on_a_database_that_has_never_had_one(tmp_path, monkeypatch):
+    # This is the case that kept the listener off in practice: an empty heartbeats table
+    # read as "nothing to be down", so no scheduled run ever started the first one.
     db_path = _migrated_db(tmp_path)
     _set_required_env(monkeypatch)
 
-    exit_code, mock_send = _hourly_run(db_path, tmp_path)
+    with patch("telegram_listener._spawn", return_value=321) as mock_spawn:
+        exit_code, mock_send = _hourly_run(db_path, tmp_path)
 
     assert exit_code == 0
-    mock_send.assert_not_called()
+    mock_spawn.assert_called_once()
+    assert "started a new listener" in mock_send.call_args[0][1]
 
 
 # --- ensure_alive: the batch keeps a listener up at digest time ------------
@@ -561,15 +564,27 @@ def test_ensure_alive_reports_a_spawn_that_fails(tmp_path):
     conn.close()
 
 
-def test_ensure_alive_says_nothing_when_no_listener_has_ever_run(tmp_path):
+def test_ensure_alive_starts_the_first_listener_a_database_has_ever_had(tmp_path):
+    """Only ever RESTARTING one is not the same as keeping one running. An empty
+    heartbeats table left the listener permanently off: every scheduled run concluded
+    there was nothing to be down and did nothing, for an hour at a time, forever."""
     conn = db.get_connection(tmp_path / "t.sqlite3")
     db.init_db(conn)
-    spawned = []
 
-    result = telegram_listener.ensure_alive(conn, bot_token="tok", spawn=lambda: spawned.append(1))
+    result = telegram_listener.ensure_alive(conn, bot_token="tok-nobody-holds", spawn=lambda: 77)
 
-    assert result["status"] == "alive"
-    assert spawned == []
+    assert result["status"] == "started" and result["pid"] == 77
+    assert "has ever run" in result["detail"]
+    conn.close()
+
+
+def test_stale_detail_still_says_nothing_when_no_listener_has_ever_run(tmp_path):
+    # The reporting path keeps its silence - an alarm about a listener that was never
+    # installed is an alarm nobody keeps reading. Only the ensuring path acts on it.
+    conn = db.get_connection(tmp_path / "t.sqlite3")
+    db.init_db(conn)
+
+    assert telegram_listener.stale_detail(conn) is None
     conn.close()
 
 
