@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ import pipeline.config as config
 import pipeline.db as db
 import pipeline.gelato_client as gelato_client
 import pipeline.group_product as group_product
+import pipeline.reconcile as reconcile
 
 
 def test_poll_until_ready_jitters_the_sleep_interval():
@@ -485,6 +487,54 @@ def test_create_candidate_gelato_product_repolls_a_mockup_failed_product(tmp_pat
     assert conn.execute(
         "SELECT status FROM group_products WHERE id = ?", (ctx["group_product_id"],)
     ).fetchone()["status"] == "created"
+
+
+def test_create_candidate_gelato_product_leaves_intent_set_when_the_id_update_never_lands(tmp_path):
+    # GL-32: simulates the crash window - the Gelato POST returns an id, but the process
+    # dies before the id-recording UPDATE commits. The intent write (before the POST)
+    # already landed, so the row is findable by find_unconfirmed_gelato_creates.
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path)
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.side_effect = RuntimeError("crashed after Gelato POST returned")
+        with pytest.raises(RuntimeError):
+            group_product.create_candidate_gelato_product(
+                conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+                now="2026-07-16T09:20:00",
+            )
+
+    row = conn.execute(
+        "SELECT gelato_product_id, gelato_create_intent_at FROM group_products WHERE id = ?",
+        (ctx["group_product_id"],),
+    ).fetchone()
+    assert row["gelato_product_id"] is None
+    assert row["gelato_create_intent_at"] == "2026-07-16T09:20:00"
+    assert reconcile.find_unconfirmed_gelato_creates(
+        conn, older_than_minutes=0, now=datetime(2026, 7, 16, 9, 25, 0)
+    ) == [ctx["group_product_id"]]
+
+
+def test_create_candidate_gelato_product_clears_intent_on_a_successful_create(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _rendered_candidate(conn, tmp_path)
+
+    with patch("pipeline.gelato_client.create_product_from_template") as mock_create:
+        mock_create.return_value = DRY
+        group_product.create_candidate_gelato_product(
+            conn, ctx["candidate_id"], ctx["candidate"], ctx["static_config"], "Title",
+            now="2026-07-16T09:20:00",
+        )
+
+    row = conn.execute(
+        "SELECT gelato_product_id, gelato_create_intent_at FROM group_products WHERE id = ?",
+        (ctx["group_product_id"],),
+    ).fetchone()
+    assert row["gelato_product_id"] == "gelato-prod-1"
+    assert row["gelato_create_intent_at"] is None
+    assert reconcile.find_unconfirmed_gelato_creates(
+        conn, older_than_minutes=0, now=datetime(2026, 7, 16, 9, 25, 0)
+    ) == []
 
 
 def test_render_group_mockups_refuses_to_add_a_size_after_the_product_exists(tmp_path):

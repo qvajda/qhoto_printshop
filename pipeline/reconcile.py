@@ -36,6 +36,22 @@ def age_out_stranded_generating(conn, *, max_age_hours=12, now=None) -> list:
     return aged_out
 
 
+def find_unconfirmed_gelato_creates(conn, *, older_than_minutes=15, now=None) -> list:
+    """GL-32: report-only. A row whose gelato_create_intent_at is older than the cutoff
+    and still carries no gelato_product_id crashed between the Gelato POST returning and
+    the id-recording UPDATE committing - a real product no DB sweep can see. Never
+    touches the network or mutates a row; finding the orphan is this function's whole
+    job, resolving it against the live API is a separate, owner-gated step."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = (now - timedelta(minutes=older_than_minutes)).isoformat()
+    rows = conn.execute(
+        "SELECT id FROM group_products WHERE gelato_product_id IS NULL "
+        "AND gelato_create_intent_at IS NOT NULL AND gelato_create_intent_at < ?",
+        (cutoff,),
+    ).fetchall()
+    return [row["id"] for row in rows]
+
+
 def reconcile_etsy_listings(
     conn, *, shop_id=None, api_key=None, api_secret=None, access_token=None,
     now=None, dry_run_override=None,
