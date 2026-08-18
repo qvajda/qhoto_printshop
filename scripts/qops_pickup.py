@@ -112,7 +112,10 @@ def launch_prompt(num: str) -> str:
             f"Branch first as `<type>/{num}-<slug>` where <type> is a commit "
             f"type — one of {'|'.join(BRANCH_PREFIXES)} — never an issue label. "
             f"Commit, open a PR whose body says `Refs #{num}` (not `Closes`), "
-            f"request review. Do not merge.")
+            f"and stop. Do not request a GitHub review — the repo has one "
+            f"collaborator and GitHub rejects a self-review request; "
+            f"`automerge-loop` labels the issue `state:review` when the owner's "
+            f"eyes are needed (#151). Do not merge.")
 
 
 def launch_argv(prompt: str) -> list[str]:

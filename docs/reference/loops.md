@@ -13,7 +13,7 @@ is `pickup-loop`, and it is off.
 | `triage-loop` | Actions — `groom.yml` label-hygiene job | weekly + on demand | none | warns; may not label |
 | `groom-loop` | Actions — `groom.yml` hot-path job | on any `CLAUDE.md` change, weekly | none | fails the build |
 | `pickup-loop` | Windows scheduled task `qops-pickup-loop`, **disabled** | hourly when enabled | yes | branch + commit + PR; merges only via `automerge-loop` |
-| `automerge-loop` | Actions — `automerge.yml` | every PR event | none | turns on native auto-merge for a `gate:machine` PR; may not merge a `gate:taste` one; labels a merged sortie `state:done`, may not close it |
+| `automerge-loop` | Actions — `automerge.yml`, plus the `reconcile` job in `digest.yml` | every PR event, plus daily | none | turns on native auto-merge for a `gate:machine` PR; may not merge a `gate:taste` one; labels a merged sortie `state:done`, may not close it |
 
 ## gate-loop
 
@@ -61,9 +61,17 @@ fails before CI sees it.
 **Does:** picks the least-recently-updated issue carrying `state:planned` **and**
 `ready:auto`, with a real gate (`gate:none` is not one) and no `no-auto` /
 `blocked` flag, then starts a session on it.
-**Acceptance check:** it branches, commits, opens a PR and requests review —
-and stops there. It never merges by hand, never activates a listing, never
-pushes to `master`.
+**Acceptance check:** it branches, commits, opens a PR and stops there. It
+never merges by hand, never activates a listing, never pushes to `master`.
+**Amended 2026-08-18 (#151):** the criterion used to say "and requests review".
+It was unsatisfiable — GitHub rejects a self-review request and this repo has
+one collaborator — and it was already obsolete under ADR-0020, where the gate
+*is* the review for `gate:machine` and auto-merge refuses a `gate:taste` PR
+regardless. The waiting-on-you signal is now a label: `automerge-loop` puts
+`state:review` on the issue of any PR it declines to auto-merge, and
+`digest.yml` renders those as a *Waiting on you* section. A label something
+writes and something else reads is a control; a clause nobody can satisfy is
+not.
 **Amended 2026-08-16 (ADR-0020):** its PR may still be merged, by
 `automerge-loop`, if the issue is `gate:machine` and every required check is
 green. `pickup-loop` itself gained no authority — it opens a PR and stops; the
@@ -98,7 +106,9 @@ waited on an approval nobody was there to give. Three repairs:
 unlabelled, ready-for-review, closed.
 **Does:** turns on GitHub's **native** auto-merge for a qualifying PR. It does
 not merge; branch protection's required checks do, when they go green. On
-`closed` + merged it advances the linked issue instead (below).
+`closed` + merged it advances the linked issue instead (below), and on a
+PR it declines to auto-merge it labels that issue `state:review` — the
+waiting-on-you signal the digest renders (#151).
 **Qualifies:** not a draft, not from a fork, a branch matching
 `<type>/<issue#>-<slug>` (ADR-0019), and the **linked issue** carrying
 `gate:machine` and no `no-auto`. The gate is read from the issue, not the PR —
@@ -135,6 +145,20 @@ fires on a merged PR whose branch names an issue, sets `state:done` and drops
   ADR-0019 wants a commit type (`feat|fix|docs|chore|refactor|test`). This half
   is prompt-only on purpose — a merge rejected over a prefix nit would be worse
   than the drift.
+
+**Amended 2026-08-18 (#150): `advance` alone was never enough.** It triggers on
+`pull_request` + `closed` + `merged`, and **GitHub starts no workflow run from
+an event its own `GITHUB_TOKEN` raised** — so on the one path that matters, a
+PR the `enable` job auto-merged, no `closed` event exists and `advance` never
+runs. #59 shipped and sat at `state:building` + `ready:auto`; #115 was the same
+failure written off as a stale row. The backstop is `qops reconcile`, a job in
+`digest.yml` on `digest_cron`: it lists merged PRs, reads the issue each branch
+names (ADR-0019, never `Closes #n`), and advances any row that is not
+`state:done`. It reads state rather than reacting to an event, which is why it
+repairs the row however the PR merged — bot, human or hand-merge. It is
+idempotent, it labels and never closes, and a skip prints its reason. `advance`
+stays: it is the fast path on a human-token merge, and deleting it to install
+the slow one would trade latency for nothing.
 
 ## Audit
 
