@@ -786,6 +786,50 @@ def test_no_branch_and_no_pr_is_a_failed_run(monkeypatch):
     assert qops_pickup.produced_work(REPO, "999999") is False
 
 
+def _fake_git(branches: str, ahead: str, prs: str = "[]"):
+    """A subprocess double for produced_work's three shell-outs."""
+    def run(cmd, **kw):
+        if cmd[:2] == ["git", "branch"]:
+            out = branches
+        elif cmd[:2] == ["git", "rev-list"]:
+            out = ahead
+        else:
+            out = prs
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+    return run
+
+
+def test_an_empty_branch_is_not_work(monkeypatch):
+    """2026-08-18: both sorties wrote their change, backgrounded the full test
+    suite and ended the turn waiting on a notification a `-p` run never gets.
+    The branch existed and pointed at master's tip, so this returned True, the
+    claim was never released and the issue said nothing was wrong."""
+    monkeypatch.setattr(qops_pickup.subprocess, "run",
+                        _fake_git("fix/71-modifier-class-schema\n", "0"))
+    assert qops_pickup.produced_work(REPO, "71") is False
+
+
+def test_a_branch_with_a_commit_is_work(monkeypatch):
+    monkeypatch.setattr(qops_pickup.subprocess, "run",
+                        _fake_git("fix/71-modifier-class-schema\n", "1"))
+    assert qops_pickup.produced_work(REPO, "71") is True
+
+
+def test_an_empty_branch_with_a_pr_is_still_work(monkeypatch):
+    """The commit may live only on the remote. A PR is evidence either way."""
+    monkeypatch.setattr(qops_pickup.subprocess, "run",
+                        _fake_git("fix/71-x\n", "0", prs='[{"number": 161}]'))
+    assert qops_pickup.produced_work(REPO, "71") is True
+
+
+def test_the_launch_prompt_forbids_waiting_on_a_backgrounded_command():
+    """The instruction half. `produced_work` is the assertion half - an
+    instruction in a prompt is a preference, not a control (GL-53)."""
+    prompt = qops_pickup.launch_prompt("116")
+    assert "background" in prompt
+    assert "only the tests you touched" in prompt
+
+
 # --------------------------------------------------------------------------
 # reconcile — #150. `advance` fires on the `closed` pull-request event, and
 # GitHub raises no such event for a merge its own GITHUB_TOKEN caused, so the

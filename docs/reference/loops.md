@@ -63,6 +63,19 @@ fails before CI sees it.
 `blocked` flag, then starts a session on it.
 **Acceptance check:** it branches, commits, opens a PR and stops there. It
 never merges by hand, never activates a listing, never pushes to `master`.
+**Amended 2026-08-19:** the acceptance check reads "it branches, **commits**,
+opens a PR" and the failure check now reads the same way. It used to accept a
+bare branch as evidence of work, and on 2026-08-18 both unattended sorties
+(#57, #71) wrote their entire change, backgrounded the full test suite (~3.5
+minutes, longer than one Bash call may run) and ended the turn waiting for a
+completion notification that a `claude -p` run can never receive — the process
+exits with the turn. Each left a branch pointing at `master`'s tip, which
+`produced_work()` scored as success, so neither claim was released and neither
+issue said anything had gone wrong. `produced_work()` now counts commits ahead
+of the default branch, and the launch prompt tells the sortie to run only the
+tests it touched and never to wait on a backgrounded command — `test.yml` is
+the full-suite gate, and it runs on the push.
+
 **Amended 2026-08-18 (#151):** the criterion used to say "and requests review".
 It was unsatisfiable — GitHub rejects a self-review request and this repo has
 one collaborator — and it was already obsolete under ADR-0020, where the gate
