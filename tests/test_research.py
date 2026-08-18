@@ -47,6 +47,52 @@ def test_load_safe_evergreen_terms_contains_no_placement_modifiers():
         assert colour_word not in joined
 
 
+def test_load_safe_evergreen_terms_default_is_unchanged_regression_lock():
+    """GL-44: the class filter must not widen what a no-argument call sees.
+    Locks the exact list, not just its length, against a silent default
+    change."""
+    terms = research.load_safe_evergreen_terms()
+
+    assert terms[0] == "monstera line art"
+    assert terms[-1] == "japanese bird art"
+    assert len(terms) == 44
+    assert terms == research.load_safe_evergreen_terms(classes=("subject",))
+
+
+def test_load_safe_evergreen_terms_classes_are_nonempty_and_disjoint():
+    subject = research.load_safe_evergreen_terms(classes=("subject",))
+    style = research.load_safe_evergreen_terms(classes=("style",))
+    placement = research.load_safe_evergreen_terms(classes=("placement",))
+    tag_safe = research.load_safe_evergreen_terms(classes=("tag_safe",))
+
+    for terms in (subject, style, placement, tag_safe):
+        assert len(terms) > 0
+
+    all_terms = subject + style + placement + tag_safe
+    assert len(all_terms) == len(set(all_terms))
+
+
+def test_load_safe_evergreen_terms_subject_class_contains_no_modifiers():
+    """Re-expresses the room-word/colour-word assertions against the explicit
+    subject class (rather than relying on the no-argument default), so a flat
+    append to `## Buckets` still fails even if the default ever changes."""
+    joined = " ".join(research.load_safe_evergreen_terms(classes=("subject",))).lower()
+
+    for room_word in ("bedroom", "kitchen wall", "living room", "nursery", "hallway"):
+        assert room_word not in joined
+    for colour_word in ("beige", "sage green", "terracotta", "dusty pink"):
+        assert colour_word not in joined
+
+
+def test_safe_evergreen_fallback_classes_exclude_placement():
+    """GL-44: pick_safe_evergreen_fallback's niche reaches art_brief.py via
+    the candidate dict. Assert on the class set it requests, not on sampled
+    output - a class-set assertion catches any placement term ever added to
+    the doc, not just the ones sampled today."""
+    assert "placement" not in research.FALLBACK_CLASSES
+    assert "tag_safe" not in research.FALLBACK_CLASSES
+
+
 def test_pick_safe_evergreen_fallback_returns_go_eligible_raw_candidate():
     class FakeRng:
         def choice(self, seq):
