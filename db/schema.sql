@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS group_products (
   candidate_id INTEGER REFERENCES candidates(id),
   gelato_template_id TEXT NOT NULL,
   gelato_product_id TEXT,
+  gelato_create_intent_at TEXT,
   etsy_listing_id TEXT,
   title TEXT,
   status TEXT NOT NULL CHECK(status IN (

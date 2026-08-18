@@ -77,6 +77,57 @@ def _insert_published_group_product(conn, id, etsy_listing_id):
     conn.commit()
 
 
+def _insert_group_product_with_intent(conn, id, *, gelato_product_id=None, intent_at=None):
+    conn.execute(
+        "INSERT INTO candidates (id, created_at, niche, go_hold_kill, status, updated_at) "
+        "VALUES (1, 'x', 'test', 'go', 'completed', 'x')"
+    )
+    conn.execute(
+        "INSERT INTO groups (id, candidate_id, group_type, status, created_at, updated_at) "
+        "VALUES (1, 1, 'primary', 'approved_published', 'x', 'x')"
+    )
+    conn.execute(
+        "INSERT INTO group_products (id, group_id, candidate_id, gelato_template_id, "
+        "gelato_product_id, gelato_create_intent_at, status, created_at, updated_at) "
+        "VALUES (?, 1, 1, 'tmpl', ?, ?, 'pending', 'x', 'x')",
+        (id, gelato_product_id, intent_at),
+    )
+    conn.commit()
+
+
+def test_find_unconfirmed_gelato_creates_returns_row_with_stale_intent_and_no_product_id(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_group_product_with_intent(conn, 1, intent_at="2026-08-01T00:00:00")
+
+    result = reconcile.find_unconfirmed_gelato_creates(
+        conn, older_than_minutes=15, now=datetime(2026, 8, 1, 1, 0, 0)
+    )
+
+    assert result == [1]
+
+
+def test_find_unconfirmed_gelato_creates_ignores_a_successful_create(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_group_product_with_intent(conn, 1, gelato_product_id="gelato-prod-1", intent_at=None)
+
+    result = reconcile.find_unconfirmed_gelato_creates(
+        conn, older_than_minutes=15, now=datetime(2026, 8, 1, 1, 0, 0)
+    )
+
+    assert result == []
+
+
+def test_find_unconfirmed_gelato_creates_ignores_an_in_flight_intent(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_group_product_with_intent(conn, 1, intent_at="2026-08-01T00:55:00")
+
+    result = reconcile.find_unconfirmed_gelato_creates(
+        conn, older_than_minutes=15, now=datetime(2026, 8, 1, 1, 0, 0)
+    )
+
+    assert result == []
+
+
 def test_reconcile_marks_listing_missing_on_definitive_404(tmp_path):
     conn = _conn(tmp_path)
     _insert_published_group_product(conn, 1, "listing-123")

@@ -518,6 +518,16 @@ def create_candidate_gelato_product(conn, candidate_id: int, candidate: dict, st
                 return crop["durable_url"]
             return candidate["base_image_url"]
 
+        # GL-32: written and committed BEFORE the POST. A crash between the POST
+        # returning and the id-recording UPDATE below leaves this timestamp set with
+        # gelato_product_id still NULL - the one signal that a real Gelato product may
+        # exist with no DB row pointing at it. See reconcile.find_unconfirmed_gelato_creates.
+        conn.execute(
+            "UPDATE group_products SET gelato_create_intent_at = ?, gelato_template_id = ?, updated_at = ? WHERE id = ?",
+            (timestamp, template_id, timestamp, group_product_id),
+        )
+        conn.commit()
+
         response = gelato_client.create_product_from_template(
             template_id,
             [
@@ -531,7 +541,8 @@ def create_candidate_gelato_product(conn, candidate_id: int, candidate: dict, st
         )
         gelato_product_id = response["id"]
         conn.execute(
-            "UPDATE group_products SET gelato_product_id = ?, gelato_template_id = ?, updated_at = ? WHERE id = ?",
+            "UPDATE group_products SET gelato_product_id = ?, gelato_template_id = ?, "
+            "gelato_create_intent_at = NULL, updated_at = ? WHERE id = ?",
             (gelato_product_id, template_id, timestamp, group_product_id),
         )
         conn.commit()
