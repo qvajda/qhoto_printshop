@@ -3,6 +3,15 @@
 Status: **draft, awaiting owner sign-off.** No work starts until signed.
 Written against the owner's instruction of 2026-08-17 ("full extraction now").
 
+**Revision 3, 2026-08-18.** Written against the acceptance run's findings
+(`docs/2026-08-17-acceptance-run-findings.md`). The run proved every step from
+claim to merge works unattended first try, and that the substrate's last inch —
+the row that says a sortie finished — does not. Three of the four findings are
+substrate defects and therefore travel. Changes: **P8.0 now requires Session A.5**,
+P8.1 gains a fourth leak (`bash -lc` in `metrics.state_report`), the undeclared
+`qops:status` label, four tests in place of two, the row-advance reconciler and the
+rewritten `pickup-loop` acceptance check; criterion 8 no longer stops at the merge.
+
 **Revision 2, 2026-08-17.** Answers the owner's question "will qops in its own
 repo be able to use its own automated way of working to continue tackling the
 open issues?" As drafted, no — the substrate was portable but the *runtime* was
@@ -119,6 +128,11 @@ Measurable, checked in this order:
    criterion that makes the extraction worth doing rather than a filing exercise,
    and it is the only one that exercises the runtime rather than the package.
    Its preconditions are P8.4b's checklist.
+   **Amended after the 2026-08-17/18 acceptance run:** "auto-merged" is not the
+   end of the criterion. The sortie's issue must reach `state:done` with
+   `ready:auto` dropped — the run proved every step up to the merge works and the
+   row-advance does not (finding 3). A criterion that stops at the merge would
+   have scored that run as a pass.
 
 ## Scope
 
@@ -165,7 +179,20 @@ excluded the only thing that makes the substrate autonomous. Corrected split:
 Each phase is independently revertible; each ends in a checkable state.
 
 - **P8.0 — prereq gate.** The dirty tree (#142 follow-up) is committed and #142 is
-  closed. ~~and the Phase 7 acceptance run has happened~~ — **struck 2026-08-17:**
+  closed. **Added 2026-08-18: Session A.5 has landed** — PR #158, merged 17:36 UTC. It
+  closed #150 (the reconciler), #151, #153, #147 and #136; #152 (finding 4,
+  worktree isolation) is `gate:taste` and stays open. The reconciler was
+  observed advancing a real merge and found #122 unaided. Two things it did
+  NOT prove: the `digest.yml` `reconcile` job has never fired on its
+  schedule, and no digest has run since `qops:status` was created — both are
+  read from one 06:00 UTC run. Source:
+  `docs/2026-08-18-session-a5-launch-prompt.md`. The acceptance run found four
+  defects in the substrate's *last inch*, and three of them travel. Extracting
+  first means fixing them in two repos or back-porting from the new one; both are
+  worse than a half-day here. This is a prereq on the substrate's correctness, not
+  on the acceptance run's existence — which is the distinction the struck clause
+  below got wrong.
+  ~~and the Phase 7 acceptance run has happened~~ — **struck 2026-08-17:**
   this clause contradicted open question 4, which resolves the acceptance run to a
   parallel qhoto-repo experiment and explicitly not a gate on packaging. OQ4 is
   the later decision and carries the owner amendment; this clause was residue from
@@ -180,10 +207,60 @@ Each phase is independently revertible; each ends in a checkable state.
   a test that `qops guard scan` exits 0 against an **empty** `tripwires:` list —
   the substrate repo has no tripwires, that path has never been exercised, and a
   crashing guard job fails every build in the new repo on day one.
+
+  **FIXED in PR #158; this paragraph is the record, not the task. A fourth
+  leak, found by the acceptance run (2026-08-18) and not by the
+  audit.** `metrics.state_report` shells its nine rows through `bash -lc`
+  (`qops/metrics.py:359`) and captures stdout without checking the exit code. On
+  the ADR-0009 cron host `bash` resolves to the WSL launcher, so every value in
+  `.qops/state-report.md` currently reads *"Windows Subsystem for Linux has no
+  installed distributions."* — nine garbage numbers in a table that looks fine,
+  and the file is untracked so CI never saw it. Two fixes, not one: the POSIX
+  assumption (exactly the ADR-0009 constraint in §Constraints — the audit missed
+  it because it grepped for project *strings*, not platform assumptions), and the
+  swallowed non-zero exit, which is CLAUDE.md's `try/except: continue` convention
+  applied to a subprocess.
+
+  **A label the taxonomy never declares. FIXED in PR #158.** `ci.status_issue_label: 'qops:status'`
+  is read by `digest.yml:71`/`:75` but is absent from `labels.flags` in
+  `.qops/config.yml`, so `qops_import.py` never creates it and the daily digest
+  has failed at 06:00 UTC ever since. That is #136's real cause, and it is a
+  substrate defect — the new repo reproduces it at P8.4b step 3.
+
+  **Four new tests**, replacing the two above:
+
+  1. No project-specific string outside `.qops/config.yml`.
+  2. No module assumes POSIX — no `bash`, no `sh -c`, no hardcoded `/`
+     interpreter. `python: py -3` exists in config precisely so nothing else has
+     to guess.
+  3. `qops guard scan` exits 0 against an **empty** `tripwires:` list.
+  4. Every label named anywhere in `.qops/config.yml` appears in the `labels:`
+     taxonomy. Cheap, and the assertion that would have caught `qops:status`.
+
+  **The row-advance reconciler ships here, not in the new repo.** Session A.5
+  builds it (owner decision 2026-08-18: a scheduled reconciler — not a
+  `workflow_run` rewire, not a PAT) and P8.1 freezes it into the contract. It
+  belongs to the substrate, so criterion 8 inherits a working row-advance instead
+  of re-discovering finding 3. The reasoning is worth carrying: the failure being
+  repaired is *an event that was never observed*, so a reconciler — which reads
+  state rather than reacting to events — is strictly more robust than any trigger,
+  and it is the only candidate that would have surfaced #115 without a human
+  noticing.
+
+  **The `pickup-loop` acceptance check is rewritten, not carried.** Owner decision
+  2026-08-18: `docs/reference/loops.md`'s "requests review" clause is replaced by a
+  `state:review` label that the digest renders as a waiting-on-you section. The
+  clause is unsatisfiable — GitHub rejects a self-review request and the repo has
+  one collaborator — and it was already obsolete under ADR-0020, where the gate is
+  the review for `gate:machine` and auto-merge refuses `gate:taste` regardless.
+  This matters to the extraction specifically: `loops.md` travels, and an
+  unmeetable clause in a document consumer #2 reads as authoritative is the GL-53
+  pattern — an instruction that looks like a control.
+
   *Ships value even if P8.2+ never happen.*
-- **P8.2 — create the repo.** Outward-facing act; needs its own explicit
-  go-ahead separate from signing this PRD. `qvajda/qops`, public, licence,
-  README with provenance, its own gate running `tests/test_qops.py`.
+- **P8.2 — create the repo.** **Pre-authorised by the owner, 2026-08-17** — no
+  separate go-ahead. `qvajda/qops`, public, licence, README with provenance, its
+  own gate running `tests/test_qops.py`.
 - **P8.3 — move.** Copy the §Scope-in paths, fresh initial commit. Success
   criterion 3 (byte-identical rendering) is the gate.
 - **P8.4 — rewire.** This repo installs the pinned package, deletes qops source,
