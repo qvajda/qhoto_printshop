@@ -99,3 +99,38 @@ def test_dry_run_uploads_nothing_and_writes_a_dry_run_manifest(repo, monkeypatch
                         lambda *a, **k: pytest.fail("dry-run must not PUT"))
     assert corpus_backup.run(repo, [], manifest, upload=False) == 0
     assert json.loads(manifest.read_text())["dry_run"] is True
+
+
+# --------------------------------------------------------------------- back_up_paths (GL-30b)
+
+def test_back_up_paths_rerun_uploads_zero_bytes(repo, monkeypatch):
+    manifest = repo / "paths-manifest.json"
+    monkeypatch.setattr(corpus_backup.artwork_store, "_r2_config", lambda: {"R2_BUCKET": "b"})
+    puts = []
+    monkeypatch.setattr(corpus_backup.artwork_store, "_r2_put_object",
+                        lambda key, raw, r2: puts.append(key))
+    f = repo / "one.png"
+    f.write_bytes(b"one")
+    paths = [("bundle/one.png", f)]
+
+    assert corpus_backup.back_up_paths(paths, manifest_path=manifest, upload=True) == 0
+    assert puts == ["mockup-corpus/bundle/one.png"]
+    assert all(r["status"] == "uploaded" for r in json.loads(manifest.read_text())["files"])
+
+    puts.clear()
+    assert corpus_backup.back_up_paths(paths, manifest_path=manifest, upload=True) == 0
+    assert puts == []
+
+
+def test_back_up_paths_refuses_changed_bytes_at_an_already_uploaded_path(repo, monkeypatch):
+    manifest = repo / "paths-manifest.json"
+    monkeypatch.setattr(corpus_backup.artwork_store, "_r2_config", lambda: {"R2_BUCKET": "b"})
+    monkeypatch.setattr(corpus_backup.artwork_store, "_r2_put_object", lambda key, raw, r2: None)
+    f = repo / "one.png"
+    f.write_bytes(b"one")
+    paths = [("bundle/one.png", f)]
+    corpus_backup.back_up_paths(paths, manifest_path=manifest, upload=True)
+
+    f.write_bytes(b"different")
+    with pytest.raises(SystemExit, match="REFUSING TO OVERWRITE"):
+        corpus_backup.back_up_paths(paths, manifest_path=manifest, upload=True)
