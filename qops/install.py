@@ -139,9 +139,113 @@ def skill_drift(root: Path, cfg: dict) -> list[str]:
     return problems
 
 
+# --- label invariants (#147) ----------------------------------------------
+# Each of these is the machine version of something a human got wrong in the
+# week of 2026-08-17: the sweep's hand-run step-4 pipeline, the acceptance
+# run's finding 1, and the `qops:status` label that `ci:` named and the
+# taxonomy never declared (#136 - the daily digest failed on it for weeks).
+#
+# `doctor` reports; the triager labels. Nothing here mutates an issue.
+
+# A label, as written in config: `namespace:value`, no spaces. It matches
+# `qops:status` and `ready:auto` and not a prose `why:` line.
+_LABEL_LIKE = re.compile(r"^[a-z][a-z0-9_]*:[a-z][a-z0-9_.:-]*$")
+_NAMESPACES = ("type", "state", "mission", "gate")
+
+
+def taxonomy(cfg: dict) -> set[str]:
+    labels = cfg.get("labels") or {}
+    out = {f"{ns}:{v}" for ns in _NAMESPACES for v in labels.get(ns, [])}
+    return out | set(labels.get("flags", []))
+
+
+def _scalars(node, skip: str = "labels"):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k != skip:
+                yield from _scalars(v, skip)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _scalars(v, skip)
+    elif isinstance(node, str):
+        yield node
+
+
+def undeclared_labels(cfg: dict) -> list[str]:
+    """Every label named anywhere in .qops/config.yml is in the taxonomy.
+
+    `ci.status_issue_label: qops:status` was read by digest.yml and declared
+    nowhere, so the importer never created it and the 06:00 UTC digest failed
+    on a missing label every day. Cheap check, and the one that would have
+    caught it.
+    """
+    declared = taxonomy(cfg)
+    return [f"label {s!r} is named in .qops/config.yml and is not in the "
+            f"`labels:` taxonomy" for s in sorted(set(_scalars(cfg)))
+            if _LABEL_LIKE.match(s) and s not in declared]
+
+
+def issue_invariants(issues: list[dict], cfg: dict) -> list[str]:
+    """`validate.require_on_open` and finding 1, asserted against a list of
+    issues. Pure, so it is driven off a fixture and never off the tracker."""
+    problems = []
+    for issue in issues:
+        num = issue.get("number")
+        names = {l["name"] for l in issue.get("labels", [])}
+        for ns in cfg.get("validate", {}).get("require_on_open",
+                                              ["type", "state", "gate"]):
+            n = len([x for x in names if x.startswith(f"{ns}:")])
+            if n != 1:
+                problems.append(f"#{num}: carries {n} `{ns}:` labels, wants "
+                                f"exactly one")
+        if "gate:none" in names:
+            problems.append(f"#{num}: `gate:none` — the gate was never decided, "
+                            f"and it blocks ready:auto")
+        # Finding 1: an inert flag reads as a filled queue. `pickup-loop`'s
+        # eligible() requires state:planned, so ready:auto anywhere else is a
+        # promise nothing can keep, and it is invisible.
+        if "ready:auto" in names and "state:planned" not in names:
+            problems.append(f"#{num}: `ready:auto` without `state:planned` — "
+                            f"pickup-loop can never pick it")
+    return problems
+
+
+def open_issues(cfg: dict) -> list[dict] | None:
+    """The tracker's open issues, or None with a printed reason.
+
+    `doctor` is a local instrument. One that cannot run offline is worse than
+    one that says why it is quiet (#147), so every failure here is a skip.
+    """
+    repo = cfg.get("repo")
+    if not repo:
+        print("doctor: skipping the label invariant — config names no `repo`")
+        return None
+    try:
+        p = subprocess.run(["gh", "issue", "list", "--repo", repo, "--state",
+                            "open", "--limit", "200", "--json",
+                            "number,labels"], capture_output=True, text=True,
+                           encoding="utf-8", timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"doctor: skipping the label invariant — gh unavailable ({exc})")
+        return None
+    if p.returncode != 0:
+        print(f"doctor: skipping the label invariant — "
+              f"gh exited {p.returncode}: {p.stderr.strip().splitlines()[:1]}")
+        return None
+    try:
+        return json.loads(p.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"doctor: skipping the label invariant — unreadable gh output ({exc})")
+        return None
+
+
 def doctor(root: Path, cfg: dict) -> list[str]:
     problems = drift(root, cfg)
     problems += skill_drift(root, cfg)
+    problems += undeclared_labels(cfg)
+    issues = open_issues(cfg)
+    if issues is not None:
+        problems += issue_invariants(issues, cfg)
     problems += [f"broken doc citation: {m}" for m in broken_doc_links(root)]
     settings = Path(root) / ".claude" / "settings.json"
     if not settings.exists():

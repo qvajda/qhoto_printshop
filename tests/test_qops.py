@@ -784,3 +784,221 @@ def test_no_branch_and_no_pr_is_a_failed_run(monkeypatch):
     monkeypatch.setattr(qops_pickup.subprocess, "run",
                         lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "", ""))
     assert qops_pickup.produced_work(REPO, "999999") is False
+
+
+# --------------------------------------------------------------------------
+# reconcile — #150. `advance` fires on the `closed` pull-request event, and
+# GitHub raises no such event for a merge its own GITHUB_TOKEN caused, so the
+# unattended path advanced nothing. This reads state instead of an event.
+# --------------------------------------------------------------------------
+
+from qops import reconcile as reconcilemod  # noqa: E402
+
+
+class FakeGh:
+    """A gh double. Holds issues by number and applies label edits, so a second
+    reconcile run sees the first run's effect — which is what idempotency
+    means here."""
+
+    def __init__(self, prs, issues, fail_on=None):
+        self.prs, self.issues, self.fail_on = prs, issues, fail_on
+        self.calls = []
+
+    def __call__(self, args):
+        self.calls.append(args)
+        if self.fail_on and args[:2] == self.fail_on:
+            raise RuntimeError("gh boom")
+        if args[0] == "pr":
+            return json.dumps(self.prs)
+        num = args[2]
+        if args[1] == "view":
+            return json.dumps(self.issues[num])
+        if args[1] == "edit":
+            names = {l["name"] for l in self.issues[num]["labels"]}
+            for i, a in enumerate(args):
+                if a == "--add-label":
+                    names.add(args[i + 1])
+                if a == "--remove-label":
+                    names.discard(args[i + 1])
+            self.issues[num]["labels"] = [{"name": n} for n in sorted(names)]
+        return ""
+
+
+def _building(num="59"):
+    return {num: {"state": "OPEN", "labels": [{"name": "state:building"},
+                                              {"name": "ready:auto"},
+                                              {"name": "gate:machine"}]}}
+
+
+def test_reconcile_advances_a_merged_sortie_whose_row_is_still_in_flight():
+    gh = FakeGh([{"number": 148, "headRefName": "fix/59-orphan-gap"}], _building())
+    report = reconcilemod.reconcile("o/r", run=gh)
+    assert report["advanced"] == [("59", "148")]
+    names = {l["name"] for l in gh.issues["59"]["labels"]}
+    assert "state:done" in names
+    assert "ready:auto" not in names and "state:building" not in names
+
+
+def test_reconcile_is_idempotent():
+    """It runs against rows `advance` already handled correctly — a human-token
+    merge still fires `advance` (PR #146). Twice must be once."""
+    gh = FakeGh([{"number": 148, "headRefName": "fix/59-orphan-gap"}], _building())
+    reconcilemod.reconcile("o/r", run=gh)
+    edits = len([c for c in gh.calls if c[:2] == ["issue", "edit"]])
+    second = reconcilemod.reconcile("o/r", run=gh)
+    assert second["advanced"] == []
+    assert second["skipped"] == [("59", "already state:done")]
+    assert len([c for c in gh.calls if c[:2] == ["issue", "edit"]]) == edits
+
+
+def test_reconcile_labels_and_never_closes():
+    """ADR-0020's limit, same as `advance`: a merge means the code landed, not
+    that the sortie is judged. Closing stays the owner's."""
+    gh = FakeGh([{"number": 148, "headRefName": "fix/59-orphan-gap"}], _building())
+    reconcilemod.reconcile("o/r", run=gh)
+    assert not [c for c in gh.calls if c[:2] == ["issue", "close"]]
+
+
+def test_reconcile_skips_a_branch_that_names_no_issue():
+    gh = FakeGh([{"number": 146, "headRefName": "no-issue/triage-sweep"}], {})
+    report = reconcilemod.reconcile("o/r", run=gh)
+    assert report["skipped"] == [("146", "branch names no issue")]
+    assert not [c for c in gh.calls if c[0] == "issue"]
+
+
+def test_reconcile_skips_an_issue_the_owner_already_closed():
+    issues = {"59": {"state": "CLOSED", "labels": [{"name": "state:building"}]}}
+    gh = FakeGh([{"number": 148, "headRefName": "fix/59-orphan-gap"}], issues)
+    report = reconcilemod.reconcile("o/r", run=gh)
+    assert report["skipped"] == [("59", "issue already closed")]
+
+
+def test_a_failed_row_leaves_a_reason_behind_and_fails_the_run(tmp_path):
+    """CLAUDE.md: a swallowed per-item exception writes a status plus a reason
+    onto the row, and the run still fails once after the loop."""
+    gh = FakeGh([{"number": 148, "headRefName": "fix/59-orphan-gap"}], _building(),
+                fail_on=["issue", "view"])
+    report = reconcilemod.reconcile("o/r", run=gh)
+    assert [i for i, _ in report["failed"]] == ["59"]
+    comments = [c for c in gh.calls if c[:2] == ["issue", "comment"]]
+    assert comments and "could not advance" in comments[0][-1]
+
+    def fake(repo, limit=50, run=None):
+        return {"advanced": [], "skipped": [], "failed": [("59", "gh boom")]}
+
+    saved, reconcilemod.reconcile = reconcilemod.reconcile, fake
+    try:
+        assert reconcilemod.main([], tmp_path, {"repo": "o/r"}) == 1
+    finally:
+        reconcilemod.reconcile = saved
+
+
+def test_reconcile_reads_the_issue_from_the_branch_not_from_closes():
+    """#116 proved `Closes #n` is a preference, not a control (GL-53)."""
+    assert reconcilemod.issue_number("fix/59-orphan-gap") == "59"
+    assert reconcilemod.issue_number("no-issue/sweep") is None
+    assert reconcilemod.issue_number("") is None
+
+
+def test_the_reconciler_runs_on_the_digest_cadence_not_a_third_one():
+    wf = (REPO / ".github" / "workflows" / "digest.yml").read_text(encoding="utf-8")
+    assert "qops reconcile" in wf
+    assert "needs: reconcile" in wf
+    assert wf.count("cron:") == 1
+
+
+# --------------------------------------------------------------------------
+# metrics --state — #153. Nine rows read
+# "Windows Subsystem for Linux has no installed distributions." because
+# `bash -lc` on the ADR-0009 cron host is the WSL launcher and the exit code
+# was never checked. A table that looks measured is worse than an empty one.
+# --------------------------------------------------------------------------
+
+def test_no_module_assumes_posix():
+    """ADR-0009: nothing may assume POSIX. `python: py -3` is in config so
+    nothing has to guess, and every git probe calls git with no shell at all."""
+    for path in (REPO / "qops").glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        code = "\n".join(l for l in text.splitlines()
+                         if not l.strip().startswith("#"))
+        for banned in ('"bash"', "'bash'", "shell=True", "-lc"):
+            assert banned not in code, f"{path.name} assumes POSIX: {banned}"
+
+
+def test_every_state_row_is_a_number_on_this_host():
+    text, failures = metrics.state_report(REPO, qconfig.load(REPO))
+    assert failures == []
+    rows = [l for l in text.splitlines() if l.startswith("| ") and "---" not in l]
+    values = [l.split("|")[2].strip() for l in rows[1:]]
+    assert len(values) == len(metrics._STATE_ROWS)
+    for v in values:
+        # `n/a` is legal for one row only: a shallow CI checkout has no local
+        # default-branch ref. Everything else must be a number.
+        assert v.isdigit() or v == "n/a", f"state report row is not a number: {v!r}"
+    assert values.count("n/a") <= 1
+
+
+def test_a_failed_probe_is_marked_and_exits_non_zero(tmp_path, monkeypatch):
+    def boom(root, cfg):
+        raise RuntimeError("no such thing")
+
+    monkeypatch.setattr(metrics, "_STATE_ROWS", [("Broken", "false", boom)])
+    (tmp_path / ".qops").mkdir()
+    monkeypatch.setattr(metrics, "_git", lambda root, *a: ["deadbee"])
+    text, failures = metrics.state_report(tmp_path, qconfig.load(REPO))
+    assert "| Broken | FAILED |" in text
+    assert failures and "no such thing" in failures[0]
+    assert metrics.main(["--state"], tmp_path, qconfig.load(REPO)) == 1
+
+
+# --------------------------------------------------------------------------
+# doctor's label invariants — #147. Each is the machine version of something a
+# human got wrong in the week of 2026-08-17.
+# --------------------------------------------------------------------------
+
+def test_every_label_named_in_the_config_is_in_the_taxonomy():
+    """`ci.status_issue_label: qops:status` was declared nowhere, so the
+    importer never created it and digest.yml failed at 06:00 UTC for weeks."""
+    assert install.undeclared_labels(qconfig.load(REPO)) == []
+
+
+def test_an_undeclared_label_is_caught():
+    cfg = json.loads(json.dumps(qconfig.load(REPO), default=str))
+    cfg["ci"]["status_issue_label"] = "qops:nope"
+    assert any("qops:nope" in p for p in install.undeclared_labels(cfg))
+
+
+def test_an_open_issue_carries_exactly_one_type_state_and_gate():
+    cfg = qconfig.load(REPO)
+    issues = [
+        {"number": 1, "labels": [{"name": "type:code"}, {"name": "state:planned"},
+                                 {"name": "gate:machine"}]},
+        {"number": 2, "labels": [{"name": "type:code"}, {"name": "state:planned"},
+                                 {"name": "state:building"},
+                                 {"name": "gate:machine"}]},
+        {"number": 3, "labels": [{"name": "type:code"}, {"name": "state:triage"},
+                                 {"name": "gate:none"}]},
+    ]
+    problems = install.issue_invariants(issues, cfg)
+    assert not [p for p in problems if p.startswith("#1")]
+    assert any("#2" in p and "2 `state:`" in p for p in problems)
+    assert any("#3" in p and "gate:none" in p for p in problems)
+
+
+def test_ready_auto_outside_state_planned_is_reported():
+    """Finding 1: pickup-loop's eligible() requires state:planned, so the flag
+    is inert and invisible anywhere else — it reads as a filled queue."""
+    cfg = qconfig.load(REPO)
+    issues = [{"number": 136, "labels": [{"name": "type:code"},
+                                         {"name": "state:triage"},
+                                         {"name": "gate:machine"},
+                                         {"name": "ready:auto"}]}]
+    assert any("#136" in p and "ready:auto" in p
+               for p in install.issue_invariants(issues, cfg))
+
+
+def test_doctor_does_not_require_the_network(capsys):
+    """A doctor that cannot run offline is a worse instrument than one that
+    says why it is quiet (#147)."""
+    assert install.open_issues({}) is None
+    assert "skipping the label invariant" in capsys.readouterr().out

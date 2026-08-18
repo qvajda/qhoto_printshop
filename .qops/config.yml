@@ -126,7 +126,11 @@ labels:
   state: [triage, planned, building, gate, review, blocked, done, cancelled]
   mission: [go-live, post-launch, housekeeping, qops]
   gate: [machine, taste, none]
-  flags: [ready:auto, no-auto, fork, budget:approved, go-live-blocker]
+  # `qops:status` is the pinned digest issue's label (ci.status_issue_label).
+  # It lived only in `ci:` until 2026-08-18, so the importer never created it
+  # and digest.yml failed at 06:00 UTC every day for weeks (#136). Every
+  # label named anywhere in this file must appear here; `qops doctor` asserts it.
+  flags: [ready:auto, no-auto, fork, budget:approved, go-live-blocker, qops:status]
 
 milestones: [go-live, post-launch, housekeeping, qops]
 

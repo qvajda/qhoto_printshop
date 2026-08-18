@@ -1,4 +1,4 @@
-"""qops — the per-project ways-of-working layer. One CLI, eight verbs.
+"""qops — the per-project ways-of-working layer. One CLI, nine verbs.
 
     qops brief      what a session gets at SessionStart, <=400 tokens
     qops ledger     append a session event (hook payload on stdin)
@@ -8,12 +8,13 @@
     qops install    render .github/workflows from templates + .qops/config.yml
     qops doctor     detect drift, broken doc links, an uninstalled hook
     qops metrics    S1/S2/S4/S9/S10; --state regenerates the PRD §1 table
+    qops reconcile  advance the row of every merged sortie whose PR landed
 """
 
 import sys
 from pathlib import Path
 
-from . import brief, close, config, guard, install, ledger, metrics
+from . import brief, close, config, guard, install, ledger, metrics, reconcile
 
 VERBS = {
     "brief": (brief.main, "session brief for SessionStart (<=400 tokens)"),
@@ -24,6 +25,7 @@ VERBS = {
     "install": (install.main, "render .github/workflows/ from the config"),
     "doctor": (install.doctor_main, "drift, broken doc links, hooks, hot-path cap"),
     "metrics": (metrics.main, "S1/S2/S4/S9/S10; --state writes the state report"),
+    "reconcile": (reconcile.main, "advance merged sorties whose row is not state:done"),
 }
 
 
