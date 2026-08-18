@@ -8,29 +8,55 @@ import pipeline.etsy_client as etsy_client
 
 SAFE_EVERGREEN_BUCKET_PATH = config.REPO_ROOT / "docs" / "safe_evergreen_bucket.md"
 
+# GL-44. Routes a caller's class name to the heading it may read - the term
+# vocabulary itself lives only in the doc, never here. `subject` is the
+# original flat bucket and stays the default so every existing caller sees
+# exactly what it saw before this change.
+SAFE_EVERGREEN_SECTION_HEADINGS = {
+    "subject": "## Buckets",
+    "style": "## Style modifiers",
+    "placement": "## Placement modifiers",
+    "tag_safe": "## Tag-safe short forms",
+}
 
-def load_safe_evergreen_terms(path=None) -> list:
-    path = Path(path) if path else SAFE_EVERGREEN_BUCKET_PATH
-    lines = path.read_text(encoding="utf-8").splitlines()
 
+def _read_section_terms(lines: list, heading: str) -> list:
     terms = []
-    in_buckets_section = False
+    in_section = False
     for line in lines:
         stripped = line.strip()
-        if stripped == "## Buckets":
-            in_buckets_section = True
+        if stripped == heading:
+            in_section = True
             continue
-        if in_buckets_section and stripped.startswith("## "):
+        if in_section and stripped.startswith("## "):
             break
-        if not in_buckets_section or stripped.startswith("### ") or not stripped:
+        if not in_section or stripped.startswith("### ") or not stripped:
             continue
         terms.extend(term.strip() for term in stripped.split(","))
     return terms
 
 
+def load_safe_evergreen_terms(path=None, *, classes=("subject",)) -> list:
+    path = Path(path) if path else SAFE_EVERGREEN_BUCKET_PATH
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    terms = []
+    for cls in classes:
+        terms.extend(_read_section_terms(lines, SAFE_EVERGREEN_SECTION_HEADINGS[cls]))
+    return terms
+
+
+# GL-44. The fallback's niche flows into art_brief.py via the candidate's
+# `niche` field (run_research_cycle -> generate.run_generate_cycle ->
+# art_brief.generate_art_brief), so it may draw subject and style terms -
+# both consumed by the art brief - but never placement, which is
+# listing-copy-only and would leak into the brief as a scene word.
+FALLBACK_CLASSES = ("subject", "style")
+
+
 def pick_safe_evergreen_fallback(*, rng=None) -> dict:
     rng = rng or random
-    term = rng.choice(load_safe_evergreen_terms())
+    term = rng.choice(load_safe_evergreen_terms(classes=FALLBACK_CLASSES))
     return {
         "niche": term,
         "trend_source": f"safe_evergreen_fallback:{term}",

@@ -1,8 +1,8 @@
 # Safe-Evergreen Bucket — POD Niche Search Terms
 
-**Status:** v2 — approved by Quentin, 2026-08-08 (GL-43; v1 2026-07-08)
-**Change log:** v2 applies the *doc-only* half of `docs/2026-08-07-gl10b-keyword-delta.md` — 9 subject-seed additions, 3 BLOCKED removals, 2 at-risk flags. The delta's modifier buckets (colour, room/placement) and tag-safe short forms are **deliberately not here** — see "Deferred, and why" below.
-**Consumer:** `research.py` (search-term seed list for the safe-evergreen niche path)
+**Status:** v3 — approved by Quentin, 2026-08-08 (GL-43; v1 2026-07-08; v3 GL-44)
+**Change log:** v2 applies the *doc-only* half of `docs/2026-08-07-gl10b-keyword-delta.md` — 9 subject-seed additions, 3 BLOCKED removals, 2 at-risk flags. v3 (GL-44) applies the deferred half: this file is now **classed**, not flat — `## Buckets` (subject seeds, unchanged content) plus three new sections below it for style modifiers, placement modifiers, and tag-safe short forms. See "Classed sections, and why" below for what each class may reach.
+**Consumer:** `research.py` (search-term seed list for the safe-evergreen niche path) via `load_safe_evergreen_terms(classes=...)` — each caller requests only the classes it is allowed to see.
 **Scope:** Wall art / poster-style visual designs. Does not cover apparel, mugs, jewelry, or other POD categories — extend separately if those get added to the product line.
 
 ## What counts as "safe-evergreen" here
@@ -38,6 +38,39 @@ world map line art, minimalist travel print, topographic map poster
 ### Japanese / East Asian art
 japanese wall art, ukiyo-e style print, japanese bird art
 
+## Style modifiers
+
+Colour-family words. Not subjects — they combine with a `## Buckets` term. Consumed by `research.py` **and** `art_brief.py`: colour is visual, so it belongs in the art brief as well as the search seed. Source: `docs/archive/2026-08-07-gl10b-keyword-delta.md` Part A1.
+
+neutral, beige, sage green, terracotta, dusty pink, navy blue, black and white, muted earth tones, warm neutral, pastel
+
+`sage green` and `terracotta` are closer to a 2020s palette moment than a permanent one — admitted on current occupancy, flagged for re-check (Part A1).
+
+## Placement modifiers
+
+Room/location words. Consumed by `research.py` and **listing copy only** — **never `art_brief.py`**. A room word is scene-word leakage: it is exactly what `sanitize_niche()` and `SCENE_TOKENS` in `pipeline/art_brief.py` exist to strip, and what made the first live run print lifestyle mockups as the artwork. Source: `docs/archive/2026-08-07-gl10b-keyword-delta.md` Part A2.
+
+bedroom wall art, kitchen wall art, bathroom wall art, hallway art, living room wall art, entryway art, home office wall art, nursery wall art
+
+## Tag-safe short forms
+
+Short forms of `## Buckets` terms that are over Etsy's 20-character tag cap. Consumed by the listing-copy tag generator only — it must not invent truncations at draft time. Source: `docs/archive/2026-08-07-gl10b-keyword-delta.md` Part B3, restricted to the six over-cap terms still live in `## Buckets` (the other two flagged there, `continuous line illustration` and `single line drawing art`, were already removed below).
+
+mid century art, minimalist landscape, geometric wall art, botanical kitchen, minimalist line art, celestial print
+
+## Tag-safe short forms — long-form mapping (reference only, not parsed as terms)
+
+`load_safe_evergreen_terms()` reads every non-blank, non-`###` line under a class heading as comma-separated terms (see "Careful with this section's placement" below) — this table is prose reference for a human pairing each short form above with the `## Buckets` term it stands in for, kept in its own section so it is never read as term data.
+
+| Long form (`## Buckets`) | Short form (`## Tag-safe short forms`) |
+| --- | --- |
+| mid century modern wall art | mid century art |
+| minimalist landscape print | minimalist landscape |
+| geometric shapes wall art | geometric wall art |
+| botanical kitchen print | botanical kitchen |
+| minimalist line art poster | minimalist line art |
+| celestial minimalist print | celestial print |
+
 ## Removed as BLOCKED (GL-43, 2026-08-08)
 
 A third tag the bucket did not previously have. A term can pass the flat-volume test and still be useless if its SERP is owned by a product this pipeline physically cannot make. Evidence for each: `docs/2026-08-07-gl10b-keyword-delta.md` Part B.
@@ -47,15 +80,15 @@ A third tag the bucket did not previously have. A term can pass the flat-volume 
 
 **At risk, kept for now, re-check at the next sweep:** `star chart poster` (adjacent to a 35.6k-review Bestseller custom star-map product) and `lunar cycle art` (a weaker form of `moon phase print`'s problem). Both are still in the Celestial bucket above — this is a flag, not a removal.
 
-**Careful with this section's placement:** `load_safe_evergreen_terms()` reads every non-blank, non-`###` line between `## Buckets` and the next `##`, splitting on commas. Prose inside `## Buckets` becomes search terms. All annotation belongs below that boundary, as here.
+**Careful with section placement:** `load_safe_evergreen_terms()` reads every non-blank, non-`###` line between a class heading (`## Buckets`, `## Style modifiers`, `## Placement modifiers`, `## Tag-safe short forms`) and the next `##`, splitting on commas. Prose inside one of those four sections becomes term data for that class. All annotation — including the mapping table above — belongs in a section of its own, never inside one of the four.
 
-## Deferred, and why (GL-43, 2026-08-08)
+## Classed sections, and why (GL-44, 2026-08-08)
 
-The keyword delta's **highest-value finding is not applied here, deliberately.** Its two new buckets — colour-family (`neutral`, `beige`, `sage green`…) and room/placement (`bedroom wall art`, `kitchen wall art`…) — are **modifiers, not subject seeds**, and this file is a flat list consumed by one function that feeds both `research.py` and `art_brief.py`. A flat append would (a) seed `beige` as if it were a niche, and (b) send a room word straight into the art brief — the exact class of scene-word leakage that made the first live run print lifestyle mockups *as* the artwork.
+GL-43 left the keyword delta's highest-value finding unapplied: colour-family (`neutral`, `beige`, `sage green`…) and room/placement (`bedroom wall art`, `kitchen wall art`…) are **modifiers, not subject seeds**, and the file was a flat list consumed by one function feeding both `research.py` and `art_brief.py`. A flat append would have (a) seeded `beige` as if it were a niche, and (b) sent a room word straight into the art brief — the exact class of scene-word leakage that made the first live run print lifestyle mockups *as* the artwork.
 
-Applying them requires a class distinction in this file (subject seed / style modifier / placement modifier / tag-safe short form) plus a consumer change, so that placement modifiers reach the listing copy and **never** `art_brief.py`. Also deferred with it: tag-safe short forms for the 8 bucket terms over Etsy's 20-character tag cap (`mid century modern wall art` → `mid century art`), which the listing-copy generator needs and must not invent at draft time.
+GL-44 applies it by classing the file instead: `load_safe_evergreen_terms(classes=...)` reads only the sections a caller names, and each caller names only what it is allowed to see. **Subject seeds** (`## Buckets`) reach `research.py` and `art_brief.py` — unchanged behaviour, still the default. **Style modifiers** reach `research.py` and `art_brief.py` too — colour is visual. **Placement modifiers** reach `research.py` and listing copy — **never `art_brief.py`**. **Tag-safe short forms** reach the listing-copy tag generator only, and have no consumer yet (GL-10c, #28, is that consumer — it ships asserted and unwired here, deliberately, because #28's spec forbids inventing truncations at draft time). The safety property that used to be enforced by absence is now enforced by routing — see `tests/test_research.py` for the tests that hold it.
 
-That work is **GL-44**, post-launch, next to GL-10c. The seasonal terms (`halloween`, `christmas wall art`, `winter art print`) are also unapplied — `EVENT_WINDOWS_2026` is code, not this file.
+The seasonal terms (`halloween`, `christmas wall art`, `winter art print`) are still unapplied — `EVENT_WINDOWS_2026` is code, not this file.
 
 ## Explicitly excluded
 
