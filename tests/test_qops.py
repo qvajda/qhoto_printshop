@@ -932,7 +932,10 @@ def test_every_state_row_is_a_number_on_this_host():
     values = [l.split("|")[2].strip() for l in rows[1:]]
     assert len(values) == len(metrics._STATE_ROWS)
     for v in values:
-        assert v.isdigit(), f"state report row is not a number: {v!r}"
+        # `n/a` is legal for one row only: a shallow CI checkout has no local
+        # default-branch ref. Everything else must be a number.
+        assert v.isdigit() or v == "n/a", f"state report row is not a number: {v!r}"
+    assert values.count("n/a") <= 1
 
 
 def test_a_failed_probe_is_marked_and_exits_non_zero(tmp_path, monkeypatch):

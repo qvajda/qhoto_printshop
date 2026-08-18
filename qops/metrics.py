@@ -346,6 +346,24 @@ def _git(root: Path, *args: str) -> list[str]:
     return [line for line in p.stdout.splitlines() if line.strip()]
 
 
+def _unmerged(root: Path, cfg: dict) -> int | str:
+    """Branches not merged into the default branch.
+
+    A CI checkout is shallow and has no local `master`, so the ref genuinely
+    does not exist there. That is a property of the checkout, not a broken
+    probe: rendering FAILED would fail every CI run and teach the reader to
+    ignore the marker, which is the GL-53 shape. `n/a` says so instead, and it
+    is not a number, so nothing mistakes it for a measurement.
+    """
+    branch = cfg.get("default_branch", "master")
+    for ref in (branch, f"origin/{branch}"):
+        try:
+            return len(_git(root, "branch", "--no-merged", ref))
+        except RuntimeError:
+            continue
+    return "n/a"
+
+
 def _lines(paths) -> int:
     return sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines())
                for p in paths)
@@ -367,9 +385,7 @@ _STATE_ROWS = [
      lambda root, cfg: len(_git(root, "worktree", "list"))),
     ("Dirty paths", "git status --porcelain | wc -l",
      lambda root, cfg: len(_git(root, "status", "--porcelain"))),
-    ("Unmerged branches", "git branch --no-merged master | wc -l",
-     lambda root, cfg: len(_git(root, "branch", "--no-merged",
-                                cfg.get("default_branch", "master")))),
+    ("Unmerged branches", "git branch --no-merged master | wc -l", lambda root, cfg: _unmerged(root, cfg)),
     ("Test files", "ls tests/test_*.py | wc -l",
      lambda root, cfg: len(list((root / "tests").glob("test_*.py")))),
     ("Workflows", "ls .github/workflows/*.yml | wc -l",
@@ -396,7 +412,8 @@ def state_report(root: Path, cfg: dict) -> tuple[str, list[str]]:
     failures: list[str] = []
     for label, cmd, probe in _STATE_ROWS:
         try:
-            value: object = int(probe(root, cfg))
+            raw = probe(root, cfg)
+            value: object = raw if isinstance(raw, str) else int(raw)
         except Exception as exc:  # noqa: BLE001 - recorded, then fails the run
             value, _ = "FAILED", failures.append(f"{label}: {exc}")
         lines.append(f"| {label} | {value} | `{cmd}` |")
