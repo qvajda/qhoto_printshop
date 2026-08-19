@@ -54,7 +54,7 @@ scan_exclude:
   - docs/
   - qops/
   - .qops/
-  - tests/test_qops.py
+  - tests/test_qops_project.py   # this repo's tripwire assertions name them
   - .github/workflows/guard.yml   # the workflow that runs the scan names them
 
 # --- skills (ADR-0018) -----------------------------------------------------
@@ -79,6 +79,27 @@ claude_md_max_lines: 150
 # guard.yml's doc-link check: every docs/*.md path cited from these trees must
 # resolve. Phase 3 broke 13 of 15 by archiving docs; only a check caught it.
 doc_link_roots: [pipeline, scripts, tests]
+
+# --- portability (Phase 8 P8.1) --------------------------------------------
+# The word list `tests/test_qops.py` asserts against: no substrate source file
+# may contain any of these, case-insensitively. This file may, because this
+# file IS the project-specific surface. The project name and every tripwire
+# name are added automatically; these are the vendors and models the audit had
+# to grep for by hand three times.
+#
+# `telegram` is deliberately absent: digest.yml posts to a QOPS_TELEGRAM_DEV_*
+# bot, which is the substrate's own notification channel and not the shop's.
+portability_forbidden: [qhoto, printshop, etsy, gelato, replicate, flux,
+                        schnell, mockup, listing]
+
+# --- schema check (#160) ---------------------------------------------------
+# `qops doctor` compares the live DB against the declared schema: schema.sql is
+# all `CREATE TABLE IF NOT EXISTS`, so a column added there is a silent no-op
+# against a table that already exists. Both paths are THIS project's — a config
+# omitting this block gets no check, which is what a substrate repo wants.
+schema_check:
+  sql: db/schema.sql
+  db: db/qhoto.sqlite3
 
 # --- CI --------------------------------------------------------------------
 ci:

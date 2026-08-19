@@ -27,10 +27,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from qops import config as qconfig, ledger  # noqa: E402
+try:
+    from qops import config as qconfig, ledger
+except ModuleNotFoundError:      # not installed: running from a checkout
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from qops import config as qconfig, ledger
 
 BLOCKING_FLAGS = {"no-auto", "blocked"}
 
@@ -64,8 +65,21 @@ def candidates(root: Path) -> list[dict]:
     return [i for i in json.loads(out.stdout or "[]") if eligible(i)]
 
 
+def repo_root(argv: list[str]) -> Path:
+    """`--root <path>`, else the nearest ancestor of cwd holding .qops/config.yml.
+
+    NOT `Path(__file__).parents[1]`: once qops is a pinned dependency that is
+    site-packages, not the repo whose backlog is being picked. One scheduled
+    task per consuming repo passes `--root`; a hand run in a checkout needs
+    nothing (P8.1 leak 3).
+    """
+    if "--root" in argv:
+        return Path(argv[argv.index("--root") + 1]).resolve()
+    return qconfig.find_root()
+
+
 def main(argv: list[str]) -> int:
-    root = ROOT
+    root = repo_root(argv)
     cfg = qconfig.load(root)
     picks = candidates(root)
     if not picks:

@@ -48,7 +48,7 @@ def test_skill_drift_catches_an_undeclared_skill_and_a_refless_pin(tmp_path):
     for name in ("interview", "grill-me"):
         (tmp_path / ".claude" / "skills" / name).mkdir()
     (tmp_path / "skills-lock.json").write_text(json.dumps({"skills": {
-        "run-models": {"source": "replicate/skills"},          # no ref
+        "run-models": {"source": "acme/skills"},               # no ref
     }}), encoding="utf-8")
     cfg = {"skills": {"native": ["interview", "triage"],
                       "external": ["run-models"]}}
@@ -124,34 +124,6 @@ def test_guard_blocks_worktree_sprawl():
     assert guard.check("Bash", {"command": "git worktree add ../wt"}, under, cfg) is None
 
 
-@pytest.mark.parametrize("payload", [
-    ("Bash", {"command": "python -c \"etsy_client.create_draft_listing()\""}),
-    ("Write", {"file_path": "pipeline/x.py", "content": "resp = create_draft_listing(x)"}),
-    ("Edit", {"file_path": "pipeline/generate.py", "new_string": 'MODEL = "FLUX.1 [dev]"'}),
-    ("Write", {"file_path": "config/static_config.json",
-               "content": '{"template_id": "PLACEHOLDER_PORTRAIT"}'}),
-])
-def test_guard_blocks_project_tripwires(payload):
-    tool, inp = payload
-    reason = guard.check(tool, inp, FEATURE, qconfig.load(REPO))
-    assert reason, f"{tool} {inp} should have tripped a tripwire"
-
-
-def test_guard_lets_a_commit_message_quote_a_tripwire():
-    cmd = "git commit -m 'never substitute FLUX.1 [dev]'"
-    assert guard.check("Bash", {"command": cmd}, FEATURE, qconfig.load(REPO)) is None
-    # ...but a write of the same string is still blocked
-    assert guard.check("Bash", {"command": "echo 'FLUX.1 [dev]' >> pipeline/x.py"},
-                       FEATURE, qconfig.load(REPO))
-
-
-def test_guard_lets_the_constraint_docs_name_the_tripwires():
-    """CLAUDE.md states the FLUX.1 [dev] prohibition; writing it must not be
-    blocked by the tripwire that enforces it."""
-    inp = {"file_path": "CLAUDE.md", "content": "Never substitute FLUX.1 [dev]."}
-    assert guard.check("Write", inp, FEATURE, qconfig.load(REPO)) is None
-
-
 @pytest.mark.parametrize("command", [
     "git commit -m 'x'",          # on a feature branch, fine
     "git push origin gl-63-thing",
@@ -163,23 +135,110 @@ def test_guard_allows_ordinary_work(command):
     assert guard.check("Bash", {"command": command}, FEATURE, qconfig.load(REPO)) is None
 
 
-def test_guard_reasons_are_ascii():
-    """Blocked-call reasons go to a Windows console via the hook."""
-    for tw in qconfig.load(REPO)["tripwires"]:
-        tw["why"].encode("ascii")
+# A synthetic tripwire set. The substrate has to be exercised without any
+# project's constraints in it; this repo's own are in test_qops_project.py.
+SYNTHETIC = {
+    "protected_branches": ["master"],
+    "max_worktrees": 2,
+    "scan_exclude": ["docs/"],
+    "tripwires": [
+        {"name": "scoped", "pattern": r"FORBIDDEN_CALL\(", "paths": ["src/"],
+         "why": "A tripwire with paths applies only there."},
+        {"name": "global", "pattern": r"FORBIDDEN-LITERAL",
+         "why": "A tripwire with no paths applies everywhere."},
+    ],
+}
+EMPTY = {"protected_branches": ["master"], "max_worktrees": 2,
+         "scan_exclude": [], "tripwires": []}
 
 
-def test_guard_scan_is_clean_on_this_repo():
-    """The tripwire scan guard.yml runs. Green today; it is a regression alarm."""
-    hits = guard.scan(REPO, qconfig.load(REPO))
-    assert hits == [], f"tripwires present: {hits}"
+@pytest.mark.parametrize("tool,inp", [
+    ("Bash", {"command": "echo FORBIDDEN-LITERAL"}),
+    ("Write", {"file_path": "src/x.py", "content": "FORBIDDEN_CALL()"}),
+    ("Edit", {"file_path": "src/x.py", "new_string": "FORBIDDEN_CALL()"}),
+])
+def test_guard_blocks_a_tripwire(tool, inp):
+    assert guard.check(tool, inp, FEATURE, SYNTHETIC)
 
 
-def test_guard_scan_catches_a_planted_string(tmp_path):
-    (tmp_path / "pipeline").mkdir()
-    (tmp_path / "pipeline" / "generate.py").write_text('m = "FLUX.1 [dev]"\n')
-    hits = guard.scan(tmp_path, qconfig.load(REPO))
-    assert any("FLUX" in h["pattern"] for h in hits)
+def test_a_scoped_tripwire_does_not_apply_outside_its_paths():
+    inp = {"file_path": "elsewhere/x.py", "content": "FORBIDDEN_CALL()"}
+    assert guard.check("Write", inp, FEATURE, SYNTHETIC) is None
+
+
+def test_guard_scan_finds_a_planted_string_and_skips_the_excluded_tree(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "src" / "x.py").write_text("FORBIDDEN_CALL()\n", encoding="utf-8")
+    (tmp_path / "docs" / "why.md").write_text("FORBIDDEN-LITERAL\n", encoding="utf-8")
+    hits = guard.scan(tmp_path, SYNTHETIC)
+    assert [h["file"] for h in hits] == ["src/x.py"]
+
+
+def test_guard_scan_exits_0_against_an_empty_tripwire_list(tmp_path, capsys):
+    """The substrate repo declares none. That path had never been exercised,
+    and a crashing guard job would fail every build in a new repo from its
+    first push (PRD P8.1)."""
+    (tmp_path / "x.py").write_text("anything at all\n", encoding="utf-8")
+    assert guard.scan(tmp_path, EMPTY) == []
+    assert guard.main(["scan"], tmp_path, EMPTY) == 0
+    assert "no tripwires" in capsys.readouterr().out
+
+
+# --- #168: the guard reads argv, not the prose argv carries ----------------
+
+@pytest.mark.parametrize("command", [
+    "git push origin master",
+    "git push origin :master",                  # refspec delete
+    "git push --delete origin master",          # flag delete
+    "git push origin HEAD:master",              # renamed source
+    "git push --quiet origin master",           # a flag before the remote
+    "git push origin refs/heads/master",        # fully qualified
+    "git push --all origin",                    # every branch, master included
+    "git push",                                 # implicit, while master is out
+])
+def test_guard_reads_every_push_target(command):
+    """Each of these writes a protected branch. The old parse read the last
+    whitespace-separated token and missed all but the first (#168)."""
+    assert guard.check("Bash", {"command": command}, CTX, SYNTHETIC), command
+
+
+@pytest.mark.parametrize("command", [
+    "git push origin feature",
+    "git push origin HEAD:feature",
+    "git push -u origin feature",
+    "git push --quiet origin feature",
+    "git push origin :feature",                 # deleting a feature branch
+])
+def test_guard_allows_a_push_to_an_unprotected_branch_from_master(command):
+    assert guard.check("Bash", {"command": command}, CTX, SYNTHETIC) is None, command
+
+
+def test_guard_lets_a_command_document_a_git_rule():
+    """The substrate has to be able to state its own git rules through a tool
+    that takes prose. `_FORCE` matched the whole command string, so it could
+    not (#168) — and the workaround, --body-file, is a path the guard cannot
+    see into, which is worse."""
+    prose = "the rule is: git push --force is blocked, and git reset --hard too"
+    for cmd in (f'gh issue comment 1 --body "{prose}"',
+                f"gh pr create --title 'x' --body '{prose}'",
+                f'git commit -m "{prose}"'):
+        assert guard.check("Bash", {"command": cmd}, FEATURE, SYNTHETIC) is None, cmd
+
+
+@pytest.mark.parametrize("command", [
+    'bash -c "git push --force origin feature"',   # -c carries a command
+    "git -c core.pager=cat push --force origin feature",
+])
+def test_the_prose_exemption_does_not_reach_a_command(command):
+    assert guard.check("Bash", {"command": command}, FEATURE, SYNTHETIC), command
+
+
+def test_guard_allows_branching_before_writing_on_master():
+    """`git checkout -b x && git commit` does not write to master, and the
+    refusal it used to draw even named the wrong verb."""
+    cmd = "git checkout -b fix/1-x && git commit -m 'x'"
+    assert guard.check("Bash", {"command": cmd}, CTX, SYNTHETIC) is None
 
 
 # --------------------------------------------------------------------------
@@ -226,7 +285,7 @@ def test_brief_reports_dotted_paths_intact():
 
 
 def test_brief_leads_with_a_dirty_tree_violation():
-    state = {"branch": "master", "dirty": ["pipeline/x.py", "notes/y.txt"],
+    state = {"branch": "master", "dirty": ["src/x.py", "notes/y.txt"],
              "worktrees": 1, "issue": None, "resume": "", "ahead": 0}
     text = briefmod.render_from(state, qconfig.load(REPO))
     first = [ln for ln in text.splitlines() if ln.strip()][0]
@@ -535,38 +594,6 @@ def test_doctor_detects_drift(tmp_path):
 
 def test_the_repo_itself_is_installed_and_undrifted():
     assert install.drift(REPO, qconfig.load(REPO)) == []
-
-
-def test_schema_drift_reports_a_column_dropped_from_the_live_db(tmp_path):
-    """GL-32 shape (#160): schema.sql declares a column, the live DB never
-    ran the migration that added it - `CREATE TABLE IF NOT EXISTS` is a
-    silent no-op against an already-created table."""
-    import sqlite3
-    schema_sql = (REPO / "db" / "schema.sql").read_text(encoding="utf-8")
-    stripped = schema_sql.replace("  gelato_create_intent_at TEXT,\n", "")
-    assert stripped != schema_sql
-    db_path = tmp_path / "qhoto.sqlite3"
-    conn = sqlite3.connect(str(db_path))
-    conn.executescript(stripped)
-    conn.commit()
-    conn.close()
-
-    problems = install.schema_drift(REPO, db_path)
-    assert any("group_products.gelato_create_intent_at" in p for p in problems)
-
-
-def test_schema_drift_is_clean_on_a_fully_migrated_db(tmp_path):
-    import sqlite3
-    db_path = tmp_path / "qhoto.sqlite3"
-    conn = sqlite3.connect(str(db_path))
-    conn.executescript((REPO / "db" / "schema.sql").read_text(encoding="utf-8"))
-    conn.commit()
-    conn.close()
-    assert install.schema_drift(REPO, db_path) == []
-
-
-def test_schema_drift_is_quiet_when_there_is_no_live_db(tmp_path):
-    assert install.schema_drift(tmp_path) == []
 
 
 # --------------------------------------------------------------------------
@@ -990,17 +1017,6 @@ def test_the_reconciler_runs_on_the_digest_cadence_not_a_third_one():
 # was never checked. A table that looks measured is worse than an empty one.
 # --------------------------------------------------------------------------
 
-def test_no_module_assumes_posix():
-    """ADR-0009: nothing may assume POSIX. `python: py -3` is in config so
-    nothing has to guess, and every git probe calls git with no shell at all."""
-    for path in (REPO / "qops").glob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        code = "\n".join(l for l in text.splitlines()
-                         if not l.strip().startswith("#"))
-        for banned in ('"bash"', "'bash'", "shell=True", "-lc"):
-            assert banned not in code, f"{path.name} assumes POSIX: {banned}"
-
-
 def test_every_state_row_is_a_number_on_this_host():
     text, failures = metrics.state_report(REPO, qconfig.load(REPO))
     assert failures == []
@@ -1078,3 +1094,157 @@ def test_doctor_does_not_require_the_network(capsys):
     says why it is quiet (#147)."""
     assert install.open_issues({}) is None
     assert "skipping the label invariant" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# portability — Phase 8's actual property, asserted rather than measured once
+#
+# The 2026-08-17 audit answered "does anything project-specific live outside
+# .qops/config.yml" by grepping, correctly, on one day. A measurement holds
+# until the next commit; a test holds. Four leaks were found by three separate
+# passes over the same question, which is the argument for making it a check.
+# --------------------------------------------------------------------------
+
+# What the qops repo takes with it (PRD §Scope-in). `.qops/config.yml` is the
+# one file allowed to name the project, so it is not here.
+SUBSTRATE_PATHS = ["qops", "scripts/qops_import.py", "scripts/qops_pickup.py",
+                   "tests/test_qops.py", ".claude/agents", "docs/agents"]
+
+
+def _substrate_files():
+    for rel in SUBSTRATE_PATHS:
+        p = REPO / rel
+        if p.is_dir():
+            yield from (f for f in p.rglob("*")
+                        if f.is_file() and f.suffix in (".py", ".md", ".tmpl",
+                                                        ".yml", ".json"))
+        elif p.exists():
+            yield p
+
+
+def test_no_project_specific_string_outside_the_config():
+    cfg = qconfig.load(REPO)
+    forbidden = {cfg["project"].lower()}
+    forbidden |= {t["name"].lower() for t in cfg.get("tripwires", [])}
+    forbidden |= {w.lower() for w in cfg.get("portability_forbidden", [])}
+    assert forbidden, "config declares nothing to check against"
+    leaks = []
+    for f in _substrate_files():
+        text = f.read_text(encoding="utf-8", errors="ignore").lower()
+        for word in sorted(forbidden):
+            if word in text:
+                leaks.append(f"{f.relative_to(REPO)}: {word}")
+    assert leaks == [], "project-specific strings in substrate source:\n" + \
+                        "\n".join(leaks)
+
+
+def _literals(path):
+    """Every string literal in a module that is not a docstring, plus whether
+    anything is called with `shell=True`.
+
+    Comments and docstrings are excluded on purpose: `metrics.py` explains at
+    length why it no longer shells through `bash`, and an assertion that cannot
+    tell the explanation from the defect is one nobody can leave in place.
+    """
+    import ast
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)) and ast.get_docstring(node) is not None:
+            docs.add(id(node.body[0].value))
+    strings = [n.value for n in ast.walk(tree)
+               if isinstance(n, ast.Constant) and isinstance(n.value, str)
+               and id(n) not in docs]
+    shell = any(isinstance(n, ast.keyword) and n.arg == "shell"
+                and getattr(n.value, "value", None) is True for n in ast.walk(tree))
+    return strings, shell
+
+
+@pytest.mark.parametrize("needle", ["bash", "sh -c", "/bin/", "python3"])
+def test_no_substrate_module_assumes_posix(needle):
+    """ADR-0009: the cron host is a Windows desktop. `metrics.state_report`
+    shelled its nine rows through `bash -lc`, where `bash` is the WSL launcher,
+    and captured its refusal as data — nine garbage numbers in a table that
+    looked fine (PRD P8.1, fourth leak). `python:` is in config precisely so
+    nothing else has to guess at an interpreter."""
+    hits = []
+    for f in _substrate_files():
+        # the test file itself has to name the needles in order to look for them
+        if f.suffix != ".py" or f.parent.name == "tests":
+            continue
+        strings, shell = _literals(f)
+        if any(needle in s for s in strings) or shell:
+            hits.append(str(f.relative_to(REPO)))
+    assert hits == [], f"{needle!r} in {hits}"
+
+
+def test_every_label_the_config_names_is_in_its_own_taxonomy():
+    """`ci.status_issue_label: qops:status` lived only under `ci:`, so the
+    importer never created it and the daily digest failed at 06:00 UTC for
+    weeks (#136). Cheap, and it is the assertion that would have caught it."""
+    cfg = qconfig.load(REPO)
+    taxonomy = cfg["labels"]
+    declared = set(taxonomy.get("flags", []))
+    for ns in ("type", "state", "mission", "gate"):
+        declared |= {f"{ns}:{v}" for v in taxonomy.get(ns, [])}
+
+    def label_like(node):
+        if isinstance(node, str):
+            if ":" in node and not any(c in node for c in " /\t"):
+                yield node
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                if k != "labels":
+                    yield from label_like(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from label_like(v)
+
+    undeclared = sorted(set(label_like(cfg)) - declared)
+    assert undeclared == [], f"named in the config, absent from labels: {undeclared}"
+
+
+def test_the_status_issue_is_exempt_from_the_issue_invariants():
+    """digest.yml opens the pinned status issue with exactly one label, and
+    `issue_invariants` rejected it — so `doctor` reported three problems it
+    could never clear, and a gate that can never be green stops being read
+    (#167). Machine-authored bookkeeping is not a sortie."""
+    cfg = qconfig.load(REPO)
+    label = cfg["ci"]["status_issue_label"]
+    assert install.issue_invariants(
+        [{"number": 1, "labels": [{"name": label}]}], cfg) == []
+    # an ordinary issue carrying one label is still three problems
+    assert len(install.issue_invariants(
+        [{"number": 2, "labels": [{"name": "type:code"}]}], cfg)) == 2
+
+
+def test_ready_auto_must_name_a_test(capsys):
+    """Triage R8. The full suite runs longer than one Bash call may, and a
+    `claude -p` process exits with its turn, so a sortie whose evidence of
+    doneness IS the full suite cannot finish (attempt 2, #57/#71). The rule
+    existed only as launch-prompt prose, which by GL-53 is a preference."""
+    cfg = qconfig.load(REPO)
+    labels = [{"name": "type:code"}, {"name": "state:planned"},
+              {"name": "gate:machine"}, {"name": "ready:auto"}]
+    vague = install.issue_invariants(
+        [{"number": 1, "labels": labels, "body": "make the thing work"}], cfg)
+    assert any("names no test" in p for p in vague)
+    named = install.issue_invariants(
+        [{"number": 2, "labels": labels,
+          "body": "Acceptance: tests/test_qops.py passes."}], cfg)
+    assert named == []
+    # A caller with no body cannot answer the question, and silence is not a pass
+    # it can grant either — the rule simply does not fire.
+    assert install.issue_invariants([{"number": 3, "labels": labels}], cfg) == []
+
+
+def test_the_brief_says_which_tracker_it_read():
+    """Two trackers from Phase 8 on. A session reading the wrong one is the
+    dominant new failure mode, so the repo is named every time, not on demand
+    (PRD §Risks, non-negotiable)."""
+    cfg = qconfig.load(REPO)
+    state = {"branch": "gl-63", "dirty": [], "worktrees": 1, "issue": None,
+             "resume": "", "ahead": 0}
+    assert cfg["repo"] in briefmod.render_from(state, cfg)
+    assert "no `repo:`" in briefmod.render_from(state, dict(cfg, repo=None))

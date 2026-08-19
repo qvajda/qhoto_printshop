@@ -26,8 +26,9 @@ jobs:
           cache: pip
       - run: pip install pyyaml
       - name: project tripwires
-        # create_draft_listing · FLUX.1 [dev] · placeholder Gelato template ids.
-        # The list is .qops/config.yml's, shared with the local PreToolUse hook.
+        # The list is .qops/config.yml's `tripwires:`, shared with the local
+        # PreToolUse hook. Naming them here would put one project's constraints
+        # in the substrate's template; a repo declaring none passes.
         run: python -m qops guard scan
 
   doc-links:

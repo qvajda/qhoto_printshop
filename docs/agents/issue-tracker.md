@@ -1,12 +1,12 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues on
-`github.com/qvajda/qhoto_printshop`. Use the `gh` CLI for all operations.
+Issues and specs for this repo live as GitHub issues. Which repo is
+`.qops/config.yml`'s `repo:` key and nothing else names it — `qops brief` prints
+the one it read. Use the `gh` CLI for all operations.
 
 **Standing rule, and it outranks anything below:** GitHub Issues is the source of
-truth for work state (PRD v3 decision, carried from v1/v2). The board at
-`docs/2026-07-22-go-live-plan-of-attack.md` is superseded and retained for
-history only. Where GSD, `.planning/`, or a session document disagrees with an
+truth for work state (PRD v3 decision, carried from v1/v2). Any board or
+plan-of-attack document is superseded and retained for history only. Where GSD, `.planning/`, or a session document disagrees with an
 issue, **the issue wins** (review finding E5).
 
 ## Conventions

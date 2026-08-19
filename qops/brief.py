@@ -124,7 +124,10 @@ def render_from(state: dict, cfg: dict) -> str:
     lines.append(head)
     if state.get("labels"):
         lines.append(routing(state["labels"]))
-    lines.append("Issues are the source of truth: `gh issue list`. "
+    # Which tracker, every time. From Phase 8 there are two, and a session
+    # reading the wrong one is the dominant new failure mode (PRD §Risks).
+    repo = cfg.get("repo") or "no `repo:` in .qops/config.yml"
+    lines.append(f"Issues are the source of truth: `gh issue list` on **{repo}**. "
                  "Vocabulary: CONTEXT.md | decisions: docs/adr/ | constraints: CLAUDE.md.")
     if state.get("resume"):
         lines.append("Last session:\n" + state["resume"])
