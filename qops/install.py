@@ -7,6 +7,7 @@ tripwire list live in config, and the workflow is a rendering of them.
 
 import json
 import re
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -139,6 +140,73 @@ def skill_drift(root: Path, cfg: dict) -> list[str]:
     return problems
 
 
+_CREATE_TABLE = re.compile(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\);",
+                            re.DOTALL)
+_TABLE_LEVEL = ("UNIQUE(", "UNIQUE (", "FOREIGN KEY", "CHECK(", "CHECK (",
+                "CONSTRAINT", "PRIMARY KEY(", "PRIMARY KEY (")
+
+
+def _split_top_level(body: str) -> list[str]:
+    """Comma-separated column/constraint clauses, ignoring commas nested
+    inside a `CHECK(...)` or similar parenthesised clause."""
+    clauses, depth, start = [], 0, 0
+    for i, ch in enumerate(body):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            clauses.append(body[start:i])
+            start = i + 1
+    clauses.append(body[start:])
+    return clauses
+
+
+def _declared_schema(schema_sql: str) -> dict[str, set[str]]:
+    """table -> declared column names, parsed from `db/schema.sql`."""
+    declared = {}
+    for table, body in _CREATE_TABLE.findall(schema_sql):
+        columns = set()
+        for clause in _split_top_level(body):
+            clause = clause.strip()
+            if not clause or clause.startswith(_TABLE_LEVEL):
+                continue
+            columns.add(clause.split()[0])
+        declared[table] = columns
+    return declared
+
+
+def schema_drift(root: Path, db_path: Path | None = None) -> list[str]:
+    """Live DB has every table/column `db/schema.sql` declares (#160).
+
+    schema.sql is all `CREATE TABLE IF NOT EXISTS`, so a new column added
+    there is a silent no-op against an already-created live table - GL-32
+    shipped a standalone migration script that nothing runs and nothing
+    checked for. A missing live DB (fresh checkout, CI) is not drift; there
+    is nothing to compare against.
+    """
+    root = Path(root)
+    db_path = Path(db_path) if db_path is not None else root / "db" / "qhoto.sqlite3"
+    if not db_path.exists():
+        return []
+    declared = _declared_schema((root / "db" / "schema.sql").read_text(encoding="utf-8"))
+    problems = []
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for table, columns in declared.items():
+            live = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if not live:
+                problems.append(f"schema drift: table `{table}` is in db/schema.sql "
+                                f"and missing from the live DB")
+                continue
+            for col in sorted(columns - live):
+                problems.append(f"schema drift: `{table}.{col}` is in db/schema.sql "
+                                f"and missing from the live DB - run its migration")
+    finally:
+        conn.close()
+    return problems
+
+
 # --- label invariants (#147) ----------------------------------------------
 # Each of these is the machine version of something a human got wrong in the
 # week of 2026-08-17: the sweep's hand-run step-4 pipeline, the acceptance
@@ -242,6 +310,7 @@ def open_issues(cfg: dict) -> list[dict] | None:
 def doctor(root: Path, cfg: dict) -> list[str]:
     problems = drift(root, cfg)
     problems += skill_drift(root, cfg)
+    problems += schema_drift(root)
     problems += undeclared_labels(cfg)
     issues = open_issues(cfg)
     if issues is not None:
