@@ -537,6 +537,38 @@ def test_the_repo_itself_is_installed_and_undrifted():
     assert install.drift(REPO, qconfig.load(REPO)) == []
 
 
+def test_schema_drift_reports_a_column_dropped_from_the_live_db(tmp_path):
+    """GL-32 shape (#160): schema.sql declares a column, the live DB never
+    ran the migration that added it - `CREATE TABLE IF NOT EXISTS` is a
+    silent no-op against an already-created table."""
+    import sqlite3
+    schema_sql = (REPO / "db" / "schema.sql").read_text(encoding="utf-8")
+    stripped = schema_sql.replace("  gelato_create_intent_at TEXT,\n", "")
+    assert stripped != schema_sql
+    db_path = tmp_path / "qhoto.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(stripped)
+    conn.commit()
+    conn.close()
+
+    problems = install.schema_drift(REPO, db_path)
+    assert any("group_products.gelato_create_intent_at" in p for p in problems)
+
+
+def test_schema_drift_is_clean_on_a_fully_migrated_db(tmp_path):
+    import sqlite3
+    db_path = tmp_path / "qhoto.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript((REPO / "db" / "schema.sql").read_text(encoding="utf-8"))
+    conn.commit()
+    conn.close()
+    assert install.schema_drift(REPO, db_path) == []
+
+
+def test_schema_drift_is_quiet_when_there_is_no_live_db(tmp_path):
+    assert install.schema_drift(tmp_path) == []
+
+
 # --------------------------------------------------------------------------
 # automerge — ADR-0020's conditions, so loosening one fails a test
 #
