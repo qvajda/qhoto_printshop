@@ -76,7 +76,7 @@ def broken_doc_links(root: Path) -> list[str]:
     Phase 3 broke 13 of 15 by archiving 89 docs. Only a check caught it.
     """
     root = Path(root)
-    cfg_roots = ["pipeline", "scripts", "tests"]
+    cfg_roots = []          # no config, no roots: the list is the project's
     try:
         from . import config as qconfig
         cfg_roots = qconfig.load(root).get("doc_link_roots", cfg_roots)
@@ -163,7 +163,7 @@ def _split_top_level(body: str) -> list[str]:
 
 
 def _declared_schema(schema_sql: str) -> dict[str, set[str]]:
-    """table -> declared column names, parsed from `db/schema.sql`."""
+    """table -> declared column names, parsed from the declared schema file."""
     declared = {}
     for table, body in _CREATE_TABLE.findall(schema_sql):
         columns = set()
@@ -176,31 +176,41 @@ def _declared_schema(schema_sql: str) -> dict[str, set[str]]:
     return declared
 
 
-def schema_drift(root: Path, db_path: Path | None = None) -> list[str]:
-    """Live DB has every table/column `db/schema.sql` declares (#160).
+def schema_drift(root: Path, cfg: dict | None = None,
+                 db_path: Path | None = None) -> list[str]:
+    """Live DB has every table/column the declared schema declares (#160).
 
-    schema.sql is all `CREATE TABLE IF NOT EXISTS`, so a new column added
+    The schema file is all `CREATE TABLE IF NOT EXISTS`, so a new column added
     there is a silent no-op against an already-created live table - GL-32
     shipped a standalone migration script that nothing runs and nothing
     checked for. A missing live DB (fresh checkout, CI) is not drift; there
     is nothing to compare against.
+
+    Both paths are the *project's*, so they live in `.qops/config.yml` under
+    `schema_check:` and a config that omits the block gets no check. A
+    substrate repo has no database, and hardcoding one project's filenames
+    into the substrate is the leak this whole phase exists to remove.
     """
     root = Path(root)
-    db_path = Path(db_path) if db_path is not None else root / "db" / "qhoto.sqlite3"
+    spec = (cfg or {}).get("schema_check") or {}
+    sql_rel, db_rel = spec.get("sql"), spec.get("db")
+    if not sql_rel or not db_rel:
+        return []
+    db_path = Path(db_path) if db_path is not None else root / db_rel
     if not db_path.exists():
         return []
-    declared = _declared_schema((root / "db" / "schema.sql").read_text(encoding="utf-8"))
+    declared = _declared_schema((root / sql_rel).read_text(encoding="utf-8"))
     problems = []
     conn = sqlite3.connect(str(db_path))
     try:
         for table, columns in declared.items():
             live = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             if not live:
-                problems.append(f"schema drift: table `{table}` is in db/schema.sql "
+                problems.append(f"schema drift: table `{table}` is in {sql_rel} "
                                 f"and missing from the live DB")
                 continue
             for col in sorted(columns - live):
-                problems.append(f"schema drift: `{table}.{col}` is in db/schema.sql "
+                problems.append(f"schema drift: `{table}.{col}` is in {sql_rel} "
                                 f"and missing from the live DB - run its migration")
     finally:
         conn.close()
@@ -253,13 +263,27 @@ def undeclared_labels(cfg: dict) -> list[str]:
             if _LABEL_LIKE.match(s) and s not in declared]
 
 
+# A test file named anywhere in the issue body: `tests/test_x.py`, or a bare
+# `test_something`. Deliberately loose - the assertion is that a sortie names
+# the thing that will judge it, not that the name resolves today.
+_NAMES_A_TEST = re.compile(r"tests?[/\\][\w./\\-]*\.py|\btest_\w+")
+
+
 def issue_invariants(issues: list[dict], cfg: dict) -> list[str]:
     """`validate.require_on_open` and finding 1, asserted against a list of
     issues. Pure, so it is driven off a fixture and never off the tracker."""
     problems = []
+    # digest.yml opens the pinned status issue with exactly one label, and these
+    # invariants rejected it — two halves of the substrate disagreeing about what
+    # a valid issue is, for three permanent problems `doctor` could never clear
+    # (#167). Machine-authored bookkeeping is not a sortie, and a gate that can
+    # never be green stops being read.
+    bookkeeping = cfg.get("ci", {}).get("status_issue_label")
     for issue in issues:
         num = issue.get("number")
         names = {l["name"] for l in issue.get("labels", [])}
+        if bookkeeping and bookkeeping in names:
+            continue
         for ns in cfg.get("validate", {}).get("require_on_open",
                                               ["type", "state", "gate"]):
             n = len([x for x in names if x.startswith(f"{ns}:")])
@@ -275,6 +299,17 @@ def issue_invariants(issues: list[dict], cfg: dict) -> list[str]:
         if "ready:auto" in names and "state:planned" not in names:
             problems.append(f"#{num}: `ready:auto` without `state:planned` — "
                             f"pickup-loop can never pick it")
+        # Triage R8, and the only half of it a machine can hold. The full suite
+        # runs longer than one Bash call may, and a `claude -p` process exits
+        # with its turn - so a sortie whose evidence of doneness IS the full
+        # suite cannot finish, by construction (attempt 2, #57/#71). The rule
+        # lived only in one repo's launch-prompt prose, which by GL-53 makes it
+        # a preference. `body` absent means the caller passed a fixture that
+        # cannot answer, not that the issue passes.
+        if "ready:auto" in names and issue.get("body") is not None:
+            if not _NAMES_A_TEST.search(issue["body"]):
+                problems.append(f"#{num}: `ready:auto` and its plan names no "
+                                f"test file — nothing can prove it done (R8)")
     return problems
 
 
@@ -291,7 +326,7 @@ def open_issues(cfg: dict) -> list[dict] | None:
     try:
         p = subprocess.run(["gh", "issue", "list", "--repo", repo, "--state",
                             "open", "--limit", "200", "--json",
-                            "number,labels"], capture_output=True, text=True,
+                            "number,labels,body"], capture_output=True, text=True,
                            encoding="utf-8", timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"doctor: skipping the label invariant — gh unavailable ({exc})")
@@ -310,7 +345,7 @@ def open_issues(cfg: dict) -> list[dict] | None:
 def doctor(root: Path, cfg: dict) -> list[str]:
     problems = drift(root, cfg)
     problems += skill_drift(root, cfg)
-    problems += schema_drift(root)
+    problems += schema_drift(root, cfg)
     problems += undeclared_labels(cfg)
     issues = open_issues(cfg)
     if issues is not None:

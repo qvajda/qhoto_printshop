@@ -36,10 +36,39 @@ work its own backlog.
    version of.
 6. `docs/reference/loops.md` — the six loops, and which of them the new repo needs.
 
-**Owner authorisations already given (2026-08-17), do not re-ask:**
+**Cleared to start, 2026-08-19.** P8.0 is satisfied: A.5 landed and criterion 8
+passed on attempt 3 (#160 — pick 08:28, row `state:done` 08:41, no human touch in
+between). `docs/2026-08-19-attempt-3-findings.md`.
 
-- **P8.2 is pre-authorised.** Create `qvajda/qops`, public. No separate go-ahead.
+**Owner authorisations already given, do not re-ask:**
+
+- **P8.2 is pre-authorised — conditionally.** Create `qvajda/qops`, public, with no
+  separate go-ahead, **provided #167 and #168 are closed first.** They are P8.1
+  exit criteria (see below). If either is open when you reach P8.2, stop and
+  report: the authorisation was given on 2026-08-17 against a substrate whose
+  guard was believed sound, and #168 says it is routable.
 - Sequencing per open question 4: the acceptance run does not gate packaging.
+
+**Two P8.1 exit criteria, added 2026-08-19 from attempt 3's findings.** Full
+reasoning is in the PRD's P8.1; the short version is that both travel and both are
+worse in a public repo than here:
+
+- **#167** — `digest.yml:114–115` writes a status issue that
+  `install.issue_invariants()` rejects, so `qops doctor` reports 3 problems today
+  and **cannot reach zero**. Criterion 5 is unevaluable until this is fixed. When
+  you run `doctor` at the start of this session, those three lines are expected and
+  are not new. Fix: exempt `cfg.ci.status_issue_label`.
+- **#168** — `qops guard` reads a flag as the push target and falls back to the
+  checked-out branch, and `git push origin :<branch>` bypasses it entirely; plus
+  `_FORCE` has no prose exemption, so the substrate cannot document its own git
+  rules through a `--body` argument. **This one needs a design decision, not a
+  patch** — and it is the reason P8.2 is now conditional. A guard that a caller
+  routes around becomes the reference implementation consumer #2 copies.
+
+**#169 and #170 do not block.** They migrate as open issues under P8.5. Do not fix
+them here — #169 especially is a design question (`produced_work()` still answers
+"does this repo have a branch with commits" rather than "did this run commit"), and
+its history is part of what the new repo should inherit.
 
 **Still requires an explicit stop (CLAUDE.md §4):** anything deleting qops source
 from this repo (P8.4), and branch protection settings (P8.4b step 4, owner-only —

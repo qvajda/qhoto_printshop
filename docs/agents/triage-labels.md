@@ -33,3 +33,36 @@ corresponding label string from this table.
 Edit the right-hand column to match whatever vocabulary you actually use — but if
 you do, change `.qops/config.yml` in the same commit. The validator reads that
 file, not this one.
+
+## The triage rules
+
+R1–R7 were written for the 2026-08-17 sweep and lived in that sweep's plan
+document, which is a session artefact. They are the substrate's rules, not that
+session's, so they live here now and they travel with it.
+
+| # | Rule |
+|---|---|
+| R1 | Close what is finished. A `state:done` issue that is still open is a lie in the queue. |
+| R2 | Every open issue gets exactly one `type:`, one `state:`, one `gate:`. No exceptions, no `gate:none` survivors. |
+| R3 | `gate:machine` = the finish line is checkable by tests or CI. `gate:taste` = the finish line is a judgement call (visual, commercial, brand, legal). **When unsure, `gate:taste`** — a wrong `machine` label produces an autonomous sortie that ships a taste decision. |
+| R4 | `type:research` and `type:decision` are `gate:taste` by construction: their output is a finding for the owner, not a passing test. |
+| R5 | `type:manual` never gets `ready:auto`, whatever its gate. If an issue is scriptable, retype it to `type:code` instead of relabelling around it. |
+| R6 | No `ready:auto` on anything whose completion path calls an endpoint the project forbids without an explicit go-ahead — the sortie cannot finish unattended by definition. |
+| R7 | `ready:auto` requires `state:planned`. Triage alone cannot fill the auto queue. |
+| R8 | **`ready:auto` requires a named test.** An issue is auto-eligible only if a test file it touches proves it done, and the issue says which one. |
+
+**R8 is the size rule, and it is about the runtime rather than about quality.**
+The full suite runs longer than a single Bash call may, and a `claude -p`
+process exits with its turn — so a sortie whose evidence of doneness *is* the
+full suite cannot finish, by construction. On 2026-08-18 two unattended sorties
+(#57, #71) wrote their entire change, backgrounded the suite, and ended their
+turn waiting for a notification that run can never receive. `qops doctor` holds
+the checkable half: a `ready:auto` issue whose body names no test file is a
+problem. The judgement half — whether the named test actually proves the thing —
+stays the owner's, like every other `ready:auto` grant.
+
+**R3 is worth re-reading in a substrate repo.** Substrate work is unusually
+machine-gateable — local code, a real test suite, no vendor endpoint — so R6
+excludes almost nothing and `gate:machine` is cheap to apply. It is also
+expensive to be wrong about: a bad autonomous change to the substrate governs
+every project that consumes it.

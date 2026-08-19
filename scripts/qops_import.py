@@ -25,7 +25,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+try:
+    from qops import config as qconfig
+except ModuleNotFoundError:      # not installed: running from a checkout
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from qops import config as qconfig
+
+# Not Path(__file__).parents[1] — as a pinned dependency that is site-packages,
+# not the repo being imported into (P8.1 leak 3).
+ROOT = qconfig.find_root()
 CORPUS = ROOT / ".qops" / "issues.md"
 CONFIG = ROOT / ".qops" / "config.yml"
 STATE = ROOT / ".qops" / "state.json"

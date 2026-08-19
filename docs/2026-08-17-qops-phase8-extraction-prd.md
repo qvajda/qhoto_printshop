@@ -3,6 +3,23 @@
 Status: **draft, awaiting owner sign-off.** No work starts until signed.
 Written against the owner's instruction of 2026-08-17 ("full extraction now").
 
+**Revision 5, 2026-08-19.** Attempt 3 **passed** — criterion 8 is met on this repo,
+first try, unattended, every inch observed
+(`docs/2026-08-19-attempt-3-findings.md`; ledger checkpoint `attempt-3`). P8.0 is
+therefore satisfied and **Session B may start.** The run filed four new substrate
+defects, and two of them are publication blockers rather than patches: **#167**
+(`digest.yml` writes a status issue that `issue_invariants` rejects, so `doctor`
+can never be clean — criterion 5 is unevaluable until it is fixed) and **#168**
+(`qops guard` reads a flag as the push target and falls back to the checked-out
+branch, so `git push origin :<branch>` routes around it; and `_FORCE` has no
+prose exemption, so the substrate cannot document its own git rules through any
+tool taking prose on the command line). Both become **P8.1 exit criteria**, and
+**P8.2's pre-authorisation is now conditional on them** (owner, 2026-08-19).
+**#169** (`produced_work()` still answers a question about the repo rather than
+about this run — a squash-merged branch from a previous sortie on the same issue
+scores as work forever) and **#170** (the schema parser silently skips a table
+declared without `IF NOT EXISTS`) migrate as open issues under P8.5.
+
 **Revision 4, 2026-08-19.** The second unattended attempt (#57, #71) failed at an
 earlier inch than the first: both sorties backgrounded the full test suite, ended
 their turn waiting for a notification a `-p` run cannot receive, and left bare
@@ -196,8 +213,13 @@ Each phase is independently revertible; each ends in a checkable state.
   one observation on a subject that satisfied the size rule — which is evidence
   the rule works, not that the loop survives a subject that breaks it — and the
   run was manual and watched with `qops-pickup-loop` disabled, so it says
-  nothing about an enabled schedule (#152). Four findings filed, none blocking:
-  #167, #168, #169, #170. The record of the two failures follows.
+  nothing about an enabled schedule (#152). Four findings filed. ~~none
+  blocking~~ — **corrected by the owner, 2026-08-19:** #167 and #168 are P8.1 exit
+  criteria and P8.2 is gated on them (see revision 5). The attempt-3 session
+  scored all four as non-blocking because none of them blocks *this repo*; two of
+  them block **publishing the substrate**, which is a different question and not
+  one that session was asked. #169 and #170 do migrate as open issues.
+  The record of the two failures follows.
   It was 0 for 2: attempt 1 (#59)
   worked through the merge and broke at row-advance; attempt 2 (#57, #71) broke
   earlier and never reached a PR, and `produced_work()` scored both bare branches
@@ -302,10 +324,43 @@ Each phase is independently revertible; each ends in a checkable state.
   unmeetable clause in a document consumer #2 reads as authoritative is the GL-53
   pattern — an instruction that looks like a control.
 
+  **Two exit criteria added 2026-08-19 — P8.1 is not done until both are closed,
+  and P8.2 does not start until P8.1 is done.**
+
+  - **#167 — `doctor` can never be clean.** `digest.yml:114–115` opens the daily
+    status issue with exactly one label, `qops:status`, and
+    `install.issue_invariants()` requires one `type:`, one `state:` and one
+    `gate:` with no exemption. Two halves of the substrate disagree about what a
+    valid issue is: one writes it, the other rejects it. Three permanent problems
+    today, and **criterion 5 cannot be evaluated at all** until it is fixed — in
+    either repo, since both halves travel. The findings doc's argument is the
+    operative one: a gate that can never be green stops being read, which is how
+    those three lines hide the fourth. Fix: `issue_invariants` skips issues
+    carrying `cfg.ci.status_issue_label` — machine-authored bookkeeping is not a
+    sortie.
+  - **#168 — the guard is fail-open on two paths.** `qops/guard.py:67–68` reads
+    the push target as the last `\S+` and, when that token starts with `-`, falls
+    back to the *checked-out* branch — so on `master` any `git push` ending in a
+    flag reads as a push to `master`, while the refspec form
+    `git push origin :<branch>` is not caught at all and does the job. A control
+    a caller routes around is a speed bump. Second half: `_FORCE`
+    (`guard.py:19`) matches the whole command string with no prose exemption — the
+    tripwire scan four lines below it has one for exactly this reason — so the
+    substrate cannot document its own git rules through any tool that takes prose
+    on the command line, and the workaround (`--body-file`) is a path the guard
+    cannot see into. **This is the one that must not be published:** the extracted
+    guard becomes the reference implementation consumer #2 copies, and a
+    known-routable control is worse in a public repo than in a private one.
+    Needs a design decision — tighten the parse or recognise `--delete`
+    explicitly — not a patch chosen in passing.
+
   *Ships value even if P8.2+ never happen.*
-- **P8.2 — create the repo.** **Pre-authorised by the owner, 2026-08-17** — no
-  separate go-ahead. `qvajda/qops`, public, licence, README with provenance, its
-  own gate running `tests/test_qops.py`.
+- **P8.2 — create the repo.** **Pre-authorised by the owner, 2026-08-17,
+  conditionally as of 2026-08-19:** the pre-authorisation stands and no separate
+  go-ahead is needed — **provided #167 and #168 are closed.** If either is still
+  open, stop and report rather than creating the repo; the authorisation was given
+  against a substrate whose guard was believed sound. `qvajda/qops`, public,
+  licence, README with provenance, its own gate running `tests/test_qops.py`.
 - **P8.3 — move.** Copy the §Scope-in paths, fresh initial commit. Success
   criterion 3 (byte-identical rendering) is the gate.
 - **P8.4 — rewire.** This repo installs the pinned package, deletes qops source,
@@ -339,7 +394,12 @@ Each phase is independently revertible; each ends in a checkable state.
   count.** 12 today, 13 once the triage sweep retypes #49. **P8.5 must not run
   before that sweep has landed**, or #49 is stranded in the wrong tracker with
   both trackers believing they own it. Each issue closes here with a pointer to
-  its new home.
+  its new home. **#169 and #170 migrate as open issues** (owner, 2026-08-19) —
+  both are substrate defects with named fix shapes and neither is exercised today.
+  Carrying two honest known-defects into the new tracker is what the migration is
+  for; #169 in particular deserves its history in the new repo, since it is the
+  third layer of one defect (a ref exists → a ref has commits → *this run*
+  committed) and the next person to touch `produced_work()` needs that record.
 - **P8.6 — record.** Amend ADR-0015 (interim ends), new ADR for the split, update
   the ways-of-working section of CLAUDE.md: **there are now two trackers**, and
   the brief must say which one it read.
