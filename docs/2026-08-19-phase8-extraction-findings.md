@@ -15,7 +15,7 @@ criterion 8 ran in `qvajda/qops` rather than here.
 | 4 | `mission:qops` here returns only closed migration records | met — 0 open |
 | 5 | `qops doctor` clean in both repos | met — and it could not even be *evaluated* until #167 was fixed |
 | 6 | `tests/test_qops.py` passes in the qops repo with no pipeline fixtures | met — 171 there, 885 here |
-| 7 | Owner CI attention does not double: one digest, not two | **partially** — see the open question below |
+| 7 | Owner CI attention does not double: one digest, not two | met — `qvajda/qops#23` -> PR #24, commit `f2e7f30`: substrate digest gated off by default |
 | 8 | The new repo works its own backlog unattended | met — `qops#5`, two minutes, no keystroke between pick and reconcile |
 
 ## Criterion 8, in full
@@ -198,14 +198,19 @@ bumped, `qops install` re-run — and two substrate changes (#5's label fix and
 #21's install fix) arrived here without anything in this repo being edited by
 hand. That is criterion 2 doing its job rather than merely being satisfied.
 
-## The one criterion not fully met
+## Criterion 7, closed
 
-**Criterion 7 — "one digest, not two".** There are now two `digest.yml`
+~~**Criterion 7 — "one digest, not two".** There are now two `digest.yml`
 schedules, both at 06:00 UTC, and no decision has been taken about merging them.
 The PRD's open question 4 addressed sequencing, not this. Left open rather than
 declared met: the honest reading is that owner CI attention *has* doubled, and
 the fix is a decision (one digest reading two repos, or two digests at different
-times, or the substrate's digest off by default) rather than a patch.
+times, or the substrate's digest off by default) rather than a patch.~~
+
+**Resolved in `qvajda/qops#23` -> PR #24, commit `f2e7f30` ("fix(digest): gate
+the digest job, not the schedule").** The substrate's digest is off by default —
+gating the job rather than the schedule was the decision the struck paragraph
+above called for. All eight success criteria are now met; Phase 8 is closed.
 
 ## Deltas from the PRD
 
