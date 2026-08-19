@@ -170,6 +170,34 @@ recorded here: an empty repo's first push cannot go through a PR, so the
 protected-branch rule has no meaning there. Nothing stopped it, and nothing
 recorded it either — which is the point of #177's second half.
 
+### 8. `guard.yml` installs only pyyaml, and both its jobs import qops
+
+`qvajda/qops#21`, and it is the finding that most justifies the phase.
+
+The moment this repo deleted its local `qops/` and pinned the package, the two
+guard jobs failed with `No module named qops`. They run `pip install pyyaml` and
+nothing else, then use `python -m qops guard scan` and
+`from qops.install import broken_doc_links`. That worked for exactly as long as
+the only repo rendering the template kept `qops/` as a subdirectory, where
+`python -m qops` resolves from the working directory.
+
+`tripwires` and `doc-links` are **required status checks** (ADR-0016), so this
+does not degrade — it blocks every PR in the consuming repo.
+
+**Three findings of one class, and the class is the real result.** #1 (the
+rendered workflows install nothing in a package-shaped repo), qops#19 (an
+untrusted workspace silently drops every permission rule), and this one all say
+the same thing: *nothing asserts that a rendered workflow can run in a repo
+shaped unlike the one that rendered it.* Every template assumption was
+calibrated against a single consumer, and each surfaces only when a second repo
+of a different shape renders it. That gap wants its own decision, not a fourth
+point fix — recorded on qops#21 and deliberately left open.
+
+**And the fix demonstrated the pin.** v0.1.1 was tagged, this repo's requirement
+bumped, `qops install` re-run — and two substrate changes (#5's label fix and
+#21's install fix) arrived here without anything in this repo being edited by
+hand. That is criterion 2 doing its job rather than merely being satisfied.
+
 ## The one criterion not fully met
 
 **Criterion 7 — "one digest, not two".** There are now two `digest.yml`
