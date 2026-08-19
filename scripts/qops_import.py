@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Import .qops/issues.md into GitHub Issues.
 
+    python scripts/qops_import.py --labels        # create the label taxonomy
     python scripts/qops_import.py --validate      # never writes
     python scripts/qops_import.py --execute       # creates, labels, closes
+
+`--labels` runs first in a fresh repo and needs no issue corpus. Nothing else
+in the substrate creates labels, and a repo without them makes `pickup-loop`'s
+query return empty and exit 0 forever.
 
 The validator is the gate, not a formality: it refuses the import if any OPEN
 row is missing a `type:`, a `state:` or a `gate:` label, if any row carries
@@ -146,11 +151,61 @@ def execute(rows: list[dict]) -> None:
         print(f"  {gid}: #{num} {'closed' if r['state'] == 'closed' else 'open'}")
 
 
+def create_labels() -> int:
+    """Create every label the taxonomy declares. Idempotent (`--force`).
+
+    Nothing else in the substrate makes them, and `gh issue create --label`
+    fails on a label the repo does not have. A repo with no labels makes
+    `pickup-loop`'s query return empty and **exit 0** — an hourly task
+    reporting "nothing eligible" is indistinguishable from a healthy idle
+    queue, which is a silent failure by construction (PRD P8.4b step 3).
+
+    Milestones are NOT created here: `gh` has no non-`api` verb for them, and
+    `gh api -X` is denied in .claude/settings.json by a taken decision. An
+    import naming an absent milestone fails loudly, which is the acceptable
+    half of that trade.
+    """
+    labels, _ = load_taxonomy()
+    repo = qconfig.load(ROOT).get("repo", "")
+    if not repo:
+        print("qops_import --labels: config names no `repo`", file=sys.stderr)
+        return 2
+    listed = subprocess.run(["gh", "label", "list", "--repo", repo, "--limit",
+                             "200", "--json", "name"],
+                            capture_output=True, text=True)
+    if listed.returncode:
+        print(f"qops_import --labels: {listed.stderr.strip()}", file=sys.stderr)
+        return 1
+    existing = {l["name"] for l in json.loads(listed.stdout or "[]")}
+    # Create what is missing; never `--force`. An existing label carries a
+    # hand-picked colour and a description, and re-creating it is a write with
+    # nothing to gain — idempotence by not touching, not by overwriting.
+    rc, made = 0, 0
+    for name in sorted(labels - existing):
+        p = subprocess.run(["gh", "label", "create", name, "--repo", repo],
+                           capture_output=True, text=True)
+        if p.returncode:
+            print(f"  FAILED {name}: {p.stderr.strip()}", file=sys.stderr)
+            rc = 1
+        else:
+            print(f"  created {name}")
+            made += 1
+    print(f"{made} created, {len(labels & existing)} already there — "
+          f"{len(labels)} declared for {repo}")
+    return rc
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--validate", action="store_true")
     ap.add_argument("--execute", action="store_true")
+    ap.add_argument("--labels", action="store_true",
+                    help="create the label taxonomy; needs no issue corpus")
     a = ap.parse_args()
+
+    # Before the corpus: a fresh repo has labels to create and nothing to import.
+    if a.labels:
+        return create_labels()
 
     rows = parse()
     print(f"{len(rows)} rows parsed from {CORPUS.relative_to(ROOT)}")

@@ -1279,3 +1279,34 @@ def test_git_options_are_skipped_to_find_the_subcommand():
     assert guard.git_commands(toks) == [("push", ["origin", "master"])]
     assert guard.check("Bash", {"command": "git -c a=b push origin master"},
                        FEATURE, SYNTHETIC)
+
+
+def test_the_importer_taxonomy_parser_matches_the_yaml():
+    """`qops_import.load_taxonomy()` re-reads the config with regexes rather
+    than a YAML parser, and it is what `--labels` creates. If it silently drops
+    a namespace, a fresh repo comes up missing exactly those labels and the
+    picker's query returns empty while exiting 0."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import qops_import                                   # noqa: E402
+
+    cfg = qconfig.load(REPO)
+    taxonomy = cfg["labels"]
+    expected = set(taxonomy.get("flags", []))
+    for ns in ("type", "state", "mission", "gate"):
+        expected |= {f"{ns}:{v}" for v in taxonomy.get(ns, [])}
+    labels, milestones = qops_import.load_taxonomy()
+    assert labels == expected
+    assert milestones == set(cfg["milestones"])
+
+
+def test_the_brief_only_points_at_files_that_exist(tmp_path):
+    """A fixed list of filenames is a dangling pointer in the first repo that
+    does not have one of them, and it sits in the hot path of every session."""
+    cfg = qconfig.load(REPO)
+    assert briefmod._pointers(tmp_path) == []
+    (tmp_path / "CLAUDE.md").write_text("x", encoding="utf-8")
+    assert briefmod._pointers(tmp_path) == ["constraints: CLAUDE.md"]
+    state = {"branch": "gl-63", "dirty": [], "worktrees": 1, "issue": None,
+             "resume": "", "ahead": 0, "pointers": []}
+    text = briefmod.render_from(state, cfg)
+    assert "CONTEXT.md" not in text and cfg["repo"] in text

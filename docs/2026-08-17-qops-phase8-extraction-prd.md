@@ -375,9 +375,17 @@ Each phase is independently revertible; each ends in a checkable state.
   2. Add its own `CLAUDE.md` (doctor reads it unconditionally) and
      `.claude/settings.json` invoking `python -m qops` (doctor reads CLAUDE.md at
      `install.py:151` and checks the settings file at `:147–150`).
-  3. `python scripts/qops_import.py` to create the label taxonomy. A repo with no
-     labels cannot hold a `ready:auto` and the picker's query returns empty
+  3. `python scripts/qops_import.py --labels` to create the label taxonomy. A repo
+     with no labels cannot hold a `ready:auto` and the picker's query returns empty
      forever without erroring — a silent failure by construction.
+     **Corrected 2026-08-19, and the correction is the step's own point:** as
+     written this step named a mode that did not exist. `qops_import.py` never
+     *created* labels — it validated against the config and then called
+     `gh issue create --label`, which fails on a label the repo does not have.
+     **Nothing in the substrate made the taxonomy**, so the one prerequisite
+     whose absence is invisible had no implementation. `--labels` was added
+     before the extraction; it needs no issue corpus, creates only what is
+     missing, and never `--force`s over an existing label's colour.
   4. **Branch protection on `master`, with the gate as a required check.** Not
      previously in scope or criteria, and load-bearing:
      `automerge-loop` only switches on GitHub's *native* auto-merge; required

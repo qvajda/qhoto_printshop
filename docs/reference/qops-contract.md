@@ -117,10 +117,14 @@ malformed or refused.
 
 Two scripts sit outside the CLI, both rooted the same way:
 
-- `scripts/qops_import.py --validate | --execute` — creates the label taxonomy
-  and imports `.qops/issues.md`. **A repo with no labels makes the picker's
-  query return empty and exit 0**, which is indistinguishable from an idle
-  queue, so this runs before anything is expected to be picked.
+- `scripts/qops_import.py --labels | --validate | --execute` — `--labels`
+  creates every label the taxonomy declares and needs no issue corpus, so it is
+  the first thing a fresh repo runs. It creates what is missing and never
+  `--force`s over an existing label's colour or description. **A repo with no
+  labels makes the picker's query return empty and exit 0**, which is
+  indistinguishable from an idle queue. Milestones are not created: `gh` has no
+  non-`api` verb for them and `gh api -X` is denied by a taken decision, so an
+  import naming an absent milestone fails loudly instead.
 - `scripts/qops_pickup.py [--root PATH] [--launch]` — the `pickup-loop` picker.
   Without `--launch` it prints what it would pick and starts nothing.
 
