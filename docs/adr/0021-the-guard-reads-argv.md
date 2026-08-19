@@ -48,11 +48,28 @@ around is a speed bump that reads like a control.
    `--command`, `/c`) recursively. `bash -c "…"` hides its payload from a token
    scan the same way `--body "…"` hid prose from a string scan; the difference
    is that this one runs.
-3. **Resolve every push destination**, not one token: strip flags, take the
+3. **Parse the subcommand, not a substring.** `git_commands()` returns every
+   `git <verb>` in the token list with that verb's own arguments: the verb is
+   the first non-option token after `git`, and its arguments stop at the next
+   shell separator. All six checks read that one parse.
+4. **Resolve every push destination**, not one token: strip flags, take the
    positionals after the remote, and read each refspec's destination (after
    `:`, minus a leading `+`, minus `refs/heads/`). No refspec means the
    checked-out branch, which is what git itself pushes; `--all` / `--mirror`
    means all of them.
+
+**Rule 3 was added on the second pass, an hour after the first landed**, and
+the way it was found is the argument for it. The first fix still scanned the
+token list for the *word* `push`, so the very next command this session ran —
+`git stash push -m wip -- tests/x.py && git checkout master` — was refused as a
+push to master: `stash push` looked like `push`, and `master` after the `&&`
+looked like its refspec. Six checks each doing their own scanning is the defect;
+one parse and six decisions is the fix. Two false-positive classes close with
+it: a subcommand that merely contains a blocked verb, and an argument belonging
+to a later command in the same line.
+
+`-c` is expanded only when its value contains whitespace. `bash -c "git push"`
+carries a command; `git -c core.pager=cat` carries a config setting.
 
 The alternative the issue offered — recognise `--delete` explicitly — was
 refused. It fixes one row of the table above and leaves three, and a control

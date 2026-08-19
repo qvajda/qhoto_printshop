@@ -1,9 +1,15 @@
 """The local guard. PreToolUse exit 2 blocks a call outright (ADR-0001).
 
-Not a security control — an agent can run with hooks disabled. It is the local
+Not a security control - an agent can run with hooks disabled. It is the local
 half of a pair whose other half is server-side branch protection (PRD §5 B8).
 The tripwire list lives in .qops/config.yml and is read here AND by guard.yml,
 so there is one definition with two enforcement points.
+
+**Everything below reads argv, never the command string** (ADR-0021, #168). The
+string form could not tell `git push` from `git stash push`, could not see
+`push` behind `git -c x=y`, read only the last token as the push target, and
+matched a git rule quoted inside `--body`. Six checks each did their own
+scanning and got it wrong differently. Parse once, decide six times.
 """
 
 import json
@@ -14,12 +20,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-# git commands that write to the current branch
-_WRITES = re.compile(r"\bgit\s+(commit|push|merge|rebase)\b")
-_RESET_HARD = re.compile(r"\bgit\s+reset\b[^|;&]*--hard\b")
-_WORKTREE_ADD = re.compile(r"\bgit\s+worktree\s+add\b")
-# A command that makes its own branch first is not writing to the protected one.
-_BRANCHES_FIRST = re.compile(r"\bgit\s+(checkout|switch)\s+-[bcBC]\b")
+# git subcommands that write to the current branch
+_WRITES = {"commit", "push", "merge", "rebase"}
+
+# git's own options, before the subcommand. These take a value.
+_GIT_VALUE_OPTS = {"-c", "-C", "--exec-path", "--git-dir", "--work-tree",
+                   "--namespace"}
+
+# What separates one command from the next inside a single Bash call.
+_SEPARATORS = {"&&", "||", ";", "|", "&"}
 
 _TEXT_FIELDS = ("content", "new_string", "command", "file_text")
 
@@ -47,7 +56,8 @@ _PUSH_VALUE_FLAGS = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"
 
 
 def argv_tokens(cmd: str) -> list[str]:
-    """Command tokens, with the values of prose-carrying flags dropped (#168).
+    """Command tokens, with the values of prose-carrying flags dropped and the
+    values of command-carrying flags expanded (#168).
 
     Unbalanced quotes fall back to a naive split rather than to allowing the
     call: the guard may read less, it never reads nothing.
@@ -67,39 +77,58 @@ def argv_tokens(cmd: str) -> list[str]:
         else:
             out.append(t)
     for i, t in enumerate(out[1:], 1):
-        if out[i - 1] in _COMMAND_FLAGS:
+        # `-c` is ambiguous: `bash -c "git push"` carries a command, `git -c
+        # key=val` carries a config setting. A payload with no whitespace in it
+        # is not a command, so only the former is expanded.
+        if out[i - 1] in _COMMAND_FLAGS and any(c.isspace() for c in t):
             out += argv_tokens(t)
     return out
 
 
-def pushes(toks: list[str]) -> bool:
-    """These tokens run a git push - including as `git -c x=y push`, which the
-    old adjacency regex did not match, so a `-c` in front smuggled a forced one
-    past the check (#168)."""
-    return "git" in toks and "push" in toks and toks.index("push") > toks.index("git")
+def git_commands(toks: list[str]) -> list[tuple[str, list[str]]]:
+    """Every `git <subcommand>` in these tokens, as (subcommand, its own args).
+
+    The subcommand is the first non-option token after `git`, so `git -c k=v
+    push` is a push and `git stash push` is not one. Args stop at the next shell
+    separator, so `git commit && git checkout master` does not read `master` as
+    an argument to `commit`.
+    """
+    found = []
+    for i, t in enumerate(toks):
+        if t != "git":
+            continue
+        j = i + 1
+        while j < len(toks) and toks[j].startswith("-"):
+            j += 2 if toks[j] in _GIT_VALUE_OPTS else 1
+        if j >= len(toks) or toks[j] in _SEPARATORS:
+            continue
+        args = []
+        for a in toks[j + 1:]:
+            if a in _SEPARATORS:
+                break
+            args.append(a)
+        found.append((toks[j], args))
+    return found
 
 
-def forces(toks: list[str]) -> bool:
-    tail = toks[toks.index("push"):] if pushes(toks) else []
-    return any(t == "-f" or t.startswith(_FORCE_FLAGS) for t in tail)
+def forces(args: list[str]) -> bool:
+    """A `git push` forced, in any of its spellings."""
+    return any(a == "-f" or a.startswith(_FORCE_FLAGS) for a in args)
 
 
-def push_targets(toks: list[str], branch: str) -> list[str]:
-    """Every branch a `git push` in these tokens would write, as a bare name.
+def push_targets(args: list[str], branch: str) -> list[str]:
+    """Every branch this `git push` would write, as a bare name.
 
     The old parse read the *last* whitespace-separated token and, when that
     started with `-`, fell back to the checked-out branch. Four routes past it,
     all of which reach a protected branch (#168): a refspec delete, a flag
     delete, a renamed source, and any flag sitting before the remote.
 
-    `*` means every branch — `--all` / `--mirror`. No refspec at all means the
+    `*` means every branch - `--all` / `--mirror`. No refspec at all means the
     checked-out branch, which is what git itself pushes.
     """
-    if "push" not in toks:
-        return []
-    rest = toks[toks.index("push") + 1:]
     positional, skip, everything = [], False, False
-    for t in rest:
+    for t in args:
         if skip:
             skip = False
         elif t in _PUSH_VALUE_FLAGS:
@@ -140,16 +169,47 @@ def _tripwire(text: str, path_hint, cfg: dict):
     return None
 
 
-def check(tool_name: str, tool_input: dict, ctx: dict, cfg: dict) -> str | None:
-    """Return a refusal reason, or None to allow. Pure — ctx carries git state."""
+def git_refusal(toks: list[str], ctx: dict, cfg: dict) -> str | None:
+    """The six git checks, over one parse. None allows."""
     branch = ctx.get("branch") or ""
     protected = cfg.get("protected_branches", [])
+    commands = git_commands(toks)
+    # A command that makes its own branch before it writes is not writing to
+    # the protected one. `git checkout -b x && git commit` used to be refused,
+    # and the refusal named the wrong verb while doing it.
+    branches_first = any(verb in ("checkout", "switch")
+                         and any(a in ("-b", "-c", "-B", "-C") for a in args)
+                         for verb, args in commands)
+    for verb, args in commands:
+        if verb == "push":
+            if forces(args):
+                return ("force-push is blocked. Rebase and push normally, or "
+                        "ask the owner.")
+            # a push naming another branch is fine even while master is out
+            for target in push_targets(args, branch):
+                if target == "*" and protected:
+                    return (f"push --all/--mirror is blocked while "
+                            f"{protected[0]} is protected. Open a PR.")
+                if target in protected:
+                    return f"push to {target} is blocked. Open a PR."
+        elif verb == "reset" and "--hard" in args:
+            return ("git reset --hard discards uncommitted work. Use git stash "
+                    "or a soft reset.")
+        elif verb == "worktree" and args[:1] == ["add"] \
+                and ctx.get("worktrees", 0) >= cfg["max_worktrees"]:
+            return (f"worktree sprawl: {ctx['worktrees']} already live, cap is "
+                    f"{cfg['max_worktrees']}. Remove one first "
+                    f"(git worktree remove).")
+        elif verb in _WRITES and branch in protected and not branches_first:
+            return (f"'{verb}' on {branch} is blocked - {branch} is protected. "
+                    f"Branch first.")
+    return None
 
+
+def check(tool_name: str, tool_input: dict, ctx: dict, cfg: dict) -> str | None:
+    """Return a refusal reason, or None to allow. Pure - ctx carries git state."""
     if tool_name == "Bash":
         cmd = tool_input.get("command", "")
-        # Every git check below reads argv, never the prose argv carries (#168).
-        toks = argv_tokens(cmd)
-        bare = " ".join(toks)
 
         # #122: a denied unattended session retried with the sandbox off. An
         # owner at a keyboard can still make that call; a pickup-loop launch
@@ -158,30 +218,12 @@ def check(tool_name: str, tool_input: dict, ctx: dict, cfg: dict) -> str | None:
             return ("dangerouslyDisableSandbox is refused in an unattended run. "
                     "Report the blocked command on the issue instead.")
 
-        if forces(toks):
-            return "force-push is blocked. Rebase and push normally, or ask the owner."
-        if _RESET_HARD.search(bare):
-            return "git reset --hard discards uncommitted work. Use git stash or a soft reset."
-        if _WORKTREE_ADD.search(bare) and ctx.get("worktrees", 0) >= cfg["max_worktrees"]:
-            return (f"worktree sprawl: {ctx['worktrees']} already live, cap is "
-                    f"{cfg['max_worktrees']}. Remove one first (git worktree remove).")
-        write = _WRITES.search(bare)
-        if pushes(toks):
-            # a push naming another branch is fine even while master is out.
-            # Read off the tokens, not `_WRITES`: `git -c x=y push` is a push
-            # and the adjacency regex does not see it.
-            for target in push_targets(toks, branch):
-                if target == "*" and protected:
-                    return (f"push --all/--mirror is blocked while "
-                            f"{protected[0]} is protected. Open a PR.")
-                if target in protected:
-                    return f"push to {target} is blocked. Open a PR."
-        elif write and branch in protected and not _BRANCHES_FIRST.search(bare):
-            return (f"'{write.group(1)}' on {branch} is blocked — {branch} is "
-                    f"protected. Branch first.")
+        refusal = git_refusal(argv_tokens(cmd), ctx, cfg)
+        if refusal:
+            return refusal
 
         # A commit message that quotes a tripwire is describing the constraint,
-        # not breaking it — same exemption the constraint docs get below.
+        # not breaking it - same exemption the constraint docs get below.
         if not re.match(r"\s*git\s+(commit|log|show|notes)\b", cmd):
             hit = _tripwire(cmd, None, cfg)
             if hit:
@@ -273,7 +315,7 @@ def main(argv: list[str], root: Path, cfg: dict) -> int:
     if argv and argv[0] == "scan":
         hits = scan(root, cfg)
         for h in hits:
-            print(f"{h['file']}:{h['line']}: {h['name']} — {h['why']}")
+            print(f"{h['file']}:{h['line']}: {h['name']} - {h['why']}")
         if hits:
             print(f"\n{len(hits)} tripwire hit(s).", file=sys.stderr)
             return 1
