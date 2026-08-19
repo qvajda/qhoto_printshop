@@ -3,6 +3,14 @@
 Status: **draft, awaiting owner sign-off.** No work starts until signed.
 Written against the owner's instruction of 2026-08-17 ("full extraction now").
 
+**Revision 4, 2026-08-19.** The second unattended attempt (#57, #71) failed at an
+earlier inch than the first: both sorties backgrounded the full test suite, ended
+their turn waiting for a notification a `-p` run cannot receive, and left bare
+branches that `produced_work()` scored as successes. Fixed in #163, unexercised.
+Changes: **P8.0 now requires criterion 8 observed once on this repo** (attempt 3),
+and P8.1 gains the `ready:auto` size constraint — the eligibility rule attempt 2
+discovered, which currently exists only as launch-prompt prose.
+
 **Revision 3, 2026-08-18.** Written against the acceptance run's findings
 (`docs/2026-08-17-acceptance-run-findings.md`). The run proved every step from
 claim to merge works unattended first try, and that the substrate's last inch —
@@ -179,7 +187,18 @@ excluded the only thing that makes the substrate autonomous. Corrected split:
 Each phase is independently revertible; each ends in a checkable state.
 
 - **P8.0 — prereq gate.** The dirty tree (#142 follow-up) is committed and #142 is
-  closed. **Added 2026-08-18: Session A.5 has landed** — PR #158, merged 17:36 UTC. It
+  closed. **Added 2026-08-19: criterion 8 has been observed once on *this* repo**
+  — `docs/2026-08-19-attempt-3-launch-prompt.md`. It is 0 for 2: attempt 1 (#59)
+  worked through the merge and broke at row-advance; attempt 2 (#57, #71) broke
+  earlier and never reached a PR, and `produced_work()` scored both bare branches
+  as successes. Each fix was correct and each time the next unexercised inch
+  failed. Extracting an unattended path with that record hands consumer #2 a
+  substrate whose core mechanic has never completed, and the failures are cheap to
+  find here and expensive to find in a public repo two projects depend on. **If
+  attempt 3 fails silently, the recommendation is a design pass on the unattended
+  path before extraction, not a fourth point-fix** — two consecutive fixes that
+  each revealed the next defect is evidence about the method.
+  **Added 2026-08-18: Session A.5 has landed** — PR #158, merged 17:36 UTC. It
   closed #150 (the reconciler), #151, #153, #147 and #136; #152 (finding 4,
   worktree isolation) is `gate:taste` and stays open. The reconciler was
   observed advancing a real merge and found #122 unaided. Two things it did
@@ -236,6 +255,22 @@ Each phase is independently revertible; each ends in a checkable state.
   3. `qops guard scan` exits 0 against an **empty** `tripwires:` list.
   4. Every label named anywhere in `.qops/config.yml` appears in the `labels:`
      taxonomy. Cheap, and the assertion that would have caught `qops:status`.
+
+  **`ready:auto` carries a size constraint, and it must stop being prose
+  (2026-08-19).** Attempt 2 discovered it the hard way: the full suite is ~3m33s,
+  longer than a single Bash call may run, and a `claude -p` process exits with its
+  turn — so a sortie whose evidence of doneness *is* the full suite cannot finish,
+  by construction. #163's countermeasure is half a control (`produced_work()`
+  counts commits, so the failure is now loud) and half a launch-prompt
+  instruction — and by GL-53 an instruction in a prompt is a preference. So the
+  eligibility rule is real, load-bearing, and currently written down nowhere
+  checkable: **an issue is auto-eligible only if a named test file it touches
+  proves it done.** Two things before the contract freezes: state it as a triage
+  rule alongside R5/R6/R7, and get as close to an assertion as the substrate can —
+  at minimum `qops doctor` flagging a `ready:auto` issue whose plan names no test.
+  This travels: consumer #2 otherwise inherits an eligibility criterion that
+  exists only in one repo's prompt prose, which is exactly the class of thing this
+  phase is supposed to be extracting *away* from.
 
   **The row-advance reconciler ships here, not in the new repo.** Session A.5
   builds it (owner decision 2026-08-18: a scheduled reconciler — not a
