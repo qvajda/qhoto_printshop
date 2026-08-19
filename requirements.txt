@@ -4,3 +4,10 @@ pillow==12.3.0
 opencv-python-headless==4.11.0.86
 numpy==2.5.1
 PyYAML==6.0.3
+
+# The ways-of-working substrate. Extracted 2026-08-19 (ADR-0023) and PINNED to a
+# tag, never a branch: a substrate mutating under a live pipeline is the GL-53
+# failure mode - something changes underneath, nothing announces it, and the
+# first evidence is a defect in the thing that depends on it. Upgrading is an
+# act. Its issues live in qvajda/qops, not here.
+qops @ git+https://github.com/qvajda/qops@v0.1.0

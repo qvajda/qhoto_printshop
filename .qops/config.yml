@@ -52,7 +52,6 @@ scan_exclude:
   - CONTEXT.md
   - README.md
   - docs/
-  - qops/
   - .qops/
   - tests/test_qops_project.py   # this repo's tripwire assertions name them
   - .github/workflows/guard.yml   # the workflow that runs the scan names them
@@ -105,7 +104,9 @@ schema_check:
 ci:
   python_version: '3.12'
   test_command: python -m pytest -q
-  gate_command: python -m pytest -q tests/test_qops.py
+  # test_qops.py went with the substrate (ADR-0023). What is left here is
+  # this project's half: its tripwires and its declared schema.
+  gate_command: python -m pytest -q tests/test_qops_project.py
   runs_on: ubuntu-latest
   digest_cron: '0 6 * * *'      # 06:00 UTC daily
   groom_cron: '0 5 * * 1'       # Mondays

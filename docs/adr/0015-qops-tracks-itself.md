@@ -30,17 +30,23 @@ qops cannot fix that for the pipeline and reproduce it for itself.
    state. When the two disagree, the issue wins — that rule is already in
    `CLAUDE.md` and this extends it to qops itself.
 
-**Interim, until the plugin repo exists (2026-08-14):** the repo has not been
-created — that is a separate, outward-facing act and it was not authorised in
-the same breath as the policy. Until it is, qops issues stay in
-`qhoto_printshop` carrying **`mission:qops`**, which is already in the taxonomy
-(`.qops/config.yml`). `mission:qops` is therefore the exact query that has to be
-migrated: `gh issue list --label mission:qops --state all`.
+**The interim is over (2026-08-19).** It said qops issues stay in
+`qhoto_printshop` carrying **`mission:qops`** until the plugin repo existed, and
+named the exact migration query: `gh issue list --label mission:qops --state all`.
+When this ADR was written that query returned nothing, and the note recorded that
+the next qops issue filed here would be "a migration item, not a resident".
 
-**Today that query returns nothing.** No qops-related issue exists in this repo
-to move, so Phase 5's "move any qops issue that is currently here" is satisfied
-by measurement rather than by work. The next qops issue filed here is a
-migration item, not a resident.
+`qvajda/qops` exists as of 2026-08-19 (ADR-0023), the query was re-run rather
+than trusted, and every row it returned was migrated and closed here with a
+pointer to its new home. The interim paragraph is deleted rather than amended,
+as this ADR said it would be.
+
+**What the interim actually cost, since it is the reusable part:** it ran for
+five days and accumulated a working backlog. Nothing was wrong with the interim
+— the repo was a separate, outward-facing act and correctly was not authorised
+in the same breath as the policy. But an interim with no expiry becomes the
+arrangement, and the thing that ended this one was a deadline arriving from
+outside (a second project), not the interim being noticed.
 
 ## Consequences
 
