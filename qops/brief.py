@@ -101,7 +101,18 @@ def collect(root: Path, cfg: dict) -> dict:
         resume = "\n".join(body[-3:])
     return {"branch": branch, "dirty": dirty, "worktrees": worktrees,
             "ahead": int(ahead or 0), "issue": issue, "resume": resume,
-            "labels": _labels(root, issue)}
+            "labels": _labels(root, issue), "pointers": _pointers(root)}
+
+
+# Where a session looks things up, if the repo has them. Order is the order
+# they are read in.
+_POINTERS = (("CONTEXT.md", "Vocabulary: CONTEXT.md"),
+             ("docs/adr", "decisions: docs/adr/"),
+             ("CLAUDE.md", "constraints: CLAUDE.md"))
+
+
+def _pointers(root: Path) -> list[str]:
+    return [text for path, text in _POINTERS if (Path(root) / path).exists()]
 
 
 def render_from(state: dict, cfg: dict) -> str:
@@ -127,8 +138,13 @@ def render_from(state: dict, cfg: dict) -> str:
     # Which tracker, every time. From Phase 8 there are two, and a session
     # reading the wrong one is the dominant new failure mode (PRD §Risks).
     repo = cfg.get("repo") or "no `repo:` in .qops/config.yml"
-    lines.append(f"Issues are the source of truth: `gh issue list` on **{repo}**. "
-                 "Vocabulary: CONTEXT.md | decisions: docs/adr/ | constraints: CLAUDE.md.")
+    line = f"Issues are the source of truth: `gh issue list` on **{repo}**."
+    # Only point at what is there. A fixed list of filenames is a dangling
+    # pointer in the first repo that does not happen to have one of them, and
+    # it sits in the hot path of every session.
+    if state.get("pointers"):
+        line += " " + " | ".join(state["pointers"]) + "."
+    lines.append(line)
     if state.get("resume"):
         lines.append("Last session:\n" + state["resume"])
 
