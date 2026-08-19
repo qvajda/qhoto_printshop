@@ -132,7 +132,14 @@ its record, not editing this list.
 
 ## Ways of working
 
-Issues are the source of truth: `gh issue list` (`qvajda/qhoto_printshop`); the
-issue wins over any planning doc. Session state, the guard and the metrics are
-`qops` — `python -m qops brief|ledger|resume|guard|close|install|doctor|metrics`,
-configured entirely by `.qops/config.yml`. Agent docs: `docs/agents/`.
+**Two trackers since 2026-08-19 (ADR-0023), and reading the wrong one is the
+failure mode that costs.** This repo's issues are the **shop's**:
+`gh issue list` on `qvajda/qhoto_printshop`. The substrate's own work — qops
+bugs, its portability, its next phase — lives in `qvajda/qops` and never here.
+`qops brief` names the repo it queried, every session; believe it over habit.
+The issue wins over any planning doc.
+
+Session state, the guard and the metrics are `qops`, consumed here as a **pinned
+tag** — `python -m qops brief|ledger|resume|guard|close|install|doctor|metrics`,
+configured entirely by `.qops/config.yml`. Upgrading it is an act, not a drift.
+Agent docs: `docs/agents/`.
