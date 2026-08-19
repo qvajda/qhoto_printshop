@@ -117,3 +117,15 @@ def test_schema_drift_is_quiet_when_the_config_declares_no_schema():
     """A substrate repo has no database. No `schema_check:` block, no check —
     and no reaching for one project's filenames from substrate code (leak 5)."""
     assert install.schema_drift(REPO, {}) == []
+
+
+def test_the_portability_word_list_names_this_project():
+    """`test_no_project_specific_string_outside_the_config` checks the substrate
+    against a list the config declares. In the substrate repo `project: qops`
+    names the substrate itself, so the test cannot add the project name for
+    free — which makes it this project's job to be on its own list."""
+    cfg = qconfig.load(REPO)
+    words = [w.lower() for w in cfg["portability_forbidden"]]
+    name = cfg["project"].lower()
+    assert any(w in name for w in words), \
+        f"`portability_forbidden` names nothing in {name!r}"

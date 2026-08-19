@@ -1124,10 +1124,11 @@ def _substrate_files():
 
 def test_no_project_specific_string_outside_the_config():
     cfg = qconfig.load(REPO)
-    forbidden = {cfg["project"].lower()}
-    forbidden |= {t["name"].lower() for t in cfg.get("tripwires", [])}
+    # The list is the config's, and the project's own name has to be ON it —
+    # asserted per-project, because in the substrate repo `project: qops` names
+    # the substrate and every file is allowed to say it.
+    forbidden = {t["name"].lower() for t in cfg.get("tripwires", [])}
     forbidden |= {w.lower() for w in cfg.get("portability_forbidden", [])}
-    assert forbidden, "config declares nothing to check against"
     leaks = []
     for f in _substrate_files():
         text = f.read_text(encoding="utf-8", errors="ignore").lower()
@@ -1248,3 +1249,33 @@ def test_the_brief_says_which_tracker_it_read():
              "resume": "", "ahead": 0}
     assert cfg["repo"] in briefmod.render_from(state, cfg)
     assert "no `repo:`" in briefmod.render_from(state, dict(cfg, repo=None))
+
+
+# --- #168, second pass: a subcommand is not a substring --------------------
+
+@pytest.mark.parametrize("command", [
+    "git stash push -m wip -- tests/x.py && git checkout master",
+    "git stash push tests/a.py tests/b.py",
+    "git log --oneline master",
+    "git diff master",
+    "git branch -d master-notes",
+])
+def test_a_git_subcommand_is_not_a_substring(command):
+    """`git stash push` is not `git push`, and `git log master` names no push
+    target. The string form could not tell, and refused all five (#168)."""
+    assert guard.check("Bash", {"command": command}, CTX, SYNTHETIC) is None, command
+
+
+def test_args_stop_at_the_shell_separator():
+    """`git commit && git checkout master` must not read `master` as an
+    argument to anything before the `&&`."""
+    toks = guard.argv_tokens("git stash push a.py && git checkout master")
+    assert guard.git_commands(toks) == [("stash", ["push", "a.py"]),
+                                        ("checkout", ["master"])]
+
+
+def test_git_options_are_skipped_to_find_the_subcommand():
+    toks = guard.argv_tokens("git -c core.pager=cat --no-pager push origin master")
+    assert guard.git_commands(toks) == [("push", ["origin", "master"])]
+    assert guard.check("Bash", {"command": "git -c a=b push origin master"},
+                       FEATURE, SYNTHETIC)
