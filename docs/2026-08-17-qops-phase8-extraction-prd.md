@@ -1,6 +1,14 @@
 # PRD — Phase 8: extract qops into its own repo
 
-Status: **draft, awaiting owner sign-off.** No work starts until signed.
+Status: **DONE, 2026-08-19.** All eight success criteria met except criterion 7,
+which is left open rather than declared met — see
+`docs/2026-08-19-phase8-extraction-findings.md`. The substrate is
+`qvajda/qops`, public, MIT, at `v0.1.0`; this repo consumes it as a pinned tag;
+its backlog moved; and `qops#5` was picked, branched, committed, PR'd,
+auto-merged **by the required checks** and advanced to `state:done` with no
+human keystroke in between. Seven findings, four of which no audit could have
+produced. The plan below is kept as written, with the corrections marked in
+place.
 Written against the owner's instruction of 2026-08-17 ("full extraction now").
 
 **Revision 5, 2026-08-19.** Attempt 3 **passed** — criterion 8 is met on this repo,
