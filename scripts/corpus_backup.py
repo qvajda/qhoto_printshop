@@ -40,7 +40,8 @@ DEFAULT_ROOTS = ("outputs", "assets/mockups/inflow")
 # Only gl6_* batches are in scope under outputs/ (the rest is scratch renders).
 OUTPUTS_PREFIX = "outputs/gl6_"
 SKIP_PARTS = {"__pycache__", ".git"}
-VERDICT_NAMES = ("screen.json", "meta.json", "scene.json")
+VERDICT_NAMES = ("verdict.json", "screen.json", "meta.json", "scene.json")
+DEFAULT_MANIFEST = ROOT / "docs" / "data" / "2026-08-08-mockup-corpus-manifest.json"
 
 
 def tracked_paths(repo_root: Path) -> set:
@@ -113,6 +114,13 @@ def load_manifest(manifest_path: Path) -> dict:
 def build_records(repo_root: Path, extra_roots: list, previous: dict) -> tuple:
     """Returns (records, {relative path -> file on disk})."""
     selected = select_files(repo_root, extra_roots)
+    return build_records_for(selected, previous)
+
+
+def build_records_for(selected: list, previous: dict) -> tuple:
+    """The key scheme, sha256 and write-once refusal, given an explicit
+    (relative path, file on disk) list instead of a repo walk - shared by
+    build_records() (the GL-30 sweep) and back_up_paths() (the GL-30b hook)."""
     selected_rels = {rel for rel, _ in selected}
     records = []
     for rel, path in selected:
@@ -134,6 +142,37 @@ def build_records(repo_root: Path, extra_roots: list, previous: dict) -> tuple:
             "status": "uploaded" if prior and prior.get("status") == "uploaded" else "pending",
         })
     return records, dict(selected)
+
+
+def back_up_paths(paths: list, *, manifest_path: Path, upload: bool) -> int:
+    """GL-30b: the same key scheme, sha256, write-once refusal and manifest
+    merge as run(), given an explicit (relative path, file) list instead of a
+    repo walk - one bundle at a time from scene_intake, instead of GL-30's
+    one-off sweep. Callers decide whether R2 is configured; this assumes
+    `upload=True` means it already is."""
+    previous = load_manifest(manifest_path)
+    records, file_map = build_records_for(paths, previous)
+    pending = [record for record in records if record["status"] == "pending"]
+
+    if not upload:
+        _write_manifest(manifest_path, records, dry_run=True)
+        return 0
+
+    r2 = artwork_store._r2_config()
+    failed = None
+    for record in pending:
+        try:
+            artwork_store._r2_put_object(record["key"], file_map[record["path"]].read_bytes(), r2)
+        except Exception as exc:                       # noqa: BLE001 - manifest first, then re-raise
+            record["status"] = "failed"
+            failed = exc
+            break
+        record["status"] = "uploaded"
+
+    _write_manifest(manifest_path, records, dry_run=False)
+    if failed is not None:
+        raise SystemExit(f"backup failed on upload of {record['path']}: {failed}")
+    return 0
 
 
 def run(repo_root: Path, extra_roots: list, manifest_path: Path, upload: bool) -> int:

@@ -323,6 +323,110 @@ def test_replicate_export_stem_without_name_refuses(tmp_path):
     assert rc != 0
 
 
+# --------------------------------------------------------------------------- backup hook (GL-30b)
+
+def _fake_bundle(tmp_path):
+    d = tmp_path / "bundle"
+    d.mkdir()
+    (d / "background.png").write_bytes(b"bg")
+    (d / "overlay.png").write_bytes(b"ov")
+    (d / "scene.json").write_text("{}")
+    return d
+
+
+def test_backup_hook_uploads_bundle_files_and_a_verdict_sidecar(tmp_path, monkeypatch):
+    import hashlib
+    d = _fake_bundle(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(scene_intake.corpus_backup, "DEFAULT_MANIFEST", manifest)
+    monkeypatch.setattr(scene_intake.corpus_backup.config, "is_r2_configured", lambda: True)
+    monkeypatch.setattr(scene_intake.corpus_backup.artwork_store, "_r2_config", lambda: {"R2_BUCKET": "b"})
+    puts = []
+    monkeypatch.setattr(scene_intake.corpus_backup.artwork_store, "_r2_put_object",
+                        lambda key, raw, r2: puts.append(key))
+
+    scene_intake._backup_bundle(d, True, {"area": 0.15}, [{"name": "d1", "passed": True}])
+
+    assert (d / "verdict.json").exists()
+    files = json.loads(manifest.read_text())["files"]
+    assert len(files) == 4                       # background, overlay, scene.json, verdict.json
+    assert len(puts) == 4
+    for record in files:
+        on_disk = (ROOT / record["path"]).read_bytes()
+        assert record["sha256"] == hashlib.sha256(on_disk).hexdigest()
+        assert record["key"].startswith(scene_intake.corpus_backup.KEY_PREFIX + "/")
+
+
+def test_backup_hook_rerun_uploads_nothing_new(tmp_path, monkeypatch):
+    d = _fake_bundle(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(scene_intake.corpus_backup, "DEFAULT_MANIFEST", manifest)
+    monkeypatch.setattr(scene_intake.corpus_backup.config, "is_r2_configured", lambda: True)
+    monkeypatch.setattr(scene_intake.corpus_backup.artwork_store, "_r2_config", lambda: {"R2_BUCKET": "b"})
+    puts = []
+    monkeypatch.setattr(scene_intake.corpus_backup.artwork_store, "_r2_put_object",
+                        lambda key, raw, r2: puts.append(key))
+
+    scene_intake._backup_bundle(d, True, {}, [])
+    puts.clear()
+    scene_intake._backup_bundle(d, True, {}, [])
+    assert puts == []
+    assert all(r["status"] == "uploaded" for r in json.loads(manifest.read_text())["files"])
+
+
+def test_backup_hook_skips_loudly_when_r2_unconfigured(tmp_path, monkeypatch, capsys):
+    d = _fake_bundle(tmp_path)
+    monkeypatch.setattr(scene_intake.corpus_backup.config, "is_r2_configured", lambda: False)
+    called = []
+    monkeypatch.setattr(scene_intake.corpus_backup, "back_up_paths",
+                        lambda *a, **k: called.append(1))
+
+    scene_intake._backup_bundle(d, True, {}, [])
+    out = capsys.readouterr().out
+    assert "SKIP" in out and "R2 not configured" in out
+    assert called == []
+    assert not (d / "verdict.json").exists()
+
+
+def test_backup_failure_never_changes_intakes_verdict(tmp_path, monkeypatch, capsys):
+    """The write-once refusal raises SystemExit, but an R2 client fault raises
+    anything at all. Both are the backup's problem, never the scene's - the
+    printed line is the state change (GL-46), the exit code is not."""
+    d = _fake_bundle(tmp_path)
+    monkeypatch.setattr(scene_intake.corpus_backup.config, "is_r2_configured", lambda: True)
+
+    def boom(*a, **k):
+        raise RuntimeError("r2 client exploded")
+
+    monkeypatch.setattr(scene_intake.corpus_backup, "back_up_paths", boom)
+
+    assert scene_intake._backup_bundle(d, True, {}, []) is None
+    assert "WARN  backup: r2 client exploded" in capsys.readouterr().out
+
+
+def test_dry_run_never_calls_the_backup_hook(tmp_path, monkeypatch):
+    img = _make_scene(tmp_path)
+    called = []
+    monkeypatch.setattr(scene_intake, "_backup_bundle", lambda *a, **k: called.append(1))
+    rc = scene_intake.main(["scene_intake.py", str(img), "--dry-run"])
+    assert rc == 0
+    assert called == []
+
+
+def test_non_dry_run_calls_the_backup_hook_without_changing_intakes_exit_code(tmp_path, monkeypatch):
+    """R2 unconfigured must not turn a passing scene into a failing one - the
+    hook itself is stubbed out here (its own skip behaviour is covered above),
+    this only proves intake's exit code doesn't depend on it being called."""
+    img = _make_scene(tmp_path)
+    monkeypatch.setattr(scene_intake.scene_author, "MOCKUPS", tmp_path / "assets_mockups")
+    seen = []
+    monkeypatch.setattr(scene_intake, "_backup_bundle",
+                        lambda bundle_dir, passed, metrics, findings: seen.append(passed))
+    rc = scene_intake.main(["scene_intake.py", str(img)])
+    assert rc == 0
+    assert seen == [True]
+
+
 @pytest.fixture(autouse=True)
 def _cleanup_outputs():
     yield

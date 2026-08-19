@@ -40,6 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import corpus_backup                                # noqa: E402
 import mockup_qa                                    # noqa: E402
 import scene_author                                 # noqa: E402
 import scene_generate                               # noqa: E402
@@ -232,6 +233,28 @@ def _labelled_pair(bare: np.ndarray, comp: np.ndarray, out_path: Path) -> Path:
     return out_path
 
 
+def _backup_bundle(bundle_dir: Path, passed: bool, screen_metrics: dict, gate_findings: list) -> None:
+    """GL-30b: land this bundle in R2 as it is authored, with its verdict, so
+    the GL-30 one-off sweep never has to be repeated for anything screened
+    after it. Same write-once key discipline as corpus_backup.KEY_PREFIX. A
+    backup problem is printed, never raised - intake has no row of its own to
+    write a state change onto, so the printed line is that state change; it
+    must never turn a passing scene into a failing one."""
+    if not corpus_backup.config.is_r2_configured():
+        print("SKIP  backup: R2 not configured (need all of: " +
+              ", ".join(corpus_backup.config.R2_ENV_VARS) + ") - bundle stays local only")
+        return
+    verdict_path = bundle_dir / "verdict.json"
+    verdict_path.write_text(json.dumps({
+        "passed": passed, "screen_metrics": screen_metrics, "gate_findings": gate_findings,
+    }, indent=2) + "\n", encoding="utf-8")
+    paths = [(p.relative_to(ROOT).as_posix(), p) for p in sorted(bundle_dir.iterdir()) if p.is_file()]
+    try:
+        corpus_backup.back_up_paths(paths, manifest_path=corpus_backup.DEFAULT_MANIFEST, upload=True)
+    except (SystemExit, Exception) as exc:         # noqa: BLE001 - see the docstring
+        print(f"WARN  backup: {exc} - bundle stays local only")
+
+
 def run(image_path: Path, dry_run: bool, group_override: str, orientation_override: str,
         model_override: str = None, key_override: str = None, name_override: str = None,
         tag_override: str = None, force: bool = False) -> int:
@@ -349,6 +372,10 @@ def run(image_path: Path, dry_run: bool, group_override: str, orientation_overri
     if not passed:
         print("bundle kept on disk for inspection; fix the failing detector(s) above, "
               "or re-author, before this scene goes to the owner.")
+
+    if not dry_run:
+        _backup_bundle(bundle_dir, passed, screen_result["metrics"], gate["findings"])
+
     return 0 if passed else 1
 
 
