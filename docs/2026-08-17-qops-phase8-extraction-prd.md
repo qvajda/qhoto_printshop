@@ -188,7 +188,17 @@ Each phase is independently revertible; each ends in a checkable state.
 
 - **P8.0 — prereq gate.** The dirty tree (#142 follow-up) is committed and #142 is
   closed. **Added 2026-08-19: criterion 8 has been observed once on *this* repo**
-  — `docs/2026-08-19-attempt-3-launch-prompt.md`. It is 0 for 2: attempt 1 (#59)
+  — `docs/2026-08-19-attempt-3-launch-prompt.md`. **Satisfied, 2026-08-19:
+  attempt 3 passed on #160, first try, every inch, no human touch between the
+  launch and the reconcile** (`docs/2026-08-19-attempt-3-findings.md`). This
+  clause is met and **P8.0 no longer blocks on it**; the design pass held in
+  reserve below is not needed. Two qualifications travel with the pass: it is
+  one observation on a subject that satisfied the size rule — which is evidence
+  the rule works, not that the loop survives a subject that breaks it — and the
+  run was manual and watched with `qops-pickup-loop` disabled, so it says
+  nothing about an enabled schedule (#152). Four findings filed, none blocking:
+  #167, #168, #169, #170. The record of the two failures follows.
+  It was 0 for 2: attempt 1 (#59)
   worked through the merge and broke at row-advance; attempt 2 (#57, #71) broke
   earlier and never reached a PR, and `produced_work()` scored both bare branches
   as successes. Each fix was correct and each time the next unexercised inch
