@@ -92,7 +92,7 @@ def main(argv: list[str]) -> int:
     rc = subprocess.run(launch_argv(launch_prompt(num)),
                         cwd=root, env=launch_env()).returncode
     if rc or not produced_work(root, num):
-        release(root, num, f"exit {rc}" if rc else "no branch and no PR")
+        release(root, num, f"exit {rc}" if rc else "no commit and no PR")
         return rc or 1
     return 0
 
@@ -115,7 +115,12 @@ def launch_prompt(num: str) -> str:
             f"and stop. Do not request a GitHub review — the repo has one "
             f"collaborator and GitHub rejects a self-review request; "
             f"`automerge-loop` labels the issue `state:review` when the owner's "
-            f"eyes are needed (#151). Do not merge.")
+            f"eyes are needed (#151). Do not merge. "
+            f"Run only the tests you touched — the full suite takes ~3.5 "
+            f"minutes, longer than a Bash call may run, and `test.yml` runs it "
+            f"on every push, which is the gate. Never background a command and "
+            f"wait for it: this session ends when your turn does, so a "
+            f"backgrounded run never reports and the sortie dies uncommitted.")
 
 
 def launch_argv(prompt: str) -> list[str]:
@@ -132,11 +137,23 @@ def launch_env() -> dict:
 
 def produced_work(root: Path, num: str) -> bool:
     """A session that exits 0 having built nothing is a failed run, not a done
-    sortie. Branch naming is ADR-0019: `<type>/<issue#>-<slug>`."""
-    branches = subprocess.run(["git", "branch", "--list", f"*/{num}-*"],
-                              cwd=root, capture_output=True, text=True).stdout.strip()
-    if branches:
-        return True
+    sortie. Branch naming is ADR-0019: `<type>/<issue#>-<slug>`.
+
+    An *empty* branch is not work. Both 2026-08-18 sorties (#57, #71) wrote
+    their whole change, backgrounded the full test suite, and ended the turn
+    waiting for a notification that a `-p` run can never receive - the branch
+    existed, pointed at master's tip, and read here as success. The claim was
+    never released and neither issue said anything was wrong. Count the
+    commits, not the ref."""
+    branches = subprocess.run(
+        ["git", "branch", "--list", f"*/{num}-*", "--format=%(refname:short)"],
+        cwd=root, capture_output=True, text=True).stdout.split()
+    base = qconfig.load(root)["default_branch"]
+    for branch in branches:
+        ahead = subprocess.run(["git", "rev-list", "--count", f"{base}..{branch}"],
+                               cwd=root, capture_output=True, text=True).stdout.strip()
+        if ahead.isdigit() and int(ahead) > 0:
+            return True
     prs = subprocess.run(["gh", "pr", "list", "--search", num, "--json", "number"],
                          cwd=root, capture_output=True, text=True).stdout.strip()
     return bool(json.loads(prs or "[]"))
