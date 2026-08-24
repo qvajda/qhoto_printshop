@@ -39,15 +39,31 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: install
+        # One block for every rendered job that runs Python, rendered from
+        # `qops/install.py:INSTALL_DEPS` (ADR-0024). Three copies of it drifted
+        # into three separate failures in repos shaped unlike this one.
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements.txt ]; then pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then pip install -e .
+          else pip install pyyaml; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
       - name: every merged sortie's row reaches state:done
         run: python -m qops reconcile
 
   digest:
     # The digest renders the rows the job above just repaired.
     needs: reconcile
+    # Criterion 7 of the extraction PRD: owner CI attention must not double.
+    # With two repos on one cadence it did. A project sets
+    # `ci.digest_posts_on_schedule: false` to keep the RECONCILER daily - which
+    # is the load-bearing half, since `advance` cannot fire on a merge its own
+    # GITHUB_TOKEN caused - while the digest itself becomes on-demand.
+    #
+    # `success() &&` is not decoration: adding an `if:` drops the implicit
+    # success() that `needs:` would otherwise imply, and a digest rendered from
+    # rows a failed reconcile did not repair is worse than no digest.
+    if: success() && (true || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       issues: write

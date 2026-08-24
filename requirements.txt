@@ -10,4 +10,4 @@ PyYAML==6.0.3
 # failure mode - something changes underneath, nothing announces it, and the
 # first evidence is a defect in the thing that depends on it. Upgrading is an
 # act. Its issues live in qvajda/qops, not here.
-qops @ git+https://github.com/qvajda/qops@v0.1.1
+qops @ git+https://github.com/qvajda/qops@v0.2.0
