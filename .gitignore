@@ -66,7 +66,10 @@ db/group_preview_images/
 .qops/resume.md
 .qops/ledger.jsonl
 .qops/outbox.jsonl
+.qops/state-report.md
+.qops/migrate-plan.json
 .qops/wt/
+.qops/runs/
 
 # Git worktrees
 .worktrees/

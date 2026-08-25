@@ -10,7 +10,7 @@ one, which is how `gh issue list` — the source of truth — stops agreeing wit
 `.qops/config.yml`.
 
 **Invocable by the model; the publish step is not.** Noticing a spec is missing
-and drafting one is the reflex we want (ADR-0019). Opening an issue from a
+and drafting one is the reflex we want (CADR-0005). Opening an issue from a
 half-formed discussion is not. So: draft freely, show the draft, and **run `gh
 issue create` only after the owner says so, in this session, for this draft.**
 
@@ -25,6 +25,24 @@ memory.
 If the work does not fit one session, say so and propose the split. Do not
 widen the issue to cover the mission, and do not fold in adjacent problems you
 noticed on the way. A sortie that no longer fits is a finding to report.
+
+## Search before you draft
+
+Read the open backlog in **one** `gh issue list --state open --json
+number,title,labels` call — the same single-call discipline `/triage` already
+keeps. A call that filters parked rows out is the failure this step exists to
+prevent: `priority:parked` is a good idea deliberately made quiet, not one
+that has stopped existing.
+
+Report near-matches by **number and title** before drafting anything. Where a
+near-match carries `priority:parked`, propose **unparking that row** — drop
+the label, update its body if the ask has grown — instead of drafting a new
+one. The outcome is one row, not two with a cross-reference.
+
+**Invocable by the model; the edit is not.** Same rule as the publish step
+below: proposing the unpark is the reflex we want, editing either row is not.
+The owner decides; this skill never edits the matched row or files a
+duplicate alongside it.
 
 ## The body
 
@@ -63,9 +81,20 @@ Exactly one `type:`, one `state:` and one `gate:`, from `.qops/config.yml`:
   until a real gate is chosen. **Do not use `gate:none` on a sortie you just
   specified** — if you cannot name the gate, the spec is not finished.
 - `mission:` — one, from the configured list.
+- `origin:` — `owner` when the owner is present in this session, `agent` when a
+  sortie filed it unattended. Not a judgement: the guard already knows which
+  session this is and refuses a filing that claims the other one (CADR-0007). It
+  is the input to the `ready:auto` grant, which is why it is not yours to pick.
 
 **Never apply `ready:auto`.** It means an unattended agent may start the work
-unsupervised, and it is the owner's alone to grant (ADR-0019, `loops.md`).
+unsupervised, and it is the owner's alone to grant (CADR-0005, `loops.md`).
+
+**Refuse `ready:auto` when the body names no test.** Even when the owner asks
+for the label in this session, do not apply `ready:auto` to a body that names
+no test file (a `tests/…​.py` path or a `test_*` node id) — nothing can prove
+the row done (R8). File the row without the label, in `state:triage`, and say
+which line is missing. A row with no test yet is a legitimate triage row; the
+refusal is on the label, never on the filing (CADR-0011).
 
 ## Blocking edges
 

@@ -152,14 +152,13 @@ agents:
     effort: low
     tools: [Read, Edit, Write, Bash]
   triager:
-    model: haiku
+    model: sonnet
     effort: low
     tools: [Bash, Read, Grep]
   interactor:
     model: haiku
     effort: low
     tools: [Bash, Read]
-delegation_cap: 1
 
 # --- taxonomy (PRD v3 §9) --------------------------------------------------
 labels:
