@@ -57,6 +57,7 @@ db/group_preview_images/
 !.claude/skills/interview/
 !.claude/skills/spec-to-issue/
 !.claude/skills/triage/
+!.claude/skills/pending/
 
 # qops — the split is decided, not inherited (PRD v3 decision 21 / finding E1).
 # TRACKED, deliberately: .qops/config.yml and .qops/issues.md.

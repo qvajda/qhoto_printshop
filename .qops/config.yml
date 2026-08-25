@@ -21,6 +21,20 @@ default_branch: master
 python: py -3
 python_posix: python3
 
+# Whether this project keeps a picker on the host at all. `qops install`
+# registers `pickup-loop`'s scheduled task from this config (ADR-0032); set
+# false and no install anywhere touches the machine's scheduler.
+pickup_task: true
+
+# Whether the registered pickup task passes `--launch`. Default off: the
+# flagless form prints what it would have picked and spends nothing.
+pickup_launch: false
+
+# How long the brief stays quiet about `pickup-loop` before it says the loop
+# has not completed a run. A repo whose loop has never run is silent, because
+# it ships disabled and never nagging about it is the point.
+pickup_max_silence_hours: 3
+
 # --- guard -----------------------------------------------------------------
 protected_branches: [master]
 max_worktrees: 2
@@ -66,7 +80,7 @@ scan_exclude:
 # external — reinstallable copies; every one needs a `ref` in skills-lock.json,
 #            because drift that cannot be observed is the actual defect.
 skills:
-  native: [interview, spec-to-issue, triage]
+  native: [interview, spec-to-issue, triage, pending]
   external: [build-models, compare-models, find-models, prompt-images,
              prompt-videos, publish-models, run-models]
 
@@ -109,6 +123,7 @@ ci:
   gate_command: python -m pytest -q tests/test_qops_project.py
   runs_on: ubuntu-latest
   digest_cron: '0 6 * * *'      # 06:00 UTC daily
+  digest_posts_on_schedule: true
   groom_cron: '0 5 * * 1'       # Mondays
   status_issue_label: 'qops:status'
 
@@ -120,6 +135,10 @@ agents:
     model: opus
     effort: high
     tools: [Read, Grep, Glob, Bash, WebFetch]
+    # ADR-0033 class 3: a planner that edits the tree is a coder; the plan
+    # goes onto the row through `gh`. Belt-and-braces alongside `tools`
+    # already omitting Write/Edit.
+    deny: [Write, Edit, MultiEdit, NotebookEdit]
   coder:
     model: sonnet
     effort: medium
@@ -148,6 +167,13 @@ labels:
   state: [triage, planned, building, gate, review, blocked, done, cancelled]
   mission: [go-live, post-launch, housekeeping, qops]
   gate: [machine, taste, none]
+  # ADR-0023, amended by ADR-0029: whose licence covers the row, not who typed
+  # it — added here to match the substrate's current schema (#178: this repo's
+  # taxonomy had drifted silently behind qops's own since the v0.1.1 pin).
+  origin: [owner, agent, pending]
+  # Optional and zero-or-one, deliberately NOT in `require_on_open`: an
+  # unlabelled row is normal priority. Added for the same reason as `origin`.
+  priority: [parked]
   # `qops:status` is the pinned digest issue's label (ci.status_issue_label).
   # It lived only in `ci:` until 2026-08-18, so the importer never created it
   # and digest.yml failed at 06:00 UTC every day for weeks (#136). Every
@@ -156,9 +182,9 @@ labels:
 
 milestones: [go-live, post-launch, housekeeping, qops]
 
-# Every OPEN issue must carry exactly one type:, one state: and one gate:.
-# gate:none is legal at import (review finding B7) and blocks ready:auto until
-# it is filled in when the sortie is planned.
+# Every OPEN issue must carry exactly one type:, one state:, one gate: and one
+# origin:. gate:none is legal at import (review finding B7) and blocks
+# ready:auto until it is filled in when the sortie is planned.
 validate:
-  require_on_open: [type, state, gate]
+  require_on_open: [type, state, gate, origin]
   forbid_at_import: [ready:auto]
