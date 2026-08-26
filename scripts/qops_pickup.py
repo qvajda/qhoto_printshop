@@ -102,9 +102,19 @@ def backlog(root: Path) -> list[dict] | None:
     out = subprocess.run(
         ["gh", "issue", "list", "--state", "open", "--limit", "100",
          "--json", "number,title,labels,updatedAt,body"],
-        cwd=root, capture_output=True, text=True)
+        cwd=root, capture_output=True, text=True, encoding="utf-8")
     if out.returncode:
         print(out.stderr.strip(), file=sys.stderr)
+        return None
+    if out.stdout is None:
+        # `gh` exited 0 and the pipe still yielded nothing: the reader thread
+        # died decoding it. Without `encoding=` above that is what one non-
+        # cp1252 byte in one issue body does on a Windows host, and
+        # `json.loads(None or "[]")` turned it into an *empty backlog* - a
+        # queue that reads idle rather than unknown, hourly, forever. The
+        # encoding is the fix; this is the assertion that the fix held.
+        print("could not read the backlog: the query returned no output",
+              file=sys.stderr)
         return None
     return json.loads(out.stdout or "[]")
 
