@@ -16,18 +16,31 @@ concurrency:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    # `qops doctor` queries the tracker for the open-issue invariants. Without
+    # a token `gh` exits 4 and every one of them is skipped - the step passes
+    # by not running, and "doctor: clean" prints one line under the skip (#44).
+    permissions:
+      contents: read
+      issues: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A failed query is a skip on a laptop and a problem in a required check:
+      # a rate-limited `gh` must not turn this gate green over an unread
+      # backlog.
+      QOPS_STRICT: '1'
     steps:
-      # Shallow: nothing the gate runs reads history. `qops doctor` compares
-      # the rendered workflows with the templates and the docs on disk, and
-      # python -m pytest -q tests/test_qops_project.py touches no merge base.
+      # Full history: R8's proof half (`qops doctor`) needs the PR's merge
+      # base to run the named test against the code without the change.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
       - name: install
         # One block for every rendered job that runs Python, rendered from
-        # `qops/install.py:INSTALL_DEPS` (ADR-0024). Three copies of it drifted
+        # `qops/install.py:INSTALL_DEPS` (CADR-0008). Three copies of it drifted
         # into three separate failures in repos shaped unlike this one.
         run: |
           python -m pip install --upgrade pip

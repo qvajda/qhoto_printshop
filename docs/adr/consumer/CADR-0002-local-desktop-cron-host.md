@@ -43,3 +43,4 @@ fact held nowhere in either repo, which is #124's complaint and is now doubled.
 machine asleep produces no error and no run; a machine awake with one task
 pointed at the wrong root produces no error either, and a picker reporting
 "nothing eligible" is indistinguishable from a healthy idle queue.
+
