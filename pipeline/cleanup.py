@@ -106,42 +106,55 @@ def prune_stale_candidates(conn, *, retention_days=30, now=None) -> list:
     pruned = []
     for row in rows:
         candidate_id = row["id"]
-        conn.execute(
-            "DELETE FROM listing_metrics_snapshots WHERE group_product_id IN "
-            "(SELECT id FROM group_products WHERE group_id IN "
-            "(SELECT id FROM groups WHERE candidate_id = ?))",
-            (candidate_id,),
-        )
-        conn.execute(
-            "DELETE FROM group_product_variants WHERE group_product_id IN "
-            "(SELECT id FROM group_products WHERE group_id IN "
-            "(SELECT id FROM groups WHERE candidate_id = ?))",
-            (candidate_id,),
-        )
-        conn.execute(
-            "DELETE FROM product_images WHERE group_product_id IN "
-            "(SELECT id FROM group_products WHERE group_id IN "
-            "(SELECT id FROM groups WHERE candidate_id = ?))",
-            (candidate_id,),
-        )
-        conn.execute(
-            "DELETE FROM group_products WHERE group_id IN "
-            "(SELECT id FROM groups WHERE candidate_id = ?)",
-            (candidate_id,),
-        )
-        conn.execute(
-            "DELETE FROM critic_pass_attempts WHERE group_id IN "
-            "(SELECT id FROM groups WHERE candidate_id = ?)",
-            (candidate_id,),
-        )
-        conn.execute(
-            "DELETE FROM group_messages WHERE group_id IN "
-            "(SELECT id FROM groups WHERE candidate_id = ?)",
-            (candidate_id,),
-        )
-        conn.execute("DELETE FROM groups WHERE candidate_id = ?", (candidate_id,))
-        conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
-        conn.execute("DELETE FROM candidates WHERE id = ?", (candidate_id,))
+        try:
+            conn.execute(
+                "DELETE FROM listing_metrics_snapshots WHERE group_product_id IN "
+                "(SELECT id FROM group_products WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?))",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM group_product_variants WHERE group_product_id IN "
+                "(SELECT id FROM group_products WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?))",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM product_images WHERE group_product_id IN "
+                "(SELECT id FROM group_products WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?))",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM group_products WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?)",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM critic_pass_attempts WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?)",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM group_messages WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?)",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM pending_decisions WHERE group_id IN "
+                "(SELECT id FROM groups WHERE candidate_id = ?)",
+                (candidate_id,),
+            )
+            conn.execute(
+                "DELETE FROM generation_attempts WHERE candidate_id = ?",
+                (candidate_id,),
+            )
+            conn.execute("DELETE FROM groups WHERE candidate_id = ?", (candidate_id,))
+            conn.execute("DELETE FROM listing_texts WHERE candidate_id = ?", (candidate_id,))
+            conn.execute("DELETE FROM candidates WHERE id = ?", (candidate_id,))
+        except Exception:
+            conn.rollback()
+            raise
         conn.commit()
         pruned.append(candidate_id)
     return pruned
