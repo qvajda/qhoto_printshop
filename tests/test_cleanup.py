@@ -260,6 +260,17 @@ def _insert_full_candidate_tree(conn, *, candidate_status="failed", updated_at="
         "VALUES (?, 't', '[]', 'd', 'disc', 'i_did', '[5717252]', '1027', '', '2026-06-01T09:01:00')",
         (candidate_id,),
     )
+    conn.execute(
+        "INSERT INTO generation_attempts (candidate_id, attempt_number, prompt_text, "
+        "art_brief_snapshot, brief_template_version, scaffold_version, model, created_at) "
+        "VALUES (?, 1, 'p', '{}', 'v1', 'v1', 'flux-schnell', '2026-06-01T09:00:30')",
+        (candidate_id,),
+    )
+    conn.execute(
+        "INSERT INTO pending_decisions (group_id, action, created_at) "
+        "VALUES (?, 'approve', '2026-06-01T09:08:00')",
+        (group_id,),
+    )
     conn.commit()
     return candidate_id, group_id, gp_id
 
@@ -309,6 +320,84 @@ def test_prune_stale_candidates_skips_candidate_with_live_gelato_product(tmp_pat
 
     assert result == []
     assert conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone() is not None
+    conn.close()
+
+
+def test_prune_deletes_generation_attempts_and_pending_decisions(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id, group_id, _ = _insert_full_candidate_tree(conn)
+
+    result = cleanup.prune_stale_candidates(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert result == [candidate_id]
+    assert conn.execute(
+        "SELECT * FROM generation_attempts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone() is None
+    assert conn.execute(
+        "SELECT * FROM pending_decisions WHERE group_id = ?", (group_id,)
+    ).fetchone() is None
+    conn.close()
+
+
+def test_prune_leaves_a_protected_candidates_children_intact(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id, group_id, _ = _insert_full_candidate_tree(
+        conn, group_product_status="publish_failed", gelato_product_id="still_live"
+    )
+
+    result = cleanup.prune_stale_candidates(
+        conn, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+    )
+
+    assert result == []
+    assert conn.execute(
+        "SELECT * FROM generation_attempts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone() is not None
+    assert conn.execute(
+        "SELECT * FROM pending_decisions WHERE group_id = ?", (group_id,)
+    ).fetchone() is not None
+    conn.close()
+
+
+def test_prune_rolls_back_a_failed_candidate_teardown(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id, group_id, gp_id = _insert_full_candidate_tree(conn)
+
+    class BoomingConn:
+        def __init__(self, real):
+            self._real = real
+
+        def execute(self, sql, *args, **kwargs):
+            if sql.startswith("DELETE FROM candidates"):
+                raise Exception("simulated failure")
+            return self._real.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    proxy = BoomingConn(conn)
+    try:
+        cleanup.prune_stale_candidates(
+            proxy, retention_days=30, now=datetime(2026, 7, 14, 9, 0, 0)
+        )
+        assert False, "expected exception to propagate"
+    except Exception as exc:
+        assert "simulated failure" in str(exc)
+
+    conn.commit()
+    assert conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone() is not None
+    assert conn.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone() is not None
+    assert conn.execute(
+        "SELECT * FROM group_products WHERE id = ?", (gp_id,)
+    ).fetchone() is not None
+    assert conn.execute(
+        "SELECT * FROM generation_attempts WHERE candidate_id = ?", (candidate_id,)
+    ).fetchone() is not None
+    assert conn.execute(
+        "SELECT * FROM pending_decisions WHERE group_id = ?", (group_id,)
+    ).fetchone() is not None
     conn.close()
 
 
