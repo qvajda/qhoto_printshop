@@ -237,3 +237,46 @@ def test_lint_brief_warnings_does_not_flag_a_non_stem_native_niche():
         art_brief="Bold filled art deco sunburst in terracotta and sage, dense full-frame composition on cream.",
     ))
     assert not any("FM-9" in w for w in warnings)
+
+
+# GL-63 (#90): occupant-repetition ceiling, declared field not subject vocabulary.
+
+def test_lint_batch_rejects_a_declared_occupant_on_most_of_a_ten_brief_batch():
+    briefs = [
+        _valid_brief(niche=str(i), occupant="yes" if i < 8 else "none")
+        for i in range(10)
+    ]
+    errors = brief_lint.lint_batch(briefs)
+    matches = [e for e in errors if "declare a secondary occupant" in e]
+    assert len(matches) == 1
+
+
+def test_lint_batch_admits_three_declared_occupants_in_ten():
+    briefs = [
+        _valid_brief(niche=str(i), occupant="yes" if i < 3 else "none")
+        for i in range(10)
+    ]
+    errors = brief_lint.lint_batch(briefs)
+    assert not any("declare a secondary occupant" in e for e in errors)
+
+
+def test_lint_batch_skips_the_occupant_ceiling_below_six_briefs():
+    briefs = [_valid_brief(niche=str(i), occupant="yes") for i in range(5)]
+    errors = brief_lint.lint_batch(briefs)
+    assert not any("declare a secondary occupant" in e for e in errors)
+
+
+def test_undeclared_occupant_is_not_counted_and_warns():
+    briefs = [_valid_brief(niche=str(i)) for i in range(10)]  # no 'occupant' key
+    errors = brief_lint.lint_batch(briefs)
+    assert not any("declare a secondary occupant" in e for e in errors)
+
+    warnings = brief_lint.lint_batch_warnings(briefs)
+    matches = [w for w in warnings if "10" in w and "occupant declaration" in w]
+    assert len(matches) == 1
+
+
+def test_an_unrecognised_occupant_value_is_treated_as_undeclared():
+    briefs = [_valid_brief(niche=str(i), occupant="dragonfly") for i in range(10)]
+    errors = brief_lint.lint_batch(briefs)
+    assert not any("declare a secondary occupant" in e for e in errors)

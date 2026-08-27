@@ -54,7 +54,9 @@ def test_generate_cycle_resumes_after_mid_stage_kill_without_manual_intervention
     # Cycle 1: process gets killed mid-generate (simulated as an unhandled
     # exception from the Replicate call, the same failure shape a SIGKILL or a
     # genuine vendor outage produces from the caller's perspective).
-    with patch("pipeline.art_brief.generate_art_brief", return_value="A line-art monstera leaf, cream backdrop."), \
+    with patch("pipeline.art_brief.generate_art_brief",
+               return_value={"art_brief": "A line-art monstera leaf, cream backdrop.",
+                             "occupant": "none"}), \
          patch("pipeline.generate.replicate_client.generate_image",
                side_effect=RuntimeError("simulated kill mid-generate")):
         # GL-46: the cycle now raises once at the end so the stage reports the

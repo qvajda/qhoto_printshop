@@ -36,11 +36,13 @@ def _write_briefs_json(tmp_path, briefs):
 def test_preview_rows_reports_niche_palette_backdrop_occupant_and_word_count():
     briefs = _briefs()
     briefs[0]["art_brief"] += " A finch tucked in the lower-left corner."
+    briefs[0]["occupant"] = "yes"
+    briefs[1]["occupant"] = "none"
     rows = seed_mode_b._preview_rows(briefs)
 
     assert rows[0]["niche"] == "mid-century modern botanical"
     assert rows[0]["palette"] == "neutral"
-    assert rows[0]["occupant"] == "finch"
+    assert rows[0]["occupant"] == "yes"
     assert rows[0]["words"] == len(briefs[0]["art_brief"].split())
 
     assert rows[1]["palette"] == "saturated_retro"
