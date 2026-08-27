@@ -143,3 +143,19 @@ def test_gl19_harness_takes_an_explicit_master_path():
         assert h.resolve_master(["--art", "x/y.png"]).name == "y.png"
     finally:
         sys.path.remove(str(ROOT / "scripts"))
+
+
+def test_gelato_template_check_survives_a_cp1252_stdout(monkeypatch):
+    """GL-73. A double-prime (″) in a Gelato variant title used to raise
+    UnicodeEncodeError mid-report on a cp1252 console. Builds a real cp1252
+    TextIOWrapper (not a mock) so the check exercises actual encoding, not a
+    string match on the source."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import gelato_template_check as m
+        wrapper = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", wrapper)
+        m._ensure_utf8_stdout()
+        print("25x60 cm / 10x24″ - Vertical")
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
