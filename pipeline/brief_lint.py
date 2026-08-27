@@ -106,6 +106,18 @@ BACKDROP_DEVICES = (
 PALETTE_CAP_FRACTION = 0.5
 DEVICE_CAP_FRACTION = 0.3
 
+# GL-63 (#90): subject-level repetition (a butterfly/dragonfly/insect
+# occupant on nearly every design) isn't caught by any check above - none of
+# them key on occupant use. FM-10's backdrop-device ceiling shape reused
+# directly: same fraction, same n>=6 floor below which a small batch can't
+# mathematically stay under a 30% cap. Error-level (unlike FM-10, which is a
+# warning-level floor protecting an intent): this is a repetition ceiling,
+# the same class as the palette/device caps above, and this row exists
+# because a batch PASSED lint while reading as one design shown six times -
+# a warning would not have closed it.
+OCCUPANT_CEILING_FRACTION = 0.30
+OCCUPANT_CEILING_MIN_BATCH = 6
+
 
 def _diversity_cap(n: int, fraction: float) -> int:
     return max(2, math.ceil(n * fraction))
@@ -257,6 +269,14 @@ def lint_batch(briefs: list[dict]) -> list[str]:
         if count > palette_cap:
             errors.append(f"batch diversity: {count} briefs share palette family '{family}' (max {palette_cap})")
 
+    if n >= OCCUPANT_CEILING_MIN_BATCH:
+        occupant_count = sum(1 for b in briefs if b.get("occupant") == "yes")
+        occupant_ceiling = math.ceil(n * OCCUPANT_CEILING_FRACTION)
+        if occupant_count > occupant_ceiling:
+            errors.append(
+                f"batch diversity: {occupant_count}/{n} briefs declare a secondary occupant (max {occupant_ceiling})"
+            )
+
     return errors
 
 
@@ -280,6 +300,12 @@ def lint_batch_warnings(briefs: list[dict]) -> list[str]:
             ceiling = math.ceil(n * 0.30)
             if used > ceiling:
                 warnings.append(f"batch FM-10: {used}/{n} briefs use a backdrop device - exceeds the ~30% ceiling ({ceiling}), risks the round-1 over-use pattern")
+
+    undeclared_count = sum(1 for b in briefs if b.get("occupant", "undeclared") not in ("yes", "none"))
+    if undeclared_count:
+        warnings.append(
+            f"batch: {undeclared_count} brief(s) have no recognised occupant declaration - the occupant repetition ceiling can't count them"
+        )
 
     return warnings
 

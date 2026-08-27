@@ -153,7 +153,7 @@ def test_generate_for_candidate_computes_and_persists_art_brief_once(tmp_path):
 
     def fake_generate_art_brief(candidate, *, api_key=None):
         captured["art_brief_candidate"] = candidate
-        return "A dense mid-century modern botanical bouquet."
+        return {"art_brief": "A dense mid-century modern botanical bouquet.", "occupant": "none"}
 
     def fake_generate_image(prompt, *, api_token=None):
         captured["prompt"] = prompt
@@ -176,6 +176,41 @@ def test_generate_for_candidate_computes_and_persists_art_brief_once(tmp_path):
 
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert row["art_brief"] == "A dense mid-century modern botanical bouquet."
+    conn.close()
+
+
+def test_build_prompt_never_contains_the_occupant_declaration(tmp_path):
+    """GL-63 (#90) seam test: the model's raw reply carries a trailing
+    OCCUPANT declaration line, which must be parsed off before the prose
+    reaches either the FLUX prompt or the persisted candidates.art_brief -
+    if the declaration ever leaks into either, this is what fails."""
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
+    captured = {}
+
+    def fake_complete(prompt, *, api_key=None, max_tokens=1024, model=None):
+        return {"text": "A dense mid-century modern botanical bouquet.\nOCCUPANT: yes"}
+
+    def fake_generate_image(prompt, *, api_token=None):
+        captured["prompt"] = prompt
+        return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred123"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
+
+    with patch("pipeline.art_brief.anthropic_client.complete", side_effect=fake_complete), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        generate.generate_for_candidate(
+            conn, candidate_id, api_token="test-token", now=datetime(2026, 7, 9, 10, 0, 0)
+        )
+
+    assert "OCCUPANT" not in captured["prompt"]
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert "OCCUPANT" not in row["art_brief"]
     conn.close()
 
 
@@ -218,7 +253,7 @@ def test_generate_for_candidate_no_upscale_skips_esrgan_and_persists_raw_flux_ou
     candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
 
     def fake_generate_art_brief(candidate, *, api_key=None):
-        return "A dense mid-century modern botanical bouquet."
+        return {"art_brief": "A dense mid-century modern botanical bouquet.", "occupant": "none"}
 
     def fake_generate_image(prompt, *, api_token=None):
         return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred123"}
@@ -249,7 +284,7 @@ def test_generate_for_candidate_leaves_row_untouched_when_upscale_fails(tmp_path
     candidate_id = _insert_pending_candidate(conn, niche="monstera line art", status="pending")
 
     def fake_generate_art_brief(candidate, *, api_key=None):
-        return "A dense mid-century modern botanical bouquet."
+        return {"art_brief": "A dense mid-century modern botanical bouquet.", "occupant": "none"}
 
     def fake_generate_image(prompt, *, api_token=None):
         return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred-raw"}
@@ -298,7 +333,7 @@ def test_run_generate_cycle_processes_all_pending_candidates_and_skips_others(tm
 
     def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
         captured_siblings.append(list(sibling_briefs) if sibling_briefs else [])
-        return f"A dense brief for {candidate['niche']}."
+        return {"art_brief": f"A dense brief for {candidate['niche']}.", "occupant": "none"}
 
     def fake_generate_image(prompt, *, api_token=None):
         call_count["n"] += 1
@@ -342,7 +377,7 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
     succeeding_id = _insert_pending_candidate(conn, niche="moon phase print", status="pending")
 
     def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
-        return f"A dense brief for {candidate['niche']}."
+        return {"art_brief": f"A dense brief for {candidate['niche']}.", "occupant": "none"}
 
     def fake_generate_image(prompt, *, api_token=None):
         if "monstera line art" in prompt:
@@ -381,7 +416,7 @@ def test_run_generate_cycle_isolates_per_candidate_failures(tmp_path):
 
 def _run_cycle_with_failing_replicate(conn, message="Replicate throttled"):
     def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
-        return f"A dense brief for {candidate['niche']}."
+        return {"art_brief": f"A dense brief for {candidate['niche']}.", "occupant": "none"}
 
     def fake_generate_image(prompt, *, api_token=None):
         raise RuntimeError(message)
@@ -572,7 +607,7 @@ def test_run_generate_cycle_paces_between_candidates_not_before_the_first(tmp_pa
         return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up-x"}
 
     def fake_generate_art_brief(candidate, *, api_key=None, sibling_briefs=None):
-        return f"A dense brief for {candidate['niche']}."
+        return {"art_brief": f"A dense brief for {candidate['niche']}.", "occupant": "none"}
 
     with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
@@ -607,7 +642,7 @@ def test_run_generate_cycle_caps_the_batch_and_leaves_the_rest_pending(tmp_path,
     def fake_generate_image(prompt, *, api_token=None):
         return {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred1"}
 
-    with patch("pipeline.generate.art_brief.generate_art_brief", return_value="A dense brief."),          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image),          patch("pipeline.generate.replicate_client.upscale_image",
+    with patch("pipeline.generate.art_brief.generate_art_brief", return_value={"art_brief": "A dense brief.", "occupant": "none"}),          patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image),          patch("pipeline.generate.replicate_client.upscale_image",
                return_value={"image_url": "https://replicate.delivery/up.png", "prediction_id": "p"}),          patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"),          patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
         processed_ids = generate.run_generate_cycle(
             conn, now=datetime(2026, 7, 9, 12, 0, 0), sleep_fn=lambda seconds: None
