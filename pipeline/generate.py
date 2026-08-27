@@ -123,7 +123,7 @@ def _record_generation_attempt(conn, candidate_id: int, *, prompt: str, art_brie
 
 def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = None,
                             api_token: str = None, now=None, no_upscale: bool = False,
-                            sibling_briefs: list = None) -> dict:
+                            sibling_briefs: list = None, sibling_occupants: list = None) -> dict:
     """Generate a base image for a candidate, then upscale it to a 300-DPI-capable master.
     Always overwrites base_image_url/base_replicate_prediction_id/base_upscale_prediction_id
     on its row (even on retry). If upscaling fails, no write happens - the row is left exactly
@@ -140,18 +140,25 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
 
     `sibling_briefs` (round-2, FM-5 diversity fix): brief texts already written earlier
     in the same batch run - see run_generate_cycle. Only used when a brief is actually
-    computed here (a retry with a stored art_brief never calls the writer again)."""
+    computed here (a retry with a stored art_brief never calls the writer again).
+
+    `sibling_occupants` (GL-63, #90): occupant declarations ("yes"/"none"/"undeclared")
+    for those same earlier briefs, index-aligned with sibling_briefs - threaded through
+    so lint_batch can enforce the occupant-repetition ceiling at batch level."""
     row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     if row is None:
         raise ValueError(f"No candidate with id {candidate_id}")
 
     candidate = dict(row)
+    occupant = None
     if not candidate.get("art_brief"):
         # S4-b: one Claude text call per candidate, computed once and persisted -
         # a retry (correction_note set) reuses the same brief, it only changes
         # what FLUX is told to fix, not the underlying visual concept.
         brief_kwargs = {"sibling_briefs": sibling_briefs} if sibling_briefs else {}
-        candidate["art_brief"] = art_brief.generate_art_brief(candidate, **brief_kwargs)
+        brief_result = art_brief.generate_art_brief(candidate, **brief_kwargs)
+        candidate["art_brief"] = brief_result["art_brief"]
+        occupant = brief_result["occupant"]
         conn.execute(
             "UPDATE candidates SET art_brief = ? WHERE id = ?",
             (candidate["art_brief"], candidate_id),
@@ -160,8 +167,13 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
         # R2-e: same shared lint mode B hard-enforces at ingest (brief_lint.py),
         # run here as a log-only signal - mode A is the autonomous cron path, so
         # a wording/diversity miss shouldn't abort a live batch, just surface it.
-        batch_so_far = [{"niche": candidate["niche"], "art_brief": b} for b in (sibling_briefs or [])]
-        batch_so_far.append({"niche": candidate["niche"], "art_brief": candidate["art_brief"]})
+        batch_so_far = [
+            {"niche": candidate["niche"], "art_brief": b, "occupant": o}
+            for b, o in zip(sibling_briefs or [], sibling_occupants or [])
+        ]
+        batch_so_far.append(
+            {"niche": candidate["niche"], "art_brief": candidate["art_brief"], "occupant": occupant}
+        )
         lint_errors = brief_lint.lint_batch(batch_so_far)
         if lint_errors:
             logger.warning(
@@ -206,6 +218,7 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
             "prediction_id": generated["prediction_id"],
             "upscale_prediction_id": None,
             "art_brief": candidate["art_brief"],
+            "occupant": occupant,
         }
 
     upscaled = replicate_client.upscale_image(generated["image_url"], api_token=api_token)
@@ -234,6 +247,7 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
         "prediction_id": generated["prediction_id"],
         "upscale_prediction_id": upscaled["prediction_id"],
         "art_brief": candidate["art_brief"],
+        "occupant": occupant,
     }
 
 
@@ -318,6 +332,7 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.s
         pending_ids = pending_ids[:cap]
     processed_ids = []
     sibling_briefs = []
+    sibling_occupants = []
     failures = []
     for index, candidate_id in enumerate(pending_ids):
         if index > 0:
@@ -329,7 +344,7 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.s
         try:
             result = generate_for_candidate(
                 conn, candidate_id, api_token=api_token, now=now,
-                sibling_briefs=list(sibling_briefs),
+                sibling_briefs=list(sibling_briefs), sibling_occupants=list(sibling_occupants),
             )
         except Exception as exc:
             print(f"generate_for_candidate failed for candidate {candidate_id}: {exc}")
@@ -339,6 +354,7 @@ def run_generate_cycle(conn, *, api_token: str = None, now=None, sleep_fn=time.s
         processed_ids.append(candidate_id)
         if result.get("art_brief"):
             sibling_briefs.append(result["art_brief"])
+            sibling_occupants.append(result.get("occupant") or "undeclared")
 
     if failures:
         raise GenerateCycleError(

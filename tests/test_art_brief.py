@@ -185,7 +185,7 @@ def test_generate_art_brief_calls_anthropic_complete_and_strips_result():
             api_key="test-key",
         )
 
-    assert result == "A dense mid-century modern botanical bouquet."
+    assert result == {"art_brief": "A dense mid-century modern botanical bouquet.", "occupant": "undeclared"}
     assert "monstera line art" in captured["prompt"]
     assert captured["api_key"] == "test-key"
     assert captured["model"] == anthropic_client.HAIKU_MODEL
@@ -205,3 +205,21 @@ def test_generate_art_brief_threads_sibling_briefs_into_prompt():
         )
 
     assert "A sage mid-century botanical bouquet." in captured["prompt"]
+
+
+def test_split_occupant_declaration_strips_the_trailing_line():
+    prose, occupant = art_brief.split_occupant_declaration(
+        "A dense mid-century modern botanical bouquet.\nOCCUPANT: yes"
+    )
+
+    assert "OCCUPANT" not in prose
+    assert occupant == "yes"
+
+
+def test_split_occupant_declaration_tolerates_a_reply_without_one():
+    prose, occupant = art_brief.split_occupant_declaration(
+        "A dense mid-century modern botanical bouquet."
+    )
+
+    assert occupant == "undeclared"
+    assert prose == "A dense mid-century modern botanical bouquet."
