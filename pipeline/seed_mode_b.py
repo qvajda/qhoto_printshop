@@ -26,23 +26,6 @@ import pipeline.brief_lint as brief_lint
 import pipeline.db as db
 import pipeline.seed_candidates as seed_candidates
 
-# Small curated list for the preview table's "occupant summary" column - not
-# a mandatory-field check, just a human-readable eyeball aid. "none" if no
-# known occupant noun appears in the brief text.
-OCCUPANT_KEYWORDS = (
-    "moth", "dragonfly", "ladybug", "butterfly", "beetle", "seabird",
-    "swallow", "finch", "bee", "hummingbird", "dove", "bird",
-)
-
-
-def _occupant_summary(text: str) -> str:
-    lowered = text.lower()
-    for word in OCCUPANT_KEYWORDS:
-        if word in lowered:
-            return word
-    return "none"
-
-
 def _preview_rows(briefs: list) -> list:
     rows = []
     for brief in briefs:
@@ -52,7 +35,7 @@ def _preview_rows(briefs: list) -> list:
                 "niche": brief.get("niche", "?"),
                 "palette": brief_lint._detect_palette_family(text),
                 "backdrop": brief_lint._detect_backdrop_device(text),
-                "occupant": _occupant_summary(text),
+                "occupant": brief.get("occupant", "undeclared"),
                 "words": len(text.split()),
             }
         )

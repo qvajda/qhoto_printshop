@@ -151,7 +151,8 @@ of objects shaped exactly:
     "niche": "mid-century modern botanical",
     "trend_source": "cowork_deep_research:2026-07-21_mcm_botanical_bestseller_cluster",
     "art_brief": "A mid-century modern botanical bouquet in bold filled leaf shapes, dense full-frame composition, a small yellow finch tucked in the lower-left negative space, warm cream ground, sage and terracotta accents.",
-    "go_hold_kill_rationale": "Bestseller-badge cluster observed across 6+ MCM botanical listings, BE locale; strong overlap with the round-1 confirmed-good niche family."
+    "go_hold_kill_rationale": "Bestseller-badge cluster observed across 6+ MCM botanical listings, BE locale; strong overlap with the round-1 confirmed-good niche family.",
+    "occupant": "none"
   }
 ]
 ```
@@ -165,6 +166,14 @@ Field notes:
 - `art_brief` — the finished brief text (see field list above). This is
   persisted verbatim to `candidates.art_brief` and used exactly as mode A's
   Haiku-written briefs are — no special-casing downstream.
+- `occupant` — declare `"yes"` if this brief uses a secondary occupant
+  (point 3 above), `"none"` if it doesn't (GL-63, #90). This is an
+  allowlist of exactly those two values, not a noun — naming the occupant
+  species here is the subject-vocabulary approach the owner rejected for
+  this check. `brief_lint` caps how many briefs in a batch may declare
+  `"yes"`, the same shape as the palette/backdrop-device caps above; a
+  missing or unrecognised value is treated as undeclared and excluded from
+  the cap, with a warning.
 - `go_hold_kill_rationale` — one sentence: why this idea, what you observed
   that supports it. Folded into `trend_source` on ingest (no dedicated
   column yet) — keep it short.
@@ -201,5 +210,5 @@ Field notes:
 > "none") dominate.
 >
 > Reply with ONLY a JSON array of
-> `{niche, trend_source, art_brief, go_hold_kill_rationale}` objects, no
+> `{niche, trend_source, art_brief, go_hold_kill_rationale, occupant}` objects, no
 > other text, no markdown fences.

@@ -11,7 +11,10 @@ import pipeline.brief_lint as brief_lint
 # "v2" for the round-3 template rewrite (occupant conditionality, integration
 # vocabulary, negative-space wording hygiene, bottom-edge grounding,
 # backdrop-device rebalance, conditional density/sparse idiom).
-BRIEF_TEMPLATE_VERSION = "v2"
+# GL-63 (#90): bumped to "v3" - the closing instruction now permits one
+# trailing `OCCUPANT:` declaration line, so a reply written under v2 has a
+# different expected shape than one written under v3.
+BRIEF_TEMPLATE_VERSION = "v3"
 
 # The niche string is a *scene* leak vector - it can come from a hardcoded
 # research.py template, an LLM's free-text trend research, or a raw Telegram
@@ -123,7 +126,7 @@ If the described scene reads as landscape-native (a wide vista, a horizon-driven
 
 Also apply these rules, expressed only through what you choose to write (the image model will never see this instruction, so do not mention avoidance in your output): never reference a named artist's style, never describe a recognizable character, franchise, or logo, never imply celebrity likeness, and never describe the piece as hand-painted or one-of-a-kind original - it is a print reproduction.{sibling_note}
 
-Reply with ONLY the brief text. No preamble, no quotation marks, no markdown, no labels."""
+Reply with ONLY the brief text. No preamble, no quotation marks, no markdown, no labels. After the brief text, on its own trailing line, declare whether it uses a secondary occupant: write exactly "OCCUPANT: yes" if it does, or "OCCUPANT: none" if it does not."""
 
 
 # R3-a (FM-10, docs/2026-07-21-generation-quality-round3-plan.md sec 3):
@@ -173,10 +176,38 @@ def build_brief_prompt(candidate: dict, *, sibling_briefs: list = None) -> str:
     )
 
 
-def generate_art_brief(candidate: dict, *, api_key: str = None, sibling_briefs: list = None) -> str:
+# GL-63 (#90): the model declares occupant-use on its own trailing line
+# rather than the brief prose being scanned for a hardcoded creature-noun
+# vocabulary (rejected by the owner, 2026-08-14 comment on issue #90 - a
+# vocabulary list drifts with phrasing and re-introduces the exact subject
+# naming this row exists to avoid). "yes"/"none" is an allowlist, not a
+# noun - anything else (including a missing line) is undeclared so a typo
+# can't silently disable the batch-level cap in brief_lint.
+_OCCUPANT_LINE_RE = re.compile(r"\n?\s*OCCUPANT:\s*(\S+)\s*$", re.IGNORECASE)
+
+
+def split_occupant_declaration(raw: str) -> tuple:
+    """Splits a model reply into (prose, occupant), where occupant is one of
+    "yes", "none", or "undeclared". Tolerates a reply with no trailing
+    OCCUPANT line (returns the whole reply, "undeclared") so a model that
+    ignores the instruction degrades to pre-GL-63 behaviour instead of
+    corrupting the brief."""
+    match = _OCCUPANT_LINE_RE.search(raw)
+    if not match:
+        return raw.strip(), "undeclared"
+    value = match.group(1).lower()
+    occupant = value if value in ("yes", "none") else "undeclared"
+    prose = raw[: match.start()].strip()
+    return prose, occupant
+
+
+def generate_art_brief(candidate: dict, *, api_key: str = None, sibling_briefs: list = None) -> dict:
     """One Haiku-class Anthropic text call turning a candidate's raw research
     niche into a <=60(-75)-word positive visual brief. Pure function - does
     not touch the DB; callers persist the result to candidates.art_brief.
+    Returns {"art_brief": str, "occupant": "yes"|"none"|"undeclared"} (GL-63,
+    #90) - the occupant declaration is parsed off the reply's trailing line
+    and never appears in the returned art_brief prose.
 
     `sibling_briefs` (round-2, fixes FM-5 batch monotony): the brief texts
     already written earlier in the same batch run, passed by
@@ -197,4 +228,5 @@ def generate_art_brief(candidate: dict, *, api_key: str = None, sibling_briefs: 
         # word cap is enforced by the prompt and brief_lint, not by max_tokens).
         prompt, api_key=api_key, max_tokens=600, model=anthropic_client.HAIKU_MODEL
     )
-    return result["text"].strip()
+    prose, occupant = split_occupant_declaration(result["text"].strip())
+    return {"art_brief": prose, "occupant": occupant}
