@@ -727,6 +727,29 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
     assert gp_row["status"] == "published"
 
 
+def test_patch_etsy_listing_rejects_pre_guardrail_copy(tmp_path):
+    # GL-63b / #157: a listing_texts row drafted before the GL-53 guardrail (or
+    # hand-edited afterwards) must never reach Etsy, regardless of dry_run - dry_run
+    # only gates the HTTP call, never the code path (CLAUDE.md).
+    bad_listing_text = dict(LISTING_TEXT, title="Botanical Wall Art, Printable Download")
+
+    for dry_run in (True, False):
+        conn = _fresh_conn(tmp_path)
+        ctx = _publishable(conn, tmp_path)
+
+        with patch("pipeline.config.is_live_mode", return_value=False), \
+             patch("pipeline.etsy_client.update_listing") as mock_update, \
+             patch("pipeline.etsy_client.update_listing_inventory"), \
+             patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}):
+            with pytest.raises(ValueError):
+                group_product.patch_etsy_listing(
+                    conn, ctx["group_product_id"], bad_listing_text, ctx["static_config"],
+                    shop_id="shop1", dry_run=dry_run, now="2026-07-16T09:20:00",
+                )
+
+        assert mock_update.call_count == 0
+
+
 def test_patch_etsy_listing_assembles_the_gallery_in_group_rank_order(tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
