@@ -135,6 +135,16 @@ def ensure_alive(conn, *, bot_token, token_lock_path=None, now=None, spawn=None)
     return {"status": "started", "detail": f"{detail} - started a new listener (pid {pid})", "pid": pid}
 
 
+# #180: statuses worth pushing to Telegram. `wedged` is NOT one - refusing to
+# double-start over a live token-lock holder is the correct outcome, and paging
+# for correct behaviour is how an alarm stops being read.
+NOTIFY_STATUSES = frozenset({"started", "failed"})
+
+
+def should_notify(result) -> bool:
+    return result["status"] in NOTIFY_STATUSES
+
+
 def poll_once(conn, *, admin_chat_id, bot_token, timeout=LONG_POLL_TIMEOUT, now=None) -> int:
     """One long poll. Records and acks every decision it sees; dispatches none."""
     last_offset = publish_primary_group.get_telegram_offset(conn)
