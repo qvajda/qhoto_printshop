@@ -146,9 +146,16 @@ listing publishes with whatever *was* decided. The window is measured off
 the primary group's, so a permanently-broken secondary render cannot hang a
 candidate forever.
 
-**No reminder ping** — deferred post-go-live as GL-31. That is what reduces
-this to a predicate: with nothing to *send*, there is no stage to schedule and
-no `reminder_sent_at` column.
+**The reminder ping (GL-31).** `candidate_publish_plan` also reads the same
+age helper to flag a secondary group still `pending_review` at or past
+`config.GROUP_REVIEW_REMINDER_DAYS` (**10**, below the 14-day stall window) as
+`reminder_due`, provided its digest already went out (a `group_messages` row
+exists) and `groups.reminder_sent_at` is still NULL. `group_digest`'s cycle
+re-sends that group's digest entry — the same `sendMediaGroup` + separate
+`sendMessage` pair, bypassing the ordinary duplicate-send guard — and writes
+`reminder_sent_at` in the same commit, so it fires at most once per group.
+This is still only a predicate the gate's own evaluation surfaces; it does not
+mark anything `stalled_skipped` and does not perturb `ready`/`waiting_on`.
 
 **It does not fire until GL-7 evaluates the gate on a cadence.** There is no
 scheduler today, so the effective behaviour is wait-indefinitely, which is

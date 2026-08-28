@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 import urllib.request
@@ -6,6 +7,10 @@ import pipeline.config as config
 import pipeline.http as http
 
 FLUX_SCHNELL_MODEL = "black-forest-labs/flux-schnell"  # never substitute flux-dev without explicitly flagging it
+
+# ADR-0008: scene generation is a separate concern from artwork generation and is
+# not bound to the schnell licence. Every output carries a SynthID watermark.
+NANO_BANANA_PRO_MODEL = "google/nano-banana-pro"
 
 REPLICATE_API_BASE = "https://api.replicate.com/v1/models"
 
@@ -128,7 +133,7 @@ def _predict(model: str, input_body: dict, *, api_token: str,
 
     output = result["output"]
     image_url = output[0] if isinstance(output, list) else output
-    return {"image_url": image_url, "prediction_id": result["id"]}
+    return {"image_url": image_url, "prediction_id": result["id"], "raw": result}
 
 
 def generate_image(prompt: str, *, api_token: str = None, **poll_kwargs) -> dict:
@@ -136,6 +141,26 @@ def generate_image(prompt: str, *, api_token: str = None, **poll_kwargs) -> dict
     return _predict(
         FLUX_SCHNELL_MODEL,
         {"prompt": prompt, "aspect_ratio": "2:3", "megapixels": "1"},
+        api_token=api_token, **poll_kwargs,
+    )
+
+
+def _encode_reference_image(image: str) -> str:
+    """Local geometry-card paths become base64 data URIs (they're ~17KB, well inside
+    Replicate's practical body-size limit - no upload endpoint or host needed).
+    https:// entries pass through untouched."""
+    if image.startswith(("http://", "https://")):
+        return image
+    with open(image, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def generate_scene(prompt: str, reference_images: list, *, api_token: str = None, **poll_kwargs) -> dict:
+    api_token = api_token or config.require_env("REPLICATE_API_TOKEN")
+    return _predict(
+        NANO_BANANA_PRO_MODEL,
+        {"prompt": prompt, "image_input": [_encode_reference_image(img) for img in reference_images]},
         api_token=api_token, **poll_kwargs,
     )
 

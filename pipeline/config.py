@@ -81,6 +81,13 @@ def get_shipping_profile_id(static_config: dict) -> str:
 # evaluates the publish gate on a cadence - test it by lowering this, never by waiting.
 GROUP_REVIEW_STALL_DAYS = 14
 
+# GL-31: the deferred half of [D2] - re-send a still-open secondary group's digest
+# entry once, this many days before it ages out, so the only signal isn't the owner
+# remembering an untapped entry. Must stay below GROUP_REVIEW_STALL_DAYS or the ping
+# would never fire before the group is already skipped.
+GROUP_REVIEW_REMINDER_DAYS = 10
+assert GROUP_REVIEW_REMINDER_DAYS < GROUP_REVIEW_STALL_DAYS
+
 
 def get_mockup_templates(static_config: dict, group_type: str, orientation: str) -> list[str]:
     """Ordered scene IDs for (group_type, orientation). Resolved once from

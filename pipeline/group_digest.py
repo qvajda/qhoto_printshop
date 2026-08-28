@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pipeline.artwork_store as artwork_store
 import pipeline.config as config
 import pipeline.digest as digest
+import pipeline.publish_primary_group as publish_primary_group
 import pipeline.telegram_client as telegram_client
 
 
@@ -68,16 +69,20 @@ def build_group_digest_message_text(candidate_id: int, group_id: int, group_type
 
 
 def send_group_digest(conn, group_id: int, *, static_config: dict = None,
-                       bot_token: str = None, chat_id: str = None, now=None) -> dict:
+                       bot_token: str = None, chat_id: str = None, now=None,
+                       reminder: bool = False) -> dict:
     # Duplicate-send guard (M1): if this group already has a group_messages row, the
     # digest went out before - don't re-send the gallery. The two-call send isn't
     # atomic (sendMediaGroup then sendMessage+row-insert), so a re-run must not
-    # re-fire the gallery for a group already surfaced.
-    existing = conn.execute(
-        "SELECT 1 FROM group_messages WHERE group_id = ? LIMIT 1", (group_id,)
-    ).fetchone()
-    if existing is not None:
-        return {"candidate_id": None, "group_id": group_id, "telegram_message_id": None, "skipped": True}
+    # re-fire the gallery for a group already surfaced. GL-31: the reminder path
+    # deliberately bypasses this - it exists BECAUSE a group_messages row already
+    # exists (that is the whole point of a re-send).
+    if not reminder:
+        existing = conn.execute(
+            "SELECT 1 FROM group_messages WHERE group_id = ? LIMIT 1", (group_id,)
+        ).fetchone()
+        if existing is not None:
+            return {"candidate_id": None, "group_id": group_id, "telegram_message_id": None, "skipped": True}
 
     review_group = get_review_group(conn, group_id)
     candidate_id = review_group["candidate_id"]
@@ -100,6 +105,10 @@ def send_group_digest(conn, group_id: int, *, static_config: dict = None,
         "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) VALUES (?, ?, ?, ?)",
         (group_id, telegram_message_id, chat_id, timestamp),
     )
+    if reminder:
+        # Same commit as the send it belongs to (GL-31): read before any further send,
+        # so a group cannot be reminded twice.
+        conn.execute("UPDATE groups SET reminder_sent_at = ? WHERE id = ?", (timestamp, group_id))
     conn.commit()
 
     return {"candidate_id": candidate_id, "group_id": group_id,
@@ -133,6 +142,25 @@ def run_group_digest_cycle(conn, *, static_config: dict = None, bot_token: str =
         except Exception as exc:
             print(f"send_group_digest failed for group {group_id}: {exc}")
             failures.append(f"group {group_id}: {exc}")
+            continue
+        processed_ids.append(group_id)
+
+    # GL-31: the stall reminder sweep runs after the normal pass, in the same
+    # per-group-failure shape (GL-46) - a failed reminder leaves reminder_sent_at
+    # NULL so the next cycle retries it, and the cycle still raises once at the end.
+    resolved_static_config = static_config if static_config is not None else config.load_static_config()
+    reminder_group_ids = publish_primary_group.groups_due_for_reminder(
+        conn, resolved_static_config, now=now,
+    )
+    for group_id in reminder_group_ids:
+        try:
+            send_group_digest(
+                conn, group_id, static_config=static_config,
+                bot_token=bot_token, chat_id=chat_id, now=now, reminder=True,
+            )
+        except Exception as exc:
+            print(f"reminder send_group_digest failed for group {group_id}: {exc}")
+            failures.append(f"group {group_id} (reminder): {exc}")
             continue
         processed_ids.append(group_id)
 
