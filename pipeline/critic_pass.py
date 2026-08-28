@@ -6,6 +6,7 @@ import statistics
 from PIL import Image, ImageFilter, ImageStat
 
 import pipeline.anthropic_client as anthropic_client
+import pipeline.artwork_store as artwork_store
 import pipeline.compliance_draft as compliance_draft
 import pipeline.config as config
 import pipeline.generate as generate
@@ -451,7 +452,7 @@ def get_primary_group_state(conn, candidate_id: int) -> dict:
         "ORDER BY gallery_order",
         (group_product_id, group_id),
     ).fetchall()
-    image_urls = [row["image_url"] for row in image_rows]
+    image_urls = [artwork_store.resolve_artefact_path(row["image_url"]) for row in image_rows]
 
     listing_row = conn.execute(
         "SELECT title, tags, description FROM listing_texts WHERE candidate_id = ?",
@@ -582,9 +583,9 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
             # Three-tier gate before the full rubric call: free local sanity stats -> cheap
             # single-image vision pre-filter -> full multi-image rubric. Same attempt
             # counter, same cap, across all three tiers.
-            local_path = conn.execute(
+            local_path = artwork_store.resolve_artefact_path(conn.execute(
                 "SELECT base_image_local_path FROM candidates WHERE id = ?", (candidate_id,)
-            ).fetchone()["base_image_local_path"]
+            ).fetchone()["base_image_local_path"])
             result, flag_note = run_local_and_master_gate(
                 local_path, state["image_urls"], api_key=anthropic_api_key
             )

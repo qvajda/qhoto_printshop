@@ -246,7 +246,7 @@ def test_render_group_mockups_renders_primary_gallery_from_master_no_crop(stub_m
     for row in image_rows:
         assert row["image_url"] != master_path
         assert "gelato" not in row["image_url"].lower()
-        assert Path(row["image_url"]).exists()
+        assert Path(artwork_store.resolve_artefact_path(row["image_url"])).exists()
 
 
 def test_render_group_mockups_renders_gallery_from_the_real_bundles(tmp_path):
