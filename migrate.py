@@ -22,6 +22,7 @@ import migrate_critic_pass_attempts_columns
 import migrate_generation_attempts_table
 import migrate_gl36_listing_missing
 import migrate_gl45_db_identity
+import migrate_gl51_relative_artefact_paths
 import migrate_group_products_candidate_id
 import migrate_pending_decisions
 import migrate_v412_gallery
@@ -43,6 +44,7 @@ MIGRATIONS = [
     (7, "gl36_listing_missing", migrate_gl36_listing_missing.migrate),
     (8, "gl45_db_identity", migrate_gl45_db_identity.migrate),
     (9, "pending_decisions", migrate_pending_decisions.migrate),
+    (10, "gl51_relative_artefact_paths", migrate_gl51_relative_artefact_paths.migrate),
 ]
 
 

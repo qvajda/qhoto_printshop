@@ -8,7 +8,7 @@ from pathlib import Path
 from pipeline import config
 from pipeline import http
 
-ARTWORK_CACHE_DIR = Path(__file__).resolve().parent.parent / "db" / "base_artwork"
+ARTWORK_CACHE_DIR = config.artefact_root()
 
 # Kept as an alias for existing callers/tests; config.R2_ENV_VARS is now the
 # source of truth (see config.is_r2_configured).
@@ -31,7 +31,10 @@ def _persist_artifact(local_filename: str, r2_key: str, raw_bytes: bytes) -> dic
     if not archive_path.exists() or hashlib.sha256(archive_path.read_bytes()).hexdigest() != sha256:
         archive_path.write_bytes(raw_bytes)
 
-    durable_url = str(archive_path)
+    # GL-51a (#200): stored relative to ARTWORK_CACHE_DIR and POSIX-separated, so the
+    # DB is portable across hosts - resolve_artefact_path re-roots it at read time.
+    local_path = archive_path.relative_to(ARTWORK_CACHE_DIR).as_posix()
+    durable_url = local_path
 
     r2 = _r2_config()
     if r2 is not None:
@@ -40,9 +43,22 @@ def _persist_artifact(local_filename: str, r2_key: str, raw_bytes: bytes) -> dic
 
     return {
         "durable_url": durable_url,
-        "local_path": str(archive_path),
+        "local_path": local_path,
         "sha256": sha256,
     }
+
+
+def resolve_artefact_path(value: str | None) -> str | None:
+    """Maps a stored candidates.base_image_local_path / product_images.image_url
+    value to a path this host can actually open. An http(s) value (an R2-hosted
+    URL) is returned unchanged - callers already branch on scheme before treating
+    a value as a local file. An absolute value is returned unchanged too: it is a
+    legacy row predating this migration, and survives until
+    migrate_gl51_relative_artefact_paths.py rewrites it. Anything else is relative
+    and gets joined onto the configured artefact root."""
+    if value is None or value.startswith(("http://", "https://")) or Path(value).is_absolute():
+        return value
+    return str(config.artefact_root() / value)
 
 
 def persist_base_artwork(candidate_id: int, raw_bytes: bytes) -> dict:

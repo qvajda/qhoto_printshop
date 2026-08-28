@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pipeline.artwork_store as artwork_store
@@ -15,7 +16,7 @@ def test_persist_base_artwork_writes_file_and_returns_correct_hash_and_path(tmp_
     assert expected_path.exists()
     assert expected_path.read_bytes() == raw
     assert result["sha256"] == hashlib.sha256(raw).hexdigest()
-    assert result["local_path"] == str(expected_path)
+    assert result["local_path"] == "42.png"
 
 
 def test_persist_base_artwork_is_idempotent_when_bytes_unchanged(tmp_path, monkeypatch):
@@ -178,7 +179,7 @@ def test_persist_base_artwork_uploads_to_r2_unconditionally(tmp_path, monkeypatc
     assert "x-amz-date" in headers
     assert headers["Authorization"].startswith("AWS4-HMAC-SHA256")
     assert result["durable_url"] == "https://cdn.example.com/base/5.png"
-    assert result["local_path"] == str(tmp_path / "5.png")
+    assert result["local_path"] == "5.png"
     assert result["sha256"] == hashlib.sha256(raw).hexdigest()
     assert (tmp_path / "5.png").read_bytes() == raw
 
@@ -252,7 +253,7 @@ def test_persist_group_crop_stays_local_only_when_r2_absent(tmp_path, monkeypatc
         result = artwork_store.persist_group_crop(39, "5x7", b"crop bytes")
 
     mock_put.assert_not_called()
-    assert result["durable_url"] == str(tmp_path / "39_5x7_crop.png")
+    assert result["durable_url"] == "39_5x7_crop.png"
 
 
 # --- persist_mockup_render (GL-5 task 3: self-hosted mockup gallery) ---
@@ -281,7 +282,7 @@ def test_persist_mockup_render_stays_local_only_when_r2_absent(tmp_path, monkeyp
         result = artwork_store.persist_mockup_render(7, 1, 2, b"scene bytes")
 
     mock_put.assert_not_called()
-    assert result["durable_url"] == str(tmp_path / "7_1_mockup_2.png")
+    assert result["durable_url"] == "7_1_mockup_2.png"
 
 
 def test_persist_mockup_render_idempotent_on_same_bytes_overwrites_on_different(tmp_path, monkeypatch):
@@ -316,7 +317,7 @@ def test_persist_base_artwork_stays_local_only_when_r2_env_absent(tmp_path, monk
         result = artwork_store.persist_base_artwork(candidate_id=9, raw_bytes=raw)
 
     mock_put.assert_not_called()
-    assert result["durable_url"] == str(tmp_path / "9.png")
+    assert result["durable_url"] == "9.png"
 
 
 def test_persist_base_artwork_stays_local_only_when_some_r2_vars_missing(tmp_path, monkeypatch):
@@ -329,7 +330,39 @@ def test_persist_base_artwork_stays_local_only_when_some_r2_vars_missing(tmp_pat
         result = artwork_store.persist_base_artwork(candidate_id=10, raw_bytes=raw)
 
     mock_put.assert_not_called()
-    assert result["durable_url"] == str(tmp_path / "10.png")
+    assert result["durable_url"] == "10.png"
+
+
+# --- GL-51a (#200): relative artefact paths ---
+
+def test_persisted_local_path_is_relative_and_posix_separated(tmp_path, monkeypatch):
+    monkeypatch.setattr(artwork_store, "ARTWORK_CACHE_DIR", tmp_path)
+    for key in artwork_store.R2_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+
+    base = artwork_store.persist_base_artwork(candidate_id=11, raw_bytes=b"base")
+    crop = artwork_store.persist_group_crop(11, "5x7", b"crop")
+    mockup = artwork_store.persist_mockup_render(11, 1, 0, b"mockup")
+
+    for result in (base, crop, mockup):
+        assert not Path(result["local_path"]).is_absolute()
+        assert "\\" not in result["local_path"]
+        assert result["durable_url"] == result["local_path"]
+
+
+def test_resolve_artefact_path_returns_an_absolute_legacy_value_unchanged(tmp_path):
+    legacy = str(tmp_path / "legacy" / "9.png")
+    assert artwork_store.resolve_artefact_path(legacy) == legacy
+
+
+def test_resolve_artefact_path_returns_http_urls_unchanged():
+    url = "https://cdn.example.com/base/9.png"
+    assert artwork_store.resolve_artefact_path(url) == url
+
+
+def test_resolve_artefact_path_joins_a_relative_value_onto_the_configured_root(monkeypatch, tmp_path):
+    monkeypatch.setenv("ARTEFACT_ROOT", str(tmp_path))
+    assert artwork_store.resolve_artefact_path("9.png") == str(tmp_path / "9.png")
 
 
 def test_no_urllib_urlopen_remains_in_pipeline():
