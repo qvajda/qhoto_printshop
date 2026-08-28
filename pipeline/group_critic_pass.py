@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pipeline.artwork_store as artwork_store
 import pipeline.critic_pass as critic_pass
 import pipeline.config as config
 import pipeline.group_mockup as group_mockup
@@ -34,7 +35,7 @@ def get_group_critic_state(conn, candidate_id: int, group_type: str) -> dict:
         "ORDER BY gallery_order",
         (group_product_id, group_id),
     ).fetchall()
-    image_urls = [row["image_url"] for row in image_rows]
+    image_urls = [artwork_store.resolve_artefact_path(row["image_url"]) for row in image_rows]
 
     listing_row = conn.execute(
         "SELECT title, tags, description FROM listing_texts WHERE candidate_id = ?",

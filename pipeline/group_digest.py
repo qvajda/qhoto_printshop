@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+import pipeline.artwork_store as artwork_store
 import pipeline.config as config
 import pipeline.digest as digest
 import pipeline.publish_primary_group as publish_primary_group
@@ -51,7 +52,7 @@ def get_group_gallery_urls(conn, group_id: int) -> list:
         """,
         (group_id,),
     ).fetchall()
-    return [row["image_url"] for row in rows]
+    return [artwork_store.resolve_artefact_path(row["image_url"]) for row in rows]
 
 
 def build_group_digest_message_text(candidate_id: int, group_id: int, group_type: str,

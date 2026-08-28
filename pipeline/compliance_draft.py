@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pipeline.anthropic_client as anthropic_client
+import pipeline.artwork_store as artwork_store
 import pipeline.config as config
 
 
@@ -277,7 +278,7 @@ def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = No
     prompt = build_draft_prompt(candidate, image_types)
     if retry_feedback:
         prompt += f"\n\n{retry_feedback}"
-    artwork_path = candidate.get("base_image_local_path")
+    artwork_path = artwork_store.resolve_artefact_path(candidate.get("base_image_local_path"))
     if artwork_path and not Path(artwork_path).exists():
         # Blind drafting is the GL-68 defect itself, so it is never the silent default:
         # a missing master means the copy is written from the brief alone and that has

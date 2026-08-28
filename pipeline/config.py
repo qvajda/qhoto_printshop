@@ -158,3 +158,15 @@ R2_ENV_VARS = (
 
 def is_r2_configured() -> bool:
     return all(os.environ.get(key) for key in R2_ENV_VARS)
+
+
+def artefact_root() -> Path:
+    """GL-51a (#200): machine-specific root that candidates.base_image_local_path and
+    the local rows of product_images.image_url are stored relative to. Env
+    ARTEFACT_ROOT, default REPO_ROOT/db/base_artwork (today's
+    artwork_store.ARTWORK_CACHE_DIR). Belongs beside the R2_* vars in .env, never in
+    config/static_config.json. Read fresh from os.environ on every call - never
+    cached - so repointing it (a host move) takes effect without reimporting
+    anything."""
+    raw = os.environ.get("ARTEFACT_ROOT", "").strip()
+    return Path(raw) if raw else REPO_ROOT / "db" / "base_artwork"
