@@ -84,6 +84,14 @@ def _submitted_file_size(url: str) -> tuple:
     behind it). Printing both numbers on one line makes a mismatch visible without
     opening the Design editor. It does NOT detect the crop-within-rect defect
     itself; that needs the dashboard answer first (GL-52 kickoff).
+
+    known-broken (GL-73): `submitted` in measure_product is built from
+    variant["imagePlaceholders"][*]["fileUrl"], but captured live GET responses
+    (docs/data/2026-08-09-gl48-product-42.json) carry no `imagePlaceholders` key
+    on any variant at all - so `submitted` is empty and this function is never
+    reached for any real product. The Gelato ecommerce API has no documented
+    endpoint that returns the submitted print file URL for a variant; whether
+    one exists needs a live read against current API docs, not a guess.
     """
     # ponytail: reads the whole file to get two integers out of its header. Print
     # masters are ~20MB and this is a hand-run script; switch to a ranged GET if
@@ -114,7 +122,15 @@ def measure_product(product_id: str) -> None:
         print(f"{line}, submitted {width}x{height} aspect {width / height:.4f}")
 
 
+def _ensure_utf8_stdout() -> None:
+    """cp1252 consoles choke on Gelato's `″` (double-prime) variant titles
+    (GL-73). Guarded: sys.stdout is not always a TextIOWrapper under a test
+    harness."""
+    getattr(sys.stdout, "reconfigure", lambda **_: None)(encoding="utf-8", errors="replace")
+
+
 def main() -> int:
+    _ensure_utf8_stdout()
     config.load_env()
     print("static_config vs live templates:")
     mismatches = check_templates()

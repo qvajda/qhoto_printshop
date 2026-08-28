@@ -102,7 +102,7 @@ def _ensure_listener(conn, admin_chat_id, bot_token, *, token_lock_path=None,
         return None
     detail = result["detail"]
     print(f"{JOB_NAME}: {detail}")
-    if detail.split(":")[0] not in previous_detail:
+    if telegram_listener.should_notify(result) and detail.split(":")[0] not in previous_detail:
         _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {detail}")
     return detail
 

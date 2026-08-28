@@ -81,7 +81,8 @@ def _ensure_listener(conn, admin_chat_id, bot_token) -> dict:
     if result["status"] == "alive":
         return result
     print(f"{JOB_NAME}: {result['detail']}")
-    _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {result['detail']}")
+    if telegram_listener.should_notify(result):
+        _notify_admin(admin_chat_id, bot_token, f"[{JOB_NAME}] {result['detail']}")
     return result
 
 
@@ -155,6 +156,7 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             conn = db.get_connection(db_path)
             static_config = config.load_static_config()
             failures = []
+            listener_details = []
 
             _run_stage(
                 "research",
@@ -189,7 +191,9 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 ),
                 admin_chat_id, bot_token, failures,
             )
-            _ensure_listener(conn, admin_chat_id, bot_token)
+            listener_result = _ensure_listener(conn, admin_chat_id, bot_token)
+            if listener_result["status"] != "alive":
+                listener_details.append(listener_result["detail"])
             _run_stage(
                 "digest",
                 lambda: digest.run_digest_cycle(
@@ -224,7 +228,9 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 ),
                 admin_chat_id, bot_token, failures,
             )
-            _ensure_listener(conn, admin_chat_id, bot_token)
+            listener_result = _ensure_listener(conn, admin_chat_id, bot_token)
+            if listener_result["status"] != "alive":
+                listener_details.append(listener_result["detail"])
             _run_stage(
                 "group_digest",
                 lambda: group_digest.run_group_digest_cycle(
@@ -259,9 +265,11 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
             )
 
             if failures:
-                heartbeat.record(conn, JOB_NAME, ok=False, detail=f"failed stages: {', '.join(failures)}")
+                detail = "; ".join([f"failed stages: {', '.join(failures)}", *listener_details])
+                heartbeat.record(conn, JOB_NAME, ok=False, detail=detail)
                 return 1
-            heartbeat.record(conn, JOB_NAME, ok=True, detail=_reconcile_detail(reconcile_result))
+            detail = "; ".join(d for d in [_reconcile_detail(reconcile_result), *listener_details] if d)
+            heartbeat.record(conn, JOB_NAME, ok=True, detail=detail or None)
             return 0
     except lock.LockHeldError as exc:
         print(f"{JOB_NAME}: {exc}")
