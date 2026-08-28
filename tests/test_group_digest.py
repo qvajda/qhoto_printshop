@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+import pipeline.config as config
 import pipeline.db as db
 import pipeline.group_digest as group_digest
 
@@ -364,4 +365,141 @@ def test_run_group_digest_cycle_returns_empty_list_when_nothing_ready(tmp_path):
     processed_ids = group_digest.run_group_digest_cycle(conn, bot_token="test-token", chat_id="admin-chat")
 
     assert processed_ids == []
+    conn.close()
+
+
+# --- GL-31: the stall reminder ping ---
+
+def _insert_primary_approved(conn, candidate_id, *, updated_at="2026-08-01T09:00:00"):
+    conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, 'primary', 'pending_review', 'approved', ?, ?)",
+        (candidate_id, "2026-08-01T09:00:00", updated_at),
+    )
+    conn.commit()
+
+
+def _insert_group_message(conn, group_id, *, sent_at="2026-07-01T09:00:00"):
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) "
+        "VALUES (?, 100, 'admin-chat', ?)",
+        (group_id, sent_at),
+    )
+    conn.commit()
+
+
+def _make_reminder_ready_candidate(conn, niche, *, group_updated_at):
+    # A digest already went out (group_messages exists) for a 5x7 group that's still
+    # pending_review, sitting at group_updated_at. The primary is approved so the gate
+    # is actually evaluating this candidate; the 10x24 sibling is already terminal so
+    # it can't itself produce a reminder or a stall.
+    candidate_id = _insert_candidate(conn, niche=niche)
+    _insert_primary_approved(conn, candidate_id)
+    group_id, _ = _insert_group_gallery(conn, candidate_id, "5x7", "5x7", price_eur=19)
+    conn.execute("UPDATE groups SET updated_at = ? WHERE id = ?", (group_updated_at, group_id))
+    conn.execute(
+        "INSERT INTO groups (candidate_id, group_type, status, decision, created_at, updated_at) "
+        "VALUES (?, '10x24', 'rejected', 'rejected', '2026-08-01T09:00:00', '2026-08-01T09:00:00')",
+        (candidate_id,),
+    )
+    conn.commit()
+    _insert_listing_text(conn, candidate_id, niche=niche)
+    _insert_group_message(conn, group_id)
+    return candidate_id, group_id
+
+
+def test_run_group_digest_cycle_sends_a_reminder_at_the_threshold(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "GROUP_REVIEW_REMINDER_DAYS", 10)
+    conn = _fresh_conn(tmp_path)
+    _, group_id = _make_reminder_ready_candidate(
+        conn, "reminder ready", group_updated_at="2026-07-14T09:00:00",
+    )
+
+    calls = []
+
+    def fake_send_media_group(chat_id, photo_urls, *, bot_token=None):
+        calls.append("media_group")
+        return {"ok": True, "result": []}
+
+    def fake_send_message(chat_id, text, reply_markup=None, *, bot_token=None):
+        calls.append("message")
+        return {"ok": True, "result": {"message_id": 999}}
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group", side_effect=fake_send_media_group), \
+         patch("pipeline.group_digest.telegram_client.send_message", side_effect=fake_send_message):
+        processed = group_digest.run_group_digest_cycle(
+            conn, bot_token="test-token", chat_id="admin-chat", now=datetime(2026, 7, 24, 9, 0, 0),
+        )
+
+    assert processed == [group_id]
+    assert calls == ["media_group", "message"]
+    row = conn.execute("SELECT reminder_sent_at FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert row["reminder_sent_at"] == "2026-07-24T09:00:00"
+    conn.close()
+
+
+def test_run_group_digest_cycle_does_not_resend_an_already_sent_reminder(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "GROUP_REVIEW_REMINDER_DAYS", 10)
+    conn = _fresh_conn(tmp_path)
+    _, group_id = _make_reminder_ready_candidate(
+        conn, "reminder twice", group_updated_at="2026-07-14T09:00:00",
+    )
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group",
+               return_value={"ok": True, "result": []}), \
+         patch("pipeline.group_digest.telegram_client.send_message",
+               return_value={"ok": True, "result": {"message_id": 1}}):
+        first = group_digest.run_group_digest_cycle(
+            conn, bot_token="t", chat_id="admin-chat", now=datetime(2026, 7, 24, 9, 0, 0),
+        )
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group") as mock_media, \
+         patch("pipeline.group_digest.telegram_client.send_message") as mock_message:
+        second = group_digest.run_group_digest_cycle(
+            conn, bot_token="t", chat_id="admin-chat", now=datetime(2026, 7, 25, 9, 0, 0),
+        )
+
+    assert first == [group_id]
+    assert second == []
+    mock_media.assert_not_called()
+    mock_message.assert_not_called()
+    row = conn.execute("SELECT reminder_sent_at FROM groups WHERE id = ?", (group_id,)).fetchone()
+    assert row["reminder_sent_at"] == "2026-07-24T09:00:00"
+    conn.close()
+
+
+def test_run_group_digest_cycle_skips_reminder_for_decided_or_young_groups(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "GROUP_REVIEW_REMINDER_DAYS", 10)
+    conn = _fresh_conn(tmp_path)
+
+    # Old enough to be reminder-due, but already decided - a decision settles the
+    # group even if the owner never acted before the threshold.
+    decided_candidate_id = _insert_candidate(conn, niche="terminal approved")
+    _insert_primary_approved(conn, decided_candidate_id)
+    decided_group_id, _ = _insert_group_gallery(conn, decided_candidate_id, "5x7", "5x7")
+    conn.execute(
+        "UPDATE groups SET updated_at = ?, decision = 'approved' WHERE id = ?",
+        ("2026-07-01T09:00:00", decided_group_id),
+    )
+    _insert_group_message(conn, decided_group_id)
+    _insert_listing_text(conn, decided_candidate_id, niche="terminal approved")
+
+    # Still pending_review, but not old enough yet.
+    young_candidate_id = _insert_candidate(conn, niche="too young")
+    _insert_primary_approved(conn, young_candidate_id)
+    young_group_id, _ = _insert_group_gallery(conn, young_candidate_id, "10x24", "10x24")
+    conn.execute("UPDATE groups SET updated_at = ? WHERE id = ?", ("2026-07-20T09:00:00", young_group_id))
+    _insert_group_message(conn, young_group_id)
+    _insert_listing_text(conn, young_candidate_id, niche="too young")
+    conn.commit()
+
+    with patch("pipeline.group_digest.telegram_client.send_media_group") as mock_media, \
+         patch("pipeline.group_digest.telegram_client.send_message") as mock_message:
+        processed = group_digest.run_group_digest_cycle(
+            conn, bot_token="t", chat_id="admin-chat", now=datetime(2026, 7, 24, 9, 0, 0),
+        )
+
+    assert processed == []
+    mock_media.assert_not_called()
+    mock_message.assert_not_called()
     conn.close()
