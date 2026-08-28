@@ -15,6 +15,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pipeline.artwork_store as artwork_store
 import pipeline.db as db
 import migrate_base_artwork_columns
 import migrate_candidates_art_brief
@@ -112,6 +113,16 @@ def main():
     if "--bless" in sys.argv:
         print(f"canonical_path={migrate_gl45_db_identity.bless(db_path)}")
         return
+    if "--check-artefacts" in sys.argv:
+        report = artwork_store.sweep_artefacts(db_path)
+        print(
+            f"resolvable={report['resolvable']}, "
+            f"missing={len(report['missing'])}, skipped={report['skipped']}"
+        )
+        for row in report["missing"]:
+            print(f"{row['table']} {row['row_id']} {row['value']}")
+        sys.exit(1 if report["missing"] else 0)
+
     check_only = "--check" in sys.argv
     if check_only:
         version = check(db_path)

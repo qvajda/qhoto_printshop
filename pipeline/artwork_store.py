@@ -2,6 +2,7 @@ import datetime
 import hashlib
 import hmac
 import os
+import sqlite3
 import urllib.parse
 from pathlib import Path
 
@@ -9,6 +10,51 @@ from pipeline import config
 from pipeline import http
 
 ARTWORK_CACHE_DIR = Path(__file__).resolve().parent.parent / "db" / "base_artwork"
+
+# GL-51b: table, column pairs holding stored artefact paths - one row per DB
+# column swept. product_images.image_url is required (never NULL); candidates'
+# base_image_local_path is nullable, hence the extra WHERE.
+_ARTEFACT_COLUMNS = [
+    ("candidates", "base_image_local_path"),
+    ("product_images", "image_url"),
+]
+
+
+def sweep_artefacts(db_path) -> dict:
+    """Reads every stored artefact path across _ARTEFACT_COLUMNS and reports
+    resolvable vs missing vs skipped. Read-only (no writes to db_path), never
+    raises on a bad row - a per-row failure lands in "missing" with the
+    exception text as its value (GL-46), so the report never silently drops
+    a row instead of counting it.
+
+    Resolution is Path(value) directly today; #200 (GL-51a) is expected to
+    swap this one call site for a resolver, once relative paths exist.
+    """
+    resolvable = 0
+    skipped = 0
+    missing = []
+
+    conn = sqlite3.connect(db_path)
+    try:
+        for table, column in _ARTEFACT_COLUMNS:
+            rows = conn.execute(
+                f"SELECT id, {column} FROM {table} "
+                f"WHERE {column} IS NOT NULL AND {column} != ''"
+            ).fetchall()
+            for row_id, value in rows:
+                try:
+                    if value.startswith("http://") or value.startswith("https://"):
+                        skipped += 1
+                    elif Path(value).exists():
+                        resolvable += 1
+                    else:
+                        missing.append({"table": table, "row_id": row_id, "value": value})
+                except OSError as exc:
+                    missing.append({"table": table, "row_id": row_id, "value": str(exc)})
+    finally:
+        conn.close()
+
+    return {"resolvable": resolvable, "skipped": skipped, "missing": missing}
 
 # Kept as an alias for existing callers/tests; config.R2_ENV_VARS is now the
 # source of truth (see config.is_r2_configured).
