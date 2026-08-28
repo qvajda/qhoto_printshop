@@ -1,3 +1,4 @@
+import base64
 import json
 from unittest.mock import patch
 
@@ -27,7 +28,8 @@ def test_generate_image_builds_correct_request_and_parses_response():
     # ~1MP unless told otherwise; megapixels="1" is schnell's max native resolution.
     assert captured["body"]["input"]["aspect_ratio"] == "2:3"
     assert captured["body"]["input"]["megapixels"] == "1"
-    assert result == {"image_url": "https://replicate.delivery/out.png", "prediction_id": "pred123"}
+    assert result["image_url"] == "https://replicate.delivery/out.png"
+    assert result["prediction_id"] == "pred123"
     # Replicate's Prefer: wait can hold the connection open up to 60s server-side;
     # the client-side socket timeout must be at least that long or the raw
     # URLError/socket timeout fires before our ReplicatePredictionTimeoutError can.
@@ -71,7 +73,8 @@ def test_generate_image_succeeds_when_a_queued_prediction_finishes_while_polling
             "a prompt", api_token="test-token", sleep_fn=lambda _: None,
         )
 
-    assert result == {"image_url": "https://replicate.delivery/q.png", "prediction_id": "pred-q"}
+    assert result["image_url"] == "https://replicate.delivery/q.png"
+    assert result["prediction_id"] == "pred-q"
     assert polled == ["https://api.replicate.com/v1/predictions/pred-q"] * 2
 
 
@@ -118,7 +121,8 @@ def test_upscale_image_builds_correct_request_and_parses_response():
         "scale": 8,
         "face_enhance": False,
     }
-    assert result == {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
+    assert result["image_url"] == "https://replicate.delivery/upscaled.png"
+    assert result["prediction_id"] == "pred-up1"
     assert captured["timeout"] >= 60
 
 
@@ -203,3 +207,68 @@ def test_timeout_error_text_does_not_speculate_generic_throttling():
     message = str(exc_info.value)
     assert "stall" in message.lower()
     assert "rate cap" in message.lower() or "ReplicateThrottledError" in message
+
+
+# GL-25: Nano Banana Pro scene generation.
+def test_generate_scene_encodes_local_reference_image_and_passes_through_urls(tmp_path):
+    card = tmp_path / "geometry_card.png"
+    card.write_bytes(b"fake-png-bytes")
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data)
+        return {"id": "pred-scene1", "status": "succeeded", "output": ["https://replicate.delivery/scene.png"]}
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        result = replicate_client.generate_scene(
+            "a botanical scene", [str(card), "https://example.com/ref.png"], api_token="test-token",
+        )
+
+    assert captured["url"] == "https://api.replicate.com/v1/models/google/nano-banana-pro/predictions"
+    image_input = captured["body"]["input"]["image_input"]
+    expected_data_uri = f"data:image/png;base64,{base64.b64encode(b'fake-png-bytes').decode('ascii')}"
+    assert image_input == [expected_data_uri, "https://example.com/ref.png"]
+    assert result["image_url"] == "https://replicate.delivery/scene.png"
+
+
+def test_generate_scene_reaches_predict_via_the_nano_banana_pro_model():
+    def fake_send(request, timeout=30):
+        return {"id": "pred-scene2", "status": "succeeded", "output": ["https://replicate.delivery/scene2.png"]}
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        replicate_client.generate_scene("a prompt", [], api_token="test-token")
+
+
+def test_generate_scene_succeeds_when_the_wait_window_times_out_and_polling_finishes():
+    responses = [
+        {"id": "pred-scene3", "status": "starting", "output": None,
+         "urls": {"get": "https://api.replicate.com/v1/predictions/pred-scene3"}},
+        {"id": "pred-scene3", "status": "succeeded", "output": ["https://replicate.delivery/scene3.png"]},
+    ]
+
+    def fake_send(request, timeout=30):
+        return responses.pop(0)
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        result = replicate_client.generate_scene(
+            "a prompt", [], api_token="test-token", sleep_fn=lambda _: None,
+        )
+
+    assert result["image_url"] == "https://replicate.delivery/scene3.png"
+
+
+def test_predict_return_carries_raw_prediction_for_scene_intake_provenance():
+    # scripts/scene_intake.py:REPLICATE_EXPORT_KEYS = ("input", "id", "status")
+    def fake_send(request, timeout=30):
+        return {
+            "id": "pred-scene4", "status": "succeeded", "input": {"prompt": "a prompt", "image_input": []},
+            "output": ["https://replicate.delivery/scene4.png"],
+        }
+
+    with patch("pipeline.replicate_client.http.send", side_effect=fake_send):
+        result = replicate_client.generate_scene("a prompt", [], api_token="test-token")
+
+    assert result["raw"]["id"] == "pred-scene4"
+    assert result["raw"]["status"] == "succeeded"
+    assert result["raw"]["input"] == {"prompt": "a prompt", "image_input": []}
