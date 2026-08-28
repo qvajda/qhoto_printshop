@@ -53,6 +53,13 @@ STAGE_PATCHES = [
 def _patch_all_stages_ok(stack):
     for target in STAGE_PATCHES:
         stack.enter_context(patch(target, return_value=[]))
+    # #180: run_batch now folds a non-alive listener's detail into the batch
+    # heartbeat, so a test that never patches the listener ends up asserting on
+    # the spawn-guard's message instead of the stage behaviour it is about.
+    stack.enter_context(
+        patch("run_batch.telegram_listener.ensure_alive",
+              return_value={"status": "alive", "detail": "listener alive"})
+    )
     stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
     stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
 
