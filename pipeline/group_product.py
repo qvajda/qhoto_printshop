@@ -578,6 +578,15 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     shop_id = shop_id or config.require_env("ETSY_SHOP_ID")
 
+    # GL-63b / #157: this is the one function every publish path routes through, so the
+    # forbidden/seasonal-term guard belongs here rather than in each caller (a stale
+    # pre-guardrail listing_texts row, or a hand-edited one, must never reach Etsy).
+    # Checked before any upload/reconcile work, not just before update_listing, and
+    # never gated on dry_run - CLAUDE.md: dry-run gates the HTTP call, never the code path.
+    compliance_draft.validate_listing_text(
+        listing_text["title"], json.loads(listing_text["tags"]), listing_text["description"],
+    )
+
     gp_row = conn.execute(
         "SELECT gelato_product_id, etsy_listing_id FROM group_products WHERE id = ?", (group_product_id,)
     ).fetchone()
