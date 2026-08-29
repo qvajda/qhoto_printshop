@@ -15,6 +15,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pipeline.artwork_store as artwork_store
 import pipeline.db as db
 import migrate_base_artwork_columns
 import migrate_candidates_art_brief
@@ -22,6 +23,7 @@ import migrate_critic_pass_attempts_columns
 import migrate_generation_attempts_table
 import migrate_gl36_listing_missing
 import migrate_gl45_db_identity
+import migrate_gl51_relative_artefact_paths
 import migrate_group_products_candidate_id
 import migrate_pending_decisions
 import migrate_v412_gallery
@@ -43,6 +45,7 @@ MIGRATIONS = [
     (7, "gl36_listing_missing", migrate_gl36_listing_missing.migrate),
     (8, "gl45_db_identity", migrate_gl45_db_identity.migrate),
     (9, "pending_decisions", migrate_pending_decisions.migrate),
+    (10, "gl51_relative_artefact_paths", migrate_gl51_relative_artefact_paths.migrate),
 ]
 
 
@@ -112,6 +115,16 @@ def main():
     if "--bless" in sys.argv:
         print(f"canonical_path={migrate_gl45_db_identity.bless(db_path)}")
         return
+    if "--check-artefacts" in sys.argv:
+        report = artwork_store.sweep_artefacts(db_path)
+        print(
+            f"resolvable={report['resolvable']}, "
+            f"missing={len(report['missing'])}, skipped={report['skipped']}"
+        )
+        for row in report["missing"]:
+            print(f"{row['table']} {row['row_id']} {row['value']}")
+        sys.exit(1 if report["missing"] else 0)
+
     check_only = "--check" in sys.argv
     if check_only:
         version = check(db_path)

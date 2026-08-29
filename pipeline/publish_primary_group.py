@@ -204,6 +204,15 @@ def _age_days(reference: str, now_dt) -> float:
         return 0.0
 
 
+def _secondary_group_age_days(rows: dict, group_type: str, primary, now_dt) -> float:
+    """The one place a secondary group's review age is computed (GL-31): both the
+    [D2] stall clause and the reminder predicate read this, so they cannot disagree
+    about when a group ages out."""
+    row = rows.get(group_type)
+    reference = row["updated_at"] if row is not None else primary["updated_at"]
+    return _age_days(reference, now_dt)
+
+
 def candidate_publish_plan(conn, candidate_id, static_config, *, now=None) -> dict:
     """v4.12 [D1] publish gate: the candidate's single listing is created once, when every
     group has reached a terminal decision, carrying only the sizes that were validated.
@@ -223,15 +232,16 @@ def candidate_publish_plan(conn, candidate_id, static_config, *, now=None) -> di
 
     rows = {
         row["group_type"]: row for row in conn.execute(
-            "SELECT id, group_type, decision, status, updated_at FROM groups WHERE candidate_id = ?",
+            "SELECT id, group_type, decision, status, updated_at, reminder_sent_at "
+            "FROM groups WHERE candidate_id = ?",
             (candidate_id,),
         ).fetchall()
     }
     primary = rows.get("primary")
     if primary is None or primary["decision"] != "approved":
-        return {"ready": False, "waiting_on": ["primary"], "stalled": []}
+        return {"ready": False, "waiting_on": ["primary"], "stalled": [], "reminder_due": []}
 
-    waiting_on, stalled = [], []
+    waiting_on, stalled, reminder_due = [], [], []
     for group_type in _SECONDARY_GROUP_TYPES:
         if not config.get_mockup_templates(static_config, group_type, "portrait"):
             # No scene bundles authored for this group type - group_mockup never creates
@@ -241,9 +251,16 @@ def candidate_publish_plan(conn, candidate_id, static_config, *, now=None) -> di
         if row is not None and (row["decision"] in _TERMINAL_DECISIONS
                                 or row["status"] in _TERMINAL_STATUSES):
             continue
-        reference = row["updated_at"] if row is not None else primary["updated_at"]
-        if _age_days(reference, now_dt) < config.GROUP_REVIEW_STALL_DAYS:
+        age_days = _secondary_group_age_days(rows, group_type, primary, now_dt)
+        if age_days < config.GROUP_REVIEW_STALL_DAYS:
             waiting_on.append(group_type)
+            if (row is not None and row["status"] == "pending_review"
+                    and row["reminder_sent_at"] is None
+                    and age_days >= config.GROUP_REVIEW_REMINDER_DAYS
+                    and conn.execute(
+                        "SELECT 1 FROM group_messages WHERE group_id = ? LIMIT 1", (row["id"],)
+                    ).fetchone() is not None):
+                reminder_due.append(row["id"])
             continue
         stalled.append(group_type)
         if row is not None:
@@ -254,7 +271,8 @@ def candidate_publish_plan(conn, candidate_id, static_config, *, now=None) -> di
     if stalled:
         conn.commit()
 
-    return {"ready": not waiting_on, "waiting_on": waiting_on, "stalled": stalled}
+    return {"ready": not waiting_on, "waiting_on": waiting_on, "stalled": stalled,
+            "reminder_due": reminder_due}
 
 
 def publish_candidate(conn, candidate_id, *, static_config=None, store_id=None,
@@ -336,6 +354,24 @@ def publish_primary_group(conn, candidate_id, *, static_config=None, store_id=No
         dry_run=dry_run, now=now,
     )
     return {**result, "published": True, "stalled": plan["stalled"]}
+
+
+def groups_due_for_reminder(conn, static_config, *, now=None) -> list:
+    """GL-31: the send point's sweep. Reuses candidate_publish_plan - the one place
+    a secondary group's review age is measured - so a group can never be reminder-due
+    and stall-due by two different clocks. Every candidate whose primary is approved
+    is a candidate that could still be waiting on a 5x7/10x24 decision; writes
+    nothing and sends nothing itself."""
+    candidate_ids = [
+        row["candidate_id"] for row in conn.execute(
+            "SELECT candidate_id FROM groups WHERE group_type = 'primary' AND decision = 'approved'"
+        ).fetchall()
+    ]
+    due = []
+    for candidate_id in candidate_ids:
+        plan = candidate_publish_plan(conn, candidate_id, static_config, now=now)
+        due.extend(plan["reminder_due"])
+    return due
 
 
 def handle_decision(conn, candidate_id, group_id, action, decision_notes=None, *,

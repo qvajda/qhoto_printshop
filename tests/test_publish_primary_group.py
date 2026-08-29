@@ -1330,7 +1330,7 @@ def test_publish_gate_waits_until_the_primary_group_is_approved(tmp_path):
     plan = publish_primary_group.candidate_publish_plan(
         conn, candidate_id, _gate_config(), now=datetime(2026, 8, 1, 10, 0, 0),
     )
-    assert plan == {"ready": False, "waiting_on": ["primary"], "stalled": []}
+    assert plan == {"ready": False, "waiting_on": ["primary"], "stalled": [], "reminder_due": []}
     conn.close()
 
 
@@ -1363,7 +1363,7 @@ def test_publish_gate_is_ready_once_every_group_has_a_terminal_decision(tmp_path
     plan = publish_primary_group.candidate_publish_plan(
         conn, candidate_id, _gate_config(), now=datetime(2026, 8, 1, 10, 0, 0),
     )
-    assert plan == {"ready": True, "waiting_on": [], "stalled": []}
+    assert plan == {"ready": True, "waiting_on": [], "stalled": [], "reminder_due": []}
     conn.close()
 
 
@@ -1391,7 +1391,7 @@ def test_publish_gate_does_not_wait_on_a_group_type_with_no_authored_scenes(tmp_
     plan = publish_primary_group.candidate_publish_plan(
         conn, candidate_id, _primary_only_config(), now=datetime(2026, 8, 1, 10, 0, 0),
     )
-    assert plan == {"ready": True, "waiting_on": [], "stalled": []}
+    assert plan == {"ready": True, "waiting_on": [], "stalled": [], "reminder_due": []}
     conn.close()
 
 
@@ -1416,7 +1416,7 @@ def test_publish_gate_ages_out_a_group_left_undecided_past_the_stall_window(monk
     aged = publish_primary_group.candidate_publish_plan(
         conn, candidate_id, _gate_config(), now=datetime(2026, 8, 4, 9, 0, 0),
     )
-    assert aged == {"ready": True, "waiting_on": [], "stalled": ["10x24"]}
+    assert aged == {"ready": True, "waiting_on": [], "stalled": ["10x24"], "reminder_due": []}
     assert conn.execute(
         "SELECT status FROM groups WHERE id = ?", (stalled_id,)
     ).fetchone()["status"] == "stalled_skipped"
@@ -1440,6 +1440,79 @@ def test_publish_gate_ages_out_a_secondary_group_that_never_got_a_row(monkeypatc
     )
     assert plan["ready"] is True
     assert plan["stalled"] == ["10x24"]
+    conn.close()
+
+
+def _insert_gl31_group_message(conn, group_id, *, sent_at="2026-08-01T09:00:00"):
+    conn.execute(
+        "INSERT INTO group_messages (group_id, telegram_message_id, chat_id, sent_at) "
+        "VALUES (?, 100, 'admin-chat', ?)",
+        (group_id, sent_at),
+    )
+    conn.commit()
+
+
+def test_publish_gate_flags_a_reminder_due_group_without_perturbing_the_gate(monkeypatch, tmp_path):
+    # GL-31: a group past GROUP_REVIEW_REMINDER_DAYS but still under
+    # GROUP_REVIEW_STALL_DAYS is surfaced for a re-send, but the publish gate itself
+    # (ready/waiting_on/stalled) is unchanged - the reminder is a side channel.
+    monkeypatch.setattr(config, "GROUP_REVIEW_REMINDER_DAYS", 2)
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    reminder_id = _insert_secondary(
+        conn, candidate_id, "10x24", updated_at="2026-08-01T09:00:00",
+    )
+    _insert_gl31_group_message(conn, reminder_id)
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 4, 9, 0, 0),
+    )
+
+    assert plan["ready"] is False
+    assert plan["waiting_on"] == ["10x24"]
+    assert plan["stalled"] == []
+    assert plan["reminder_due"] == [reminder_id]
+    conn.close()
+
+
+def test_publish_gate_does_not_flag_a_reminder_already_sent(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "GROUP_REVIEW_REMINDER_DAYS", 2)
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    reminded_id = _insert_secondary(
+        conn, candidate_id, "10x24", updated_at="2026-08-01T09:00:00",
+    )
+    _insert_gl31_group_message(conn, reminded_id)
+    conn.execute(
+        "UPDATE groups SET reminder_sent_at = '2026-08-02T09:00:00' WHERE id = ?", (reminded_id,),
+    )
+    conn.commit()
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 4, 9, 0, 0),
+    )
+    assert plan["reminder_due"] == []
+    conn.close()
+
+
+def test_publish_gate_does_not_flag_a_reminder_before_the_digest_ever_sent(monkeypatch, tmp_path):
+    # No group_messages row means send_group_digest never went out - a reminder must
+    # not race ahead of the first send.
+    monkeypatch.setattr(config, "GROUP_REVIEW_REMINDER_DAYS", 2)
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_candidate(conn)
+    _approved_primary(conn, candidate_id)
+    _insert_secondary(conn, candidate_id, "5x7", decision="approved")
+    _insert_secondary(conn, candidate_id, "10x24", updated_at="2026-08-01T09:00:00")
+
+    plan = publish_primary_group.candidate_publish_plan(
+        conn, candidate_id, _gate_config(), now=datetime(2026, 8, 4, 9, 0, 0),
+    )
+    assert plan["reminder_due"] == []
     conn.close()
 
 

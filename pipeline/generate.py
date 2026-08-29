@@ -159,9 +159,14 @@ def generate_for_candidate(conn, candidate_id: int, *, correction_note: str = No
         brief_result = art_brief.generate_art_brief(candidate, **brief_kwargs)
         candidate["art_brief"] = brief_result["art_brief"]
         occupant = brief_result["occupant"]
+        # GL-10c/1 (#207): threaded to draft time via compliance_draft.build_draft_prompt -
+        # a row that never computes a brief here (the retry path below) stays NULL on
+        # both, which is exactly the fallback build_draft_prompt is required to take.
+        candidate["dominant_colour"] = brief_result.get("dominant_colour")
+        candidate["named_idiom"] = brief_result.get("named_idiom")
         conn.execute(
-            "UPDATE candidates SET art_brief = ? WHERE id = ?",
-            (candidate["art_brief"], candidate_id),
+            "UPDATE candidates SET art_brief = ?, dominant_colour = ?, named_idiom = ? WHERE id = ?",
+            (candidate["art_brief"], candidate["dominant_colour"], candidate["named_idiom"], candidate_id),
         )
         conn.commit()
         # R2-e: same shared lint mode B hard-enforces at ingest (brief_lint.py),

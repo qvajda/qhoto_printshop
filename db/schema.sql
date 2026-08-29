@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS candidates (
   base_image_sha256 TEXT,
   base_replicate_delivery_url TEXT,
   art_brief TEXT,
+  dominant_colour TEXT,
+  named_idiom TEXT,
   status TEXT NOT NULL CHECK(status IN (
     'pending','generating','primary_review','compliance_failed','failed','abandoned','completed'
   )),
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS groups (
     'publish_failed','stalled_skipped'
   )),
   failed_reason TEXT,
+  reminder_sent_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(candidate_id, group_type)
