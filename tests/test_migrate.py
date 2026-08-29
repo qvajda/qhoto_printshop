@@ -126,3 +126,47 @@ def test_check_raises_stale_schema_not_operational_error_on_virgin_db(tmp_path):
     }
     assert tables == set(), "check() must not create any tables"
     conn.close()
+
+
+def test_check_shape_reports_nothing_missing_on_current_db(tmp_path):
+    db_path = _fresh_uninitialized_db(tmp_path)
+    migrate.migrate(db_path)
+
+    assert migrate.check_shape(db_path) == {"missing": []}
+
+
+def test_check_shape_ignores_extra_columns_on_live_db(tmp_path):
+    db_path = _fresh_uninitialized_db(tmp_path)
+    migrate.migrate(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE candidates ADD COLUMN some_extra_column TEXT")
+    conn.commit()
+    conn.close()
+
+    assert migrate.check_shape(db_path) == {"missing": []}
+
+
+def test_check_shape_and_check_catch_gl219_state(tmp_path):
+    """#221: reconstructs the exact #219 state - schema_version and the
+    migration registry both say the DB is current, but a column schema.sql
+    declares was never actually applied to the live DB (e.g. hand-edited,
+    restored backup, or a migration that silently no-op'd)."""
+    db_path = _fresh_uninitialized_db(tmp_path)
+    migrate.migrate(db_path)
+
+    # Drop a column schema.sql declares without touching schema_version,
+    # simulating the registry/version counter staying consistent while the
+    # DB itself is wrong.
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE candidates DROP COLUMN base_image_url")
+    conn.commit()
+    conn.close()
+
+    shape = migrate.check_shape(db_path)
+    assert "candidates.base_image_url" in shape["missing"]
+
+    try:
+        migrate.check(db_path)
+        assert False, "expected ShapeMismatchError"
+    except migrate.ShapeMismatchError as exc:
+        assert "candidates.base_image_url" in str(exc)
