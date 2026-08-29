@@ -26,10 +26,24 @@ def _conn(tmp_path):
     return conn
 
 
+# Compliant against compliance_draft.validate_draft_formula (#208): 4 comma clauses,
+# 15 words, no repeated word >2x, no banned title term; 13 unique tags <=20 chars.
+_DRAFT_TITLE = (
+    "Sage Green Fern Botanical Print, Minimalist Herbarium Wall Art, "
+    "Bedroom Decor, Calm Neutral Nature Print"
+)
+_DRAFT_TAGS = [
+    "sage fern print", "botanical wall art", "herbarium print", "minimalist nature",
+    "bedroom wall decor", "living room print", "calm neutral print", "nature lover gift",
+    "green plant art", "modern botanical", "leaf line art", "earthy home decor",
+    "soft sage palette",
+]
+
+
 def _draft_response(alt_count=2):
     return {"text": _json.dumps({
-        "title": "Monstera Line Art Botanical Print",
-        "tags": ["botanical"],
+        "title": _DRAFT_TITLE,
+        "tags": _DRAFT_TAGS,
         "description": "A minimalist botanical print, shipped to you.",
         "alt_texts": [f"alt {i}" for i in range(alt_count)],
     })}
