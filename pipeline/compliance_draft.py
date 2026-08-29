@@ -1,11 +1,13 @@
 import json
 import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pipeline.anthropic_client as anthropic_client
 import pipeline.artwork_store as artwork_store
 import pipeline.config as config
+import pipeline.image_crop as image_crop
 
 
 # DISCLOSURE_TEXT removed 2026-08-06 (owner decision, GL-37). Both facts it
@@ -36,6 +38,78 @@ MAX_TAGS = 13
 MAX_TAG_LENGTH = 20
 MAX_TITLE_LENGTH = 140
 
+# GL-10c/2 (#208). Slot numbering follows spec §2.2/§5's five-slot title formula
+# (colour, subject, idiom, medium, room/mood), but #207 (colour + idiom threading)
+# is not landed - build_draft_prompt has no colour/idiom input to give the model -
+# so §1.3's fallback governs: slots 1 (colour) and 3 (idiom) are dropped, never
+# invented, and the shipped formula runs on slots 2/4/5/6 only. Assert 4-5 clauses,
+# not exactly 5, until #207 closes the range. Widen to `MIN_TITLE_CLAUSES = 5` then.
+MIN_TITLE_CLAUSES = 4
+MAX_TITLE_CLAUSES = 5
+MAX_TITLE_WORDS = 15
+MAX_WORD_REPEATS = 2
+MAX_TAGS_SHARING_HEAD_NOUN = 6
+TITLE_BANNED_SEPARATORS = ("|", ":", "—", "–")  # em dash, en dash
+
+# §2.2: 13 tags across five functional bands. Band membership is a generation
+# instruction, not a machine-checkable property (the model returns a flat list,
+# not a per-tag band field), so this table only drives the prompt text and a
+# sum-to-MAX_TAGS sanity check - never a per-band count on a drafted list.
+TAG_BANDS = (
+    ("head", 3),
+    ("long_tail", 3),
+    ("room", 3),
+    ("aspirational", 2),
+    ("aesthetic", 2),
+)
+assert sum(count for _, count in TAG_BANDS) == MAX_TAGS
+
+# §5: the medium clause should prefer these over "poster". This is a generation
+# preference only (per spec: "prefers", not "must never say poster") - the prompt
+# states it; there is no code assertion for it, deliberately, same reasoning as
+# TAG_BANDS above.
+PREFERRED_MEDIUM_TERMS = ("art print", "wall art")
+
+# §2.2: "where a good phrase is over 20 chars, put it in the title and its short
+# head in tags." These are the five over-length phrases named in #28 - a tag
+# carrying one of them whole means the routing rule was skipped, not merely that
+# the length backstop (validate_listing_text) would catch it. Their short heads
+# (e.g. "mid century art") are unaffected: they don't contain the banned phrase.
+OVERLENGTH_TAG_TERMS = (
+    "mid century modern wall art",
+    "continuous line illustration",
+    "minimalist landscape print",
+    "geometric shapes wall art",
+    "single line drawing art",
+)
+_OVERLENGTH_TAG_PATTERN = re.compile(
+    "|".join(re.escape(term) for term in OVERLENGTH_TAG_TERMS), re.IGNORECASE
+)
+
+# R1: 9 of 9 non-ad results for "wall art print" were personalisation products this
+# shop cannot serve; nothing dated belongs on an evergreen listing either.
+BANNED_TAG_TERMS = (
+    "custom", "personalised", "personalized", "name print", "couple portrait",
+    "2026", "calendar",
+)
+_BANNED_TAG_PATTERN = re.compile(
+    "|".join(rf"\b{re.escape(term)}\b" for term in BANNED_TAG_TERMS), re.IGNORECASE
+)
+
+# Title must not carry a brand/shop name, a size (v4.12: sizes are variants, so a
+# size in the title would be wrong for five of the six variants), or a set
+# quantity. One pattern, same construction as _FORBIDDEN_PATTERN above.
+_TITLE_BRAND_TERMS = ("qhoto", "etsy")
+_TITLE_SIZE_LABELS = tuple(image_crop.SIZE_INCHES.keys())
+_TITLE_BANNED_PATTERN = re.compile(
+    "|".join(
+        [rf"\b{re.escape(term)}\b" for term in _TITLE_BRAND_TERMS]
+        + [rf"\b{re.escape(size)}\b" for size in _TITLE_SIZE_LABELS]
+        + [r"\bset of\b", r"\d+\s*x\s*\d+", r"\d+\s*(cm|inch(?:es)?|in)\b", r"\d+\s*\""]
+    ),
+    re.IGNORECASE,
+)
+
 DRAFT_TEXT_PROMPT_TEMPLATE = (
     "The image above IS the artwork this listing sells. Look at it and describe what is "
     "actually there - its subject, medium, palette and mood. Where the artwork and the "
@@ -61,6 +135,23 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "{image_count} images in this order: {image_types}. Write one "
     "short, descriptive alt text per image, in the same order, distinguishing a flat print "
     "mockup shot from a lifestyle/room-context shot.\n\n"
+    "TITLE FORMULA: write the title as short comma-separated clauses (4 to 5 of them), "
+    "commas only - never a pipe, colon or dash as a separator. Front-load the artwork's "
+    "subject in the first clause. The whole title must be at most {max_title_length} "
+    "characters AND at most {max_title_words} words - both limits apply separately. Never "
+    "repeat the same word more than {max_word_repeats} times. Never name a size (no 'A2', "
+    "no 'set of 3', no inch/cm measurements - every size is a variant, not a listing "
+    "attribute) and never name this shop or 'Etsy'. For the medium clause prefer 'art "
+    "print' or 'wall art' over 'poster'.\n\n"
+    "TAG BANDS: write exactly {max_tags} tags across five bands - "
+    "{tag_bands}. Every tag at most {max_tag_length} characters: where a good phrase is "
+    "over {max_tag_length} characters, put the full phrase in the title and only its short "
+    "head (under {max_tag_length} chars) as the tag. No two tags may be the exact same "
+    "string, and no more than {max_tags_sharing_head_noun} tags should repeat the title's "
+    "head noun - spend the rest of the budget on the other bands. Never include "
+    "personalisation wording ('custom', 'personalised', 'name print', 'couple portrait') "
+    "or a dated term ('2026', 'calendar') - this shop cannot serve personalised or dated "
+    "products.\n\n"
     "Reply with ONLY a JSON object with keys 'title' (string), 'tags' (list of strings), "
     "'description' (string), and 'alt_texts' (list of strings, same length and order as the "
     "gallery), no other text."
@@ -242,6 +333,115 @@ def validate_listing_text(title: str, tags: list, description: str = "", alt_tex
     check_seasonal_terms(title, tags, description, alt_texts)
 
 
+def _title_head_noun(title: str) -> str:
+    """First alphabetic word of the title, lowered - the heuristic stand-in for
+    "the title's head noun" (§2.2). The subject is front-loaded by the same
+    formula this validates, so the first word is a reasonable proxy without
+    parsing part-of-speech."""
+    words = re.findall(r"[A-Za-z]+", title)
+    return words[0].lower() if words else ""
+
+
+def validate_draft_formula(title: str, tags: list) -> None:
+    """GL-53-shaped: the title formula and tag bands are prompted (see
+    DRAFT_TEXT_PROMPT_TEMPLATE) AND enforced here, raising ValueError with feedback
+    a model can act on so build_compliance_draft's 3-attempt retry loop keeps
+    working. Called alongside validate_listing_text, never in place of it - that
+    stays the Etsy-limit backstop (E11's no-tags call still exercises it alone).
+    """
+    # §2.2: 140 chars AND 15 words are separate limits - a 15-word title can still
+    # exceed 140 chars. validate_listing_text already enforces the char limit as the
+    # Etsy-format backstop; this duplicates that one check locally so the two limits
+    # are provably independent from this function alone, same as the acceptance
+    # criteria states them.
+    if len(title) > MAX_TITLE_LENGTH:
+        raise ValueError(
+            f"title is {len(title)} chars, exceeds the {MAX_TITLE_LENGTH}-char limit: {title!r}"
+        )
+
+    clauses = [clause.strip() for clause in title.split(",")]
+    clause_count = len(clauses)
+    if not (MIN_TITLE_CLAUSES <= clause_count <= MAX_TITLE_CLAUSES):
+        raise ValueError(
+            f"title has {clause_count} comma-separated clause(s) (need "
+            f"{MIN_TITLE_CLAUSES}-{MAX_TITLE_CLAUSES} while #207 is open): {title!r}. "
+            f"Rewrite it as {MIN_TITLE_CLAUSES}-{MAX_TITLE_CLAUSES} short clauses "
+            f"separated by commas."
+        )
+
+    for separator in TITLE_BANNED_SEPARATORS:
+        if separator in title:
+            raise ValueError(
+                f"title contains {separator!r}: separate slots with commas only, never a "
+                f"pipe, colon or dash. Rewrite {title!r} using commas."
+            )
+
+    word_count = len(title.split())
+    if word_count > MAX_TITLE_WORDS:
+        raise ValueError(
+            f"title has {word_count} words (max {MAX_TITLE_WORDS}): "
+            f"{title!r}. Drop {word_count - MAX_TITLE_WORDS} word(s)."
+        )
+
+    word_counts = Counter(word.strip(".,'\"").lower() for word in title.split())
+    for word, count in word_counts.items():
+        if word.isalpha() and count > MAX_WORD_REPEATS:
+            raise ValueError(
+                f"title repeats {word!r} {count} times (max {MAX_WORD_REPEATS}): {title!r}. "
+                f"Replace one occurrence with a synonym."
+            )
+
+    match = _TITLE_BANNED_PATTERN.search(title)
+    if match:
+        raise ValueError(
+            f"title contains {match.group(0)!r}: no brand/shop name, size or set quantity "
+            f"belongs in the title (sizes are variants under v4.12). Rewrite {title!r} "
+            f"without it."
+        )
+
+    if len(tags) != MAX_TAGS:
+        raise ValueError(
+            f"{len(tags)} tags provided, need exactly {MAX_TAGS} filling the five §2.2 "
+            f"bands ({', '.join(f'{count} {name}' for name, count in TAG_BANDS)}): {tags!r}."
+        )
+
+    seen = {}
+    for tag in tags:
+        key = tag.strip().lower()
+        if key in seen:
+            raise ValueError(
+                f"tag {tag!r} duplicates {seen[key]!r}: each of the {MAX_TAGS} tags must be "
+                f"a distinct string."
+            )
+        seen[key] = tag
+
+    for tag in tags:
+        match = _OVERLENGTH_TAG_PATTERN.search(tag)
+        if match:
+            raise ValueError(
+                f"tag {tag!r} carries the full phrase {match.group(0)!r}: a phrase over "
+                f"{MAX_TAG_LENGTH} chars belongs in the title, with only its short head as "
+                f"the tag. Shorten the tag to that head."
+            )
+        match = _BANNED_TAG_PATTERN.search(tag)
+        if match:
+            raise ValueError(
+                f"tag {tag!r} contains {match.group(0)!r}: no personalisation or dated terms "
+                f"- this shop cannot serve custom or dated products. Replace it with a "
+                f"long-tail aesthetic descriptor."
+            )
+
+    head_noun = _title_head_noun(title)
+    if head_noun:
+        sharing = [tag for tag in tags if re.search(rf"\b{re.escape(head_noun)}\b", tag, re.IGNORECASE)]
+        if len(sharing) > MAX_TAGS_SHARING_HEAD_NOUN:
+            raise ValueError(
+                f"{len(sharing)} tags repeat the title's head noun {head_noun!r} (max "
+                f"{MAX_TAGS_SHARING_HEAD_NOUN}): {sharing!r}. Spend the rest of the tag "
+                f"budget on the other §2.2 bands instead of repeating it."
+            )
+
+
 def get_primary_gallery(conn, candidate_id: int) -> list:
     rows = conn.execute(
         """
@@ -278,6 +478,12 @@ def build_draft_prompt(candidate: dict, image_types: list) -> str:
         image_count=len(image_types),
         image_types=", ".join(image_types),
         max_title_length=MAX_TITLE_LENGTH,
+        max_title_words=MAX_TITLE_WORDS,
+        max_word_repeats=MAX_WORD_REPEATS,
+        max_tags=MAX_TAGS,
+        max_tag_length=MAX_TAG_LENGTH,
+        max_tags_sharing_head_noun=MAX_TAGS_SHARING_HEAD_NOUN,
+        tag_bands=", ".join(f"{count} {name}" for name, count in TAG_BANDS),
     )
 
 
@@ -414,6 +620,7 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
                 draft = generate_draft_text(candidate, image_types, api_key=anthropic_api_key,
                                              retry_feedback=feedback)
                 validate_listing_text(draft["title"], draft["tags"], draft["description"], draft["alt_texts"])
+                validate_draft_formula(draft["title"], draft["tags"])
                 last_value_error = None
                 break
             except ValueError as exc:

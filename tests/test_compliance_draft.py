@@ -1,4 +1,5 @@
 import json as _json
+import re
 from datetime import datetime
 from unittest.mock import patch
 
@@ -475,11 +476,26 @@ def test_update_gallery_alt_text_raises_on_count_mismatch(tmp_path):
     conn.close()
 
 
+# Valid against validate_draft_formula (added by #208): 4 comma clauses, 15 words,
+# 104 chars, no repeated word >2x, no banned title term; 13 unique tags each <=20
+# chars, none over-length/banned, only 2 share the title's head noun ("sage").
+_FAKE_DRAFT_TITLE = (
+    "Sage Green Fern Botanical Print, Minimalist Herbarium Wall Art, "
+    "Bedroom Decor, Calm Neutral Nature Print"
+)
+_FAKE_DRAFT_TAGS = [
+    "sage fern print", "botanical wall art", "herbarium print", "minimalist nature",
+    "bedroom wall decor", "living room print", "calm neutral print", "nature lover gift",
+    "green plant art", "modern botanical", "leaf line art", "earthy home decor",
+    "soft sage palette",
+]
+
+
 def _fake_draft_response(alt_text_count=2):
     return {
         "text": _json.dumps({
-            "title": "Monstera Line Art Botanical Print",
-            "tags": ["botanical", "wall art"],
+            "title": _FAKE_DRAFT_TITLE,
+            "tags": _FAKE_DRAFT_TAGS,
             "description": "A minimalist botanical print.",
             "alt_texts": [f"alt text {i}" for i in range(alt_text_count)],
         })
@@ -501,7 +517,7 @@ def test_build_compliance_draft_happy_path_writes_listing_text_and_alt_text(tmp_
         "SELECT * FROM listing_texts WHERE id = ?", (result["listing_text_id"],)
     ).fetchone()
     assert listing_row["candidate_id"] == candidate_id
-    assert listing_row["title"] == "Monstera Line Art Botanical Print"
+    assert listing_row["title"] == _FAKE_DRAFT_TITLE
     assert listing_row["who_made"] == "i_did"
 
     gallery = conn.execute(
@@ -809,4 +825,133 @@ def test_run_compliance_draft_cycle_returns_empty_list_when_nothing_ready(tmp_pa
     processed_ids = compliance_draft.run_compliance_draft_cycle(conn, static_config=STATIC_CONFIG)
 
     assert processed_ids == []
+    conn.close()
+
+
+# --- #208: title formula and tag bands, enforced by validate_draft_formula ---
+
+def test_title_formula_and_tag_bands_enforced():
+    valid_title = _FAKE_DRAFT_TITLE
+    valid_tags = _FAKE_DRAFT_TAGS
+
+    # accepts the worked example (spec §5) and the module's own compliant fixture
+    compliance_draft.validate_draft_formula(
+        "Sage Green Fern Botanical Print, Minimalist Herbarium Wall Art, Bedroom "
+        "Decor, Calm Neutral Nature Print",
+        valid_tags,
+    )
+    compliance_draft.validate_draft_formula(valid_title, valid_tags)
+
+    # a phrase over 20 chars routes to the title; its short head is fine as a tag
+    compliance_draft.validate_draft_formula(valid_title, valid_tags[1:] + ["mid century art"])
+
+    title_cases = {
+        "pipe separator": (
+            "Sage Green Fern | Botanical Print, Minimalist Herbarium Wall Art, "
+            "Bedroom Decor, Calm Neutral Nature Print",
+            "|",
+        ),
+        "colon separator": (
+            "Sage Green Fern: Botanical Print, Minimalist Herbarium Wall Art, "
+            "Bedroom Decor, Calm Neutral Nature Print",
+            ":",
+        ),
+        "16 words at <=140 chars": (
+            "Sage Fern Print, Minimalist Herbarium Wall Art Piece, Bedroom Decor "
+            "Room, Calm Neutral Nature Warm Print",
+            "16 words",
+        ),
+        "141+ chars at <=15 words": (
+            "Extraordinarily Photorealistic Botanical Fernwork, Minimalistically "
+            "Herbarium Wallpiece Artistry, Bedroomly Decorative Ambiance, "
+            "Calmnessful Neutralistic Natureplex",
+            "exceeds the 140-char limit",
+        ),
+        "3 comma clauses": (
+            "Sage Fern Botanical Print, Minimalist Wall Art, Calm Neutral Print",
+            "3 comma-separated clause",
+        ),
+        "word repeated 3x": (
+            "Sage Sage Fern Print, Minimalist Herbarium Wall Art, Bedroom Decor, "
+            "Calm Neutral Sage Print",
+            "repeats 'sage' 3 times",
+        ),
+        "size label": (
+            "A2 Sage Fern Botanical Print, Minimalist Herbarium Wall Art, "
+            "Bedroom Decor, Calm Neutral Print",
+            "'A2'",
+        ),
+        "set quantity": (
+            "Set Of 3 Sage Fern Prints, Minimalist Herbarium Wall Art, Bedroom "
+            "Decor, Calm Neutral Print",
+            "'Set Of'",
+        ),
+        "shop name": (
+            "Qhoto Sage Fern Botanical Print, Minimalist Herbarium Wall Art, "
+            "Bedroom Decor, Calm Neutral Print",
+            "'Qhoto'",
+        ),
+    }
+    for label, (title, expected) in title_cases.items():
+        with pytest.raises(ValueError, match=re.escape(expected)):
+            compliance_draft.validate_draft_formula(title, valid_tags)
+
+    tag_cases = {
+        "12 tags": (valid_tags[:12], "12 tags provided"),
+        "14 tags": (valid_tags + ["fresh floral decor"], "14 tags provided"),
+        "duplicate tag": (valid_tags[:12] + [valid_tags[0]], "duplicates"),
+        "custom tag": (valid_tags[:12] + ["custom botanical"], "'custom'"),
+        "dated tag": (valid_tags[:12] + ["2026 wall art"], "'2026'"),
+        "7 tags sharing head noun": (
+            [
+                "meadow wildflower", "meadow botanical", "meadow bloom art",
+                "meadow decor print", "meadow spring art", "wild meadow print",
+                "meadow sunset hue", "herbarium wall art", "bedroom wall decor",
+                "calm neutral print", "living room print", "earthy home decor",
+                "nature lover gift",
+            ],
+            "repeat the title's head noun 'meadow'",
+        ),
+    }
+    for label, (tags, expected) in tag_cases.items():
+        title = (
+            "Meadow Wildflower Botanical Print, Minimalist Herbarium Wall Art, "
+            "Bedroom Decor, Calm Neutral Nature Print"
+        ) if label == "7 tags sharing head noun" else valid_title
+        with pytest.raises(ValueError, match=re.escape(expected)):
+            compliance_draft.validate_draft_formula(title, tags)
+
+    # the five over-length terms named in #28 never survive as tags, whole
+    for term in compliance_draft.OVERLENGTH_TAG_TERMS:
+        with pytest.raises(ValueError, match="carries the full phrase"):
+            compliance_draft.validate_draft_formula(valid_title, valid_tags[1:] + [term])
+
+
+def test_build_compliance_draft_retries_after_formula_violation_then_succeeds(tmp_path):
+    # Proves validate_draft_formula's failures reach the retry loop the same way
+    # validate_listing_text's already do (GL-70's mechanism, #208 wires into it).
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+    bad_response = {
+        "text": _json.dumps({
+            "title": "Sage Fern Botanical Print, Minimalist Wall Art, Calm Neutral Print",
+            "tags": _FAKE_DRAFT_TAGS, "description": "A minimalist botanical print.",
+            "alt_texts": ["alt one", "alt two"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=[bad_response, _fake_draft_response(2)]) as mock_complete:
+        compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    assert mock_complete.call_count == 2
+    retry_prompt = mock_complete.call_args_list[1].args[0]
+    assert "previous attempt failed validation" in retry_prompt
+    assert "comma-separated clause" in retry_prompt
+
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
     conn.close()
