@@ -16,6 +16,36 @@ STATIC_CONFIG = {
     "etsy_shipping_profile_id": "",
 }
 
+# GL-10c: the model now writes only blocks 1-3 (80-110 words, 3 paragraphs, no size
+# wording) - generate_draft_text rejects anything shorter/longer/mis-shaped before it
+# ever reaches validate_listing_text. Every fake Claude response that flows through
+# generate_draft_text/build_compliance_draft needs prose this shape, even when the
+# test is really about something else (title length, forbidden terms, retries).
+VALID_DESCRIPTION_PROSE = (
+    "Bring a calm botanical moment into your space with this sage green monstera line "
+    "art print, drawn in a minimalist herbarium style that keeps every leaf vein crisp "
+    "and quietly detailed.\n\n"
+    "It suits a modern, plant-filled interior built around warm neutral tones, natural "
+    "textures, and simple, uncluttered furniture that lets the print do the talking.\n\n"
+    "This print looks equally at home above a bed in a calm bedroom, along a hallway "
+    "wall, or tucked into a quiet reading nook, adding a soft natural accent wherever "
+    "it hangs."
+)
+
+# Same shape and word count, with an AI-disclosure sentence folded into block 1 - for
+# tests that need generate_draft_text to succeed (valid prose shape) but
+# validate_listing_text to then reject the assembled description on GL-53 grounds.
+VALID_DESCRIPTION_PROSE_WITH_AI_DISCLOSURE = (
+    "Bring a calm botanical moment into your space with this sage green monstera line "
+    "art print, drawn in a minimalist herbarium style. Created using AI image "
+    "generation, then carefully finished for a quiet, contemporary wall.\n\n"
+    "It suits a modern, plant-filled interior built around warm neutral tones, natural "
+    "textures, and simple, uncluttered furniture that lets the print do the talking.\n\n"
+    "This print looks equally at home above a bed in a calm bedroom, along a hallway "
+    "wall, or tucked into a quiet reading nook, adding a soft natural accent wherever "
+    "it hangs."
+)
+
 
 def _fresh_conn(tmp_path):
     conn = db.get_connection(tmp_path / "test.sqlite3")
@@ -172,7 +202,7 @@ def test_validate_listing_text_accepts_clean_physical_poster_copy():
     compliance_draft.validate_listing_text(
         "Sage Green Branch Wall Art Print | Minimalist Botanical Poster",
         ["sage green wall art", "botanical print", "nature poster"],
-        "A made-to-order poster on premium matte paper. Every detail of the hand-painted "
+        "A made-to-order poster on premium matte paper. Every design detail of the "
         "branch stays crisp, and the airy neutral palette suits most rooms. Ships flat.",
     )
 
@@ -213,6 +243,155 @@ def test_draft_prompt_does_not_hand_the_model_the_forbidden_vocabulary():
 
     assert "AI-generated botanical" not in prompt
     assert "made-to-order poster" in prompt
+
+
+def test_draft_prompt_never_hardcodes_botanical():
+    # GL-10c: the shop also generates celestial, mid-century, landscape and abstract
+    # work - every listing was being told it is botanical.
+    assert "botanical" not in compliance_draft.DRAFT_TEXT_PROMPT_TEMPLATE.lower()
+
+
+# GL-10c §3. The six-block description, and the tripwire that keeps DISCLOSURE_TEXT
+# and GL-37's decision true across the rewrite.
+def test_description_blocks_and_no_prose_disclosure():
+    prose_a = VALID_DESCRIPTION_PROSE
+    prose_b = (
+        "A calm celestial star map for a quiet corner, drawn in a fine gold line "
+        "against a deep midnight ground with a soft, hand-finished feel throughout "
+        "every constellation.\n\n"
+        "It suits a moody, romantic interior with warm low lighting and rich, dark "
+        "accent colours across the room.\n\n"
+        "This print sits well above a headboard, along a stairwell, or inside a "
+        "reading nook, adding a quiet dose of night sky wherever it hangs on the wall."
+    )
+
+    description_a = compliance_draft.assemble_description(prose_a)
+    description_b = compliance_draft.assemble_description(prose_b)
+
+    blocks_a = description_a.split("\n\n")
+    assert len(blocks_a) == 6
+    assert "\n\n".join(blocks_a[:3]) == prose_a
+    assert 80 <= len(prose_a.split()) <= 110
+
+    blocks_b = description_b.split("\n\n")
+    # Blocks 4-6 are byte-identical module constants regardless of the candidate.
+    assert blocks_a[3:] == blocks_b[3:] == list(compliance_draft.DESCRIPTION_STATIC_BLOCKS)
+
+    assert compliance_draft.DISCLOSURE_TEXT == ""
+    compliance_draft.check_forbidden_terms("A title", ["tag"], description_a)
+
+
+def test_description_static_blocks_carry_the_size_table_and_the_unframed_wording():
+    for size in compliance_draft.image_crop.SIZE_INCHES:
+        assert size in compliance_draft.DESCRIPTION_BLOCK_SIZES
+    assert "unframed" in compliance_draft.DESCRIPTION_BLOCK_SIZES
+    assert "shop-bought frame" in compliance_draft.DESCRIPTION_BLOCK_SIZES
+    # "framed" (as a claim about the product) never appears - its only occurrence
+    # is as part of "unframed".
+    assert compliance_draft.DESCRIPTION_BLOCK_SIZES.count("framed") == \
+        compliance_draft.DESCRIPTION_BLOCK_SIZES.count("unframed")
+
+
+def test_description_static_blocks_pass_validate_listing_text():
+    # The boilerplate itself cannot be the thing that trips the retry loop.
+    assembled = compliance_draft.assemble_description(VALID_DESCRIPTION_PROSE)
+    compliance_draft.validate_listing_text("A calm botanical print", ["botanical"], assembled)
+
+
+@pytest.mark.parametrize("term", compliance_draft.BRAND_VOICE_BANNED)
+def test_check_brand_voice_rejects_each_banned_term(term):
+    with pytest.raises(ValueError, match="banned brand-voice term"):
+        compliance_draft.check_brand_voice(f"A {term} print", [], "")
+
+
+def test_check_brand_voice_rejects_exclamation_mark():
+    with pytest.raises(ValueError, match="'!'"):
+        compliance_draft.check_brand_voice("A calm print!", [], "")
+
+
+def test_check_brand_voice_rejects_emoji():
+    with pytest.raises(ValueError, match="emoji"):
+        compliance_draft.check_brand_voice("A calm print \U0001F33F", [], "")
+
+
+def test_check_brand_voice_accepts_clean_copy():
+    compliance_draft.check_brand_voice(
+        "A calm botanical print", ["botanical"], VALID_DESCRIPTION_PROSE
+    )
+
+
+def test_check_prose_shape_rejects_too_short_and_too_long():
+    short_prose = "One.\n\nTwo.\n\nThree."
+    long_prose = VALID_DESCRIPTION_PROSE + " " + " ".join(["extra"] * 40)
+
+    with pytest.raises(ValueError, match="80-110 words"):
+        compliance_draft.check_prose_shape(short_prose)
+    with pytest.raises(ValueError, match="80-110 words"):
+        compliance_draft.check_prose_shape(long_prose)
+
+
+def test_check_prose_shape_accepts_95_words():
+    ninety_five_words = " ".join(["word"] * 33) + ".\n\n" + \
+        " ".join(["word"] * 33) + ".\n\n" + " ".join(["word"] * 29) + "."
+
+    compliance_draft.check_prose_shape(ninety_five_words)
+
+
+def test_check_prose_shape_rejects_size_wording():
+    prose_with_size = (
+        "Bring a calm botanical moment into your space with this sage green print, "
+        "available as an A1 poster or a 5x7 print, drawn in a minimalist herbarium "
+        "style with every leaf vein kept crisp and quietly detailed for the wall.\n\n"
+        "It suits a modern, plant-filled interior built around warm neutral tones, "
+        "natural textures, and simple, uncluttered furniture that lets the print do "
+        "the talking in any room.\n\n"
+        "This print looks equally at home above a bed in a calm bedroom, along a "
+        "hallway wall, or tucked into a quiet reading nook, adding a soft accent."
+    )
+
+    with pytest.raises(ValueError, match="size wording"):
+        compliance_draft.check_prose_shape(prose_with_size)
+
+
+def test_check_alt_text_not_title_echo_rejects_pure_keyword_echo():
+    with pytest.raises(ValueError, match="only repeats the title"):
+        compliance_draft.check_alt_text_not_title_echo(
+            "Botanical Print Bedroom Wall Art Minimalist",
+            ["botanical print bedroom wall art minimalist"],
+        )
+
+
+def test_check_alt_text_not_title_echo_accepts_a_real_description():
+    compliance_draft.check_alt_text_not_title_echo(
+        "Botanical Print Bedroom Wall Art Minimalist",
+        ["Fern line art print in a sage green frame on a cream bedroom wall"],
+    )
+
+
+def test_build_compliance_draft_recovers_when_first_attempt_trips_a_new_check(tmp_path):
+    # A new check must feed the retry loop the same way the older ones do.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
+    bad_response = {
+        "text": _json.dumps({
+            "title": "Sage Branch Wall Art Print",
+            "tags": ["botanical"],
+            "description": "Too short for the 80-110 word rule.",
+            "alt_texts": ["alt one", "alt two"],
+        })
+    }
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete",
+               side_effect=[bad_response, _fake_draft_response(2)]) as mock_complete:
+        compliance_draft.build_compliance_draft(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 10, 0, 0),
+        )
+
+    assert mock_complete.call_count == 2
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
+    conn.close()
 
 
 def test_get_primary_gallery_returns_images_in_order(tmp_path):
@@ -330,7 +509,7 @@ def test_generate_draft_text_returns_parsed_draft():
         "text": _json.dumps({
             "title": "Monstera Line Art Botanical Print",
             "tags": ["botanical", "wall art"],
-            "description": "A minimalist botanical print.",
+            "description": VALID_DESCRIPTION_PROSE,
             "alt_texts": ["Flat mockup of monstera line art print", "Monstera print shown in a living room"],
         })
     }
@@ -345,6 +524,8 @@ def test_generate_draft_text_returns_parsed_draft():
     assert draft["title"] == "Monstera Line Art Botanical Print"
     assert draft["tags"] == ["botanical", "wall art"]
     assert len(draft["alt_texts"]) == 2
+    # generate_draft_text assembles blocks 4-6 onto the model's prose before returning.
+    assert draft["description"] == compliance_draft.assemble_description(VALID_DESCRIPTION_PROSE)
 
 
 def test_generate_draft_text_raises_on_missing_key():
@@ -453,7 +634,7 @@ def _fake_draft_response(alt_text_count=2):
         "text": _json.dumps({
             "title": "Monstera Line Art Botanical Print",
             "tags": ["botanical", "wall art"],
-            "description": "A minimalist botanical print.",
+            "description": VALID_DESCRIPTION_PROSE,
             "alt_texts": [f"alt text {i}" for i in range(alt_text_count)],
         })
     }
@@ -545,7 +726,7 @@ def test_build_compliance_draft_marks_compliance_failed_on_validation_error(tmp_
     over_limit_title = "x" * (compliance_draft.MAX_TITLE_LENGTH + 1)
     fake_response = {
         "text": _json.dumps({
-            "title": over_limit_title, "tags": ["botanical"], "description": "desc",
+            "title": over_limit_title, "tags": ["botanical"], "description": VALID_DESCRIPTION_PROSE,
             "alt_texts": ["alt one", "alt two"],
         })
     }
@@ -568,7 +749,7 @@ def test_build_compliance_draft_retries_after_over_limit_title_then_succeeds(tmp
     over_limit_title = "x" * (compliance_draft.MAX_TITLE_LENGTH + 1)
     bad_response = {
         "text": _json.dumps({
-            "title": over_limit_title, "tags": ["botanical"], "description": "desc",
+            "title": over_limit_title, "tags": ["botanical"], "description": VALID_DESCRIPTION_PROSE,
             "alt_texts": ["alt one", "alt two"],
         })
     }
@@ -604,7 +785,7 @@ def test_build_compliance_draft_feeds_a_forbidden_term_back_as_retry_feedback(tm
     bad_response = {
         "text": _json.dumps({
             "title": "Sage Branch Wall Art | Printable Download",
-            "tags": ["botanical"], "description": "A print.",
+            "tags": ["botanical"], "description": VALID_DESCRIPTION_PROSE,
             "alt_texts": ["alt one", "alt two"],
         })
     }
@@ -633,7 +814,7 @@ def test_build_compliance_draft_fails_the_candidate_when_every_attempt_carries_a
         "text": _json.dumps({
             "title": "Sage Branch Wall Art Print",
             "tags": ["botanical"],
-            "description": "Created using AI image generation.",
+            "description": VALID_DESCRIPTION_PROSE_WITH_AI_DISCLOSURE,
             "alt_texts": ["alt one", "alt two"],
         })
     }

@@ -26,11 +26,25 @@ def _conn(tmp_path):
     return conn
 
 
+# GL-10c: generate_draft_text now requires exactly 3 paragraphs, 80-110 words, no
+# size wording - see compliance_draft.check_prose_shape.
+_VALID_DESCRIPTION_PROSE = (
+    "Bring a calm botanical moment into your space with this sage green monstera line "
+    "art print, drawn in a minimalist herbarium style that keeps every leaf vein crisp "
+    "and quietly detailed.\n\n"
+    "It suits a modern, plant-filled interior built around warm neutral tones, natural "
+    "textures, and simple, uncluttered furniture that lets the print do the talking.\n\n"
+    "This print looks equally at home above a bed in a calm bedroom, along a hallway "
+    "wall, or tucked into a quiet reading nook, adding a soft natural accent wherever "
+    "it hangs."
+)
+
+
 def _draft_response(alt_count=2):
     return {"text": _json.dumps({
         "title": "Monstera Line Art Botanical Print",
         "tags": ["botanical"],
-        "description": "A minimalist botanical print, shipped to you.",
+        "description": _VALID_DESCRIPTION_PROSE,
         "alt_texts": [f"alt {i}" for i in range(alt_count)],
     })}
 
