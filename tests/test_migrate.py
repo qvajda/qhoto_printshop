@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 import migrate
 import pipeline.db as db
@@ -126,3 +127,13 @@ def test_check_raises_stale_schema_not_operational_error_on_virgin_db(tmp_path):
     }
     assert tables == set(), "check() must not create any tables"
     conn.close()
+
+
+def test_every_migration_script_is_registered():
+    # GL-10c/1 and GL-31 both shipped a migrate_*.py that was never added to
+    # MIGRATIONS: schema_version still equalled len(MIGRATIONS), so check()
+    # passed and the live DB silently missed the columns until a stage crashed
+    # on "no such column". The registry, not schema.sql, is what a real DB gets.
+    scripts = {p.stem for p in Path(migrate.__file__).resolve().parent.glob("migrate_*.py")}
+    registered = {f"migrate_{name}" for _, name, _ in migrate.MIGRATIONS}
+    assert scripts == registered, f"unregistered: {sorted(scripts - registered)}"

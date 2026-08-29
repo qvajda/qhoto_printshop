@@ -20,8 +20,11 @@ import pipeline.artwork_store as artwork_store
 import pipeline.db as db
 import migrate_base_artwork_columns
 import migrate_candidates_art_brief
+import migrate_candidates_dominant_colour
 import migrate_critic_pass_attempts_columns
 import migrate_generation_attempts_table
+import migrate_gl31_reminder_sent_at
+import migrate_gl32_create_intent
 import migrate_gl36_listing_missing
 import migrate_gl45_db_identity
 import migrate_gl51_relative_artefact_paths
@@ -47,6 +50,9 @@ MIGRATIONS = [
     (8, "gl45_db_identity", migrate_gl45_db_identity.migrate),
     (9, "pending_decisions", migrate_pending_decisions.migrate),
     (10, "gl51_relative_artefact_paths", migrate_gl51_relative_artefact_paths.migrate),
+    (11, "candidates_dominant_colour", migrate_candidates_dominant_colour.migrate),
+    (12, "gl31_reminder_sent_at", migrate_gl31_reminder_sent_at.migrate),
+    (13, "gl32_create_intent", migrate_gl32_create_intent.migrate),
 ]
 
 
