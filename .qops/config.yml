@@ -28,7 +28,7 @@ pickup_task: true
 
 # Whether the registered pickup task passes `--launch`. Default off: the
 # flagless form prints what it would have picked and spends nothing.
-pickup_launch: false
+pickup_launch: true
 
 # How long the brief stays quiet about `pickup-loop` before it says the loop
 # has not completed a run. A repo whose loop has never run is silent, because

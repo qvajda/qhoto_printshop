@@ -27,8 +27,9 @@ def sweep_artefacts(db_path) -> dict:
     exception text as its value (GL-46), so the report never silently drops
     a row instead of counting it.
 
-    Resolution is Path(value) directly today; #200 (GL-51a) is expected to
-    swap this one call site for a resolver, once relative paths exist.
+    Resolution goes through resolve_artefact_path: since #200 (GL-51a) stored
+    local values are relative to config.artefact_root(), so checking Path(value)
+    raw resolves them against the CWD and reports every migrated row missing.
     """
     resolvable = 0
     skipped = 0
@@ -45,7 +46,7 @@ def sweep_artefacts(db_path) -> dict:
                 try:
                     if value.startswith("http://") or value.startswith("https://"):
                         skipped += 1
-                    elif Path(value).exists():
+                    elif Path(resolve_artefact_path(value)).exists():
                         resolvable += 1
                     else:
                         missing.append({"table": table, "row_id": row_id, "value": value})
