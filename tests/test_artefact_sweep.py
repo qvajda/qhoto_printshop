@@ -99,3 +99,20 @@ def test_an_existing_local_artefact_is_resolvable(tmp_path):
 
     assert report["resolvable"] == 1
     assert report["missing"] == []
+
+
+def test_a_relative_path_resolves_against_the_artefact_root_not_the_cwd(tmp_path, monkeypatch):
+    """GL-51a regression: after #200 stored local values are relative to
+    config.artefact_root(). Checking Path(value) raw resolved them against the
+    CWD, so every migrated row was reported missing on a healthy DB."""
+    root = tmp_path / "artefacts"
+    root.mkdir()
+    (root / "1.png").write_bytes(b"x")
+    monkeypatch.setenv("ARTEFACT_ROOT", str(root))
+
+    db_path = _db_with(tmp_path, candidates=["1.png"])
+
+    report = artwork_store.sweep_artefacts(db_path)
+
+    assert report["missing"] == []
+    assert report["resolvable"] == 1
