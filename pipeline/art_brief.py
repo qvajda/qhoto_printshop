@@ -14,7 +14,11 @@ import pipeline.brief_lint as brief_lint
 # GL-63 (#90): bumped to "v3" - the closing instruction now permits one
 # trailing `OCCUPANT:` declaration line, so a reply written under v2 has a
 # different expected shape than one written under v3.
-BRIEF_TEMPLATE_VERSION = "v3"
+# GL-10c/1 (#207): bumped to "v4" - two more trailing declaration lines
+# (COLOUR, IDIOM) so dominant_colour/named_idiom can be threaded to draft
+# time (spec 2026-08-07-gl10b-listing-copy-spec.md §1.3 option B) without
+# parsing them back out of the brief prose.
+BRIEF_TEMPLATE_VERSION = "v4"
 
 # The niche string is a *scene* leak vector - it can come from a hardcoded
 # research.py template, an LLM's free-text trend research, or a raw Telegram
@@ -126,7 +130,7 @@ If the described scene reads as landscape-native (a wide vista, a horizon-driven
 
 Also apply these rules, expressed only through what you choose to write (the image model will never see this instruction, so do not mention avoidance in your output): never reference a named artist's style, never describe a recognizable character, franchise, or logo, never imply celebrity likeness, and never describe the piece as hand-painted or one-of-a-kind original - it is a print reproduction.{sibling_note}
 
-Reply with ONLY the brief text. No preamble, no quotation marks, no markdown, no labels. After the brief text, on its own trailing line, declare whether it uses a secondary occupant: write exactly "OCCUPANT: yes" if it does, or "OCCUPANT: none" if it does not."""
+Reply with ONLY the brief text. No preamble, no quotation marks, no markdown, no labels. After the brief text, on their own trailing lines (any order), declare: whether it uses a secondary occupant, write exactly "OCCUPANT: yes" if it does, or "OCCUPANT: none" if it does not; the single dominant colour word from the palette above, as "COLOUR: <word>"; and the named art idiom from rule 1, as "IDIOM: <name>"."""
 
 
 # R3-a (FM-10, docs/2026-07-21-generation-quality-round3-plan.md sec 3):
@@ -183,7 +187,34 @@ def build_brief_prompt(candidate: dict, *, sibling_briefs: list = None) -> str:
 # naming this row exists to avoid). "yes"/"none" is an allowlist, not a
 # noun - anything else (including a missing line) is undeclared so a typo
 # can't silently disable the batch-level cap in brief_lint.
-_OCCUPANT_LINE_RE = re.compile(r"\n?\s*OCCUPANT:\s*(\S+)\s*$", re.IGNORECASE)
+#
+# GL-10c/1 (#207): generalised to peel any of a known set of trailing
+# `KEY: value` lines, order-independent, instead of one occupant-only
+# regex - COLOUR/IDIOM need the same "reply degrades gracefully" tolerance
+# split_occupant_declaration already has. The key set is fixed (not fully
+# generic) so an unrelated prose line ending in "Something: like this" is
+# never mistaken for a declaration.
+_KNOWN_DECLARATION_KEYS = ("occupant", "colour", "idiom")
+_DECLARATION_LINE_RE = re.compile(
+    r"^\s*(" + "|".join(_KNOWN_DECLARATION_KEYS) + r")\s*:\s*(.*)$", re.IGNORECASE
+)
+
+
+def split_trailing_declarations(raw: str) -> tuple:
+    """Peels every trailing `KEY: value` declaration line off the end of a
+    model reply (KEY one of _KNOWN_DECLARATION_KEYS, any order), returning
+    (prose, {key_lower: value}). Stops at the first trailing line that
+    isn't a declaration, so prose is never eaten past that point."""
+    lines = raw.rstrip().split("\n")
+    declarations = {}
+    while lines:
+        match = _DECLARATION_LINE_RE.match(lines[-1].strip())
+        if not match:
+            break
+        key, value = match.group(1).lower(), match.group(2).strip()
+        declarations[key] = value
+        lines.pop()
+    return "\n".join(lines).strip(), declarations
 
 
 def split_occupant_declaration(raw: str) -> tuple:
@@ -191,23 +222,27 @@ def split_occupant_declaration(raw: str) -> tuple:
     "yes", "none", or "undeclared". Tolerates a reply with no trailing
     OCCUPANT line (returns the whole reply, "undeclared") so a model that
     ignores the instruction degrades to pre-GL-63 behaviour instead of
-    corrupting the brief."""
-    match = _OCCUPANT_LINE_RE.search(raw)
-    if not match:
+    corrupting the brief. Thin wrapper over split_trailing_declarations so
+    this function's existing callers/tests stay unchanged."""
+    prose, declarations = split_trailing_declarations(raw)
+    value = declarations.get("occupant")
+    if value is None:
         return raw.strip(), "undeclared"
-    value = match.group(1).lower()
-    occupant = value if value in ("yes", "none") else "undeclared"
-    prose = raw[: match.start()].strip()
+    occupant = value.lower() if value.lower() in ("yes", "none") else "undeclared"
     return prose, occupant
 
 
 def generate_art_brief(candidate: dict, *, api_key: str = None, sibling_briefs: list = None) -> dict:
     """One Haiku-class Anthropic text call turning a candidate's raw research
     niche into a <=60(-75)-word positive visual brief. Pure function - does
-    not touch the DB; callers persist the result to candidates.art_brief.
-    Returns {"art_brief": str, "occupant": "yes"|"none"|"undeclared"} (GL-63,
-    #90) - the occupant declaration is parsed off the reply's trailing line
-    and never appears in the returned art_brief prose.
+    not touch the DB; callers persist the result to candidates.art_brief
+    (dominant_colour/named_idiom too, GL-10c/1 #207).
+    Returns {"art_brief": str, "occupant": "yes"|"none"|"undeclared",
+    "dominant_colour": str|None, "named_idiom": str|None} - all three
+    declarations are parsed off the reply's trailing lines and never appear
+    in the returned art_brief prose. colour/idiom are free text, not an
+    allowlist like occupant: an absent or empty declaration degrades to
+    None rather than a guessed value.
 
     `sibling_briefs` (round-2, fixes FM-5 batch monotony): the brief texts
     already written earlier in the same batch run, passed by
@@ -228,5 +263,15 @@ def generate_art_brief(candidate: dict, *, api_key: str = None, sibling_briefs: 
         # word cap is enforced by the prompt and brief_lint, not by max_tokens).
         prompt, api_key=api_key, max_tokens=600, model=anthropic_client.HAIKU_MODEL
     )
-    prose, occupant = split_occupant_declaration(result["text"].strip())
-    return {"art_brief": prose, "occupant": occupant}
+    prose, declarations = split_trailing_declarations(result["text"].strip())
+    occupant_value = declarations.get("occupant")
+    occupant = (
+        occupant_value.lower() if occupant_value and occupant_value.lower() in ("yes", "none")
+        else "undeclared"
+    )
+    return {
+        "art_brief": prose,
+        "occupant": occupant,
+        "dominant_colour": declarations.get("colour") or None,
+        "named_idiom": declarations.get("idiom") or None,
+    }

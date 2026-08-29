@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS candidates (
   base_image_sha256 TEXT,
   base_replicate_delivery_url TEXT,
   art_brief TEXT,
+  dominant_colour TEXT,
+  named_idiom TEXT,
   status TEXT NOT NULL CHECK(status IN (
     'pending','generating','primary_review','compliance_failed','failed','abandoned','completed'
   )),

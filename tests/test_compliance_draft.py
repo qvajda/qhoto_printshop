@@ -272,6 +272,33 @@ def test_seasonal_niche_never_reaches_the_prompt(niche):
     prompt = compliance_draft.build_draft_prompt({"niche": niche}, ["flat_mockup"])
 
     assert compliance_draft._SEASONAL_PATTERN.search(prompt.split("niche:")[1].split(".")[0]) is None
+
+
+def test_draft_prompt_drops_absent_colour_slot():
+    # GL-10c/1 (#207) named test: a candidate with no dominant_colour must get no
+    # colour slot at all - never a slot filled with a guessed/placeholder word,
+    # since a wrong colour word in a title is worse than a missing one.
+    candidate = {"niche": "monstera line art", "dominant_colour": None, "named_idiom": None}
+
+    prompt = compliance_draft.build_draft_prompt(candidate, ["flat_mockup"])
+
+    assert "Dominant colour" not in prompt
+    assert "Named art idiom" not in prompt
+
+
+def test_draft_prompt_includes_colour_and_idiom_when_present():
+    candidate = {
+        "niche": "monstera line art",
+        "dominant_colour": "terracotta",
+        "named_idiom": "mid-century modern botanical",
+    }
+
+    prompt = compliance_draft.build_draft_prompt(candidate, ["flat_mockup"])
+
+    assert "Dominant colour: terracotta" in prompt
+    # sanitize_niche (shared with art_brief/niche, per plan) treats hyphens as
+    # slug separators, so "mid-century" comes out "mid century".
+    assert "Named art idiom: mid century modern botanical" in prompt
     assert "EVERGREEN" in prompt
 
 

@@ -185,10 +185,53 @@ def test_generate_art_brief_calls_anthropic_complete_and_strips_result():
             api_key="test-key",
         )
 
-    assert result == {"art_brief": "A dense mid-century modern botanical bouquet.", "occupant": "undeclared"}
+    assert result == {
+        "art_brief": "A dense mid-century modern botanical bouquet.",
+        "occupant": "undeclared",
+        "dominant_colour": None,
+        "named_idiom": None,
+    }
     assert "monstera line art" in captured["prompt"]
     assert captured["api_key"] == "test-key"
     assert captured["model"] == anthropic_client.HAIKU_MODEL
+
+
+def test_generate_art_brief_parses_colour_and_idiom_declarations():
+    def fake_complete(prompt, *, api_key=None, max_tokens=1024, model=None):
+        return {
+            "text": (
+                "A dense mid-century modern botanical bouquet.\n"
+                "IDIOM: mid-century modern botanical\n"
+                "OCCUPANT: none\n"
+                "COLOUR: terracotta"
+            )
+        }
+
+    with patch("pipeline.art_brief.anthropic_client.complete", side_effect=fake_complete):
+        result = art_brief.generate_art_brief(
+            {"niche": "monstera line art", "trend_source": None}
+        )
+
+    assert result == {
+        "art_brief": "A dense mid-century modern botanical bouquet.",
+        "occupant": "none",
+        "dominant_colour": "terracotta",
+        "named_idiom": "mid-century modern botanical",
+    }
+
+
+def test_generate_art_brief_degrades_colour_and_idiom_to_none_when_absent():
+    def fake_complete(prompt, *, api_key=None, max_tokens=1024, model=None):
+        return {"text": "A dense mid-century modern botanical bouquet.\nOCCUPANT: none"}
+
+    with patch("pipeline.art_brief.anthropic_client.complete", side_effect=fake_complete):
+        result = art_brief.generate_art_brief(
+            {"niche": "monstera line art", "trend_source": None}
+        )
+
+    assert result["dominant_colour"] is None
+    assert result["named_idiom"] is None
+    assert result["art_brief"] == "A dense mid-century modern botanical bouquet."
 
 
 def test_generate_art_brief_threads_sibling_briefs_into_prompt():
@@ -223,3 +266,47 @@ def test_split_occupant_declaration_tolerates_a_reply_without_one():
 
     assert occupant == "undeclared"
     assert prose == "A dense mid-century modern botanical bouquet."
+
+
+def test_split_trailing_declarations_is_order_independent():
+    prose, declarations = art_brief.split_trailing_declarations(
+        "A dense mid-century modern botanical bouquet.\n"
+        "COLOUR: terracotta\n"
+        "IDIOM: mid-century modern botanical\n"
+        "OCCUPANT: yes"
+    )
+
+    assert prose == "A dense mid-century modern botanical bouquet."
+    assert declarations == {
+        "colour": "terracotta",
+        "idiom": "mid-century modern botanical",
+        "occupant": "yes",
+    }
+
+
+def test_split_trailing_declarations_tolerates_only_occupant_present():
+    prose, declarations = art_brief.split_trailing_declarations(
+        "A dense mid-century modern botanical bouquet.\nOCCUPANT: none"
+    )
+
+    assert prose == "A dense mid-century modern botanical bouquet."
+    assert declarations == {"occupant": "none"}
+
+
+def test_split_trailing_declarations_tolerates_no_declarations():
+    prose, declarations = art_brief.split_trailing_declarations(
+        "A dense mid-century modern botanical bouquet."
+    )
+
+    assert prose == "A dense mid-century modern botanical bouquet."
+    assert declarations == {}
+
+
+def test_build_brief_prompt_unchanged_by_dominant_colour_and_named_idiom_fields():
+    # GL-10c/1 (#207) spec §1.4: dominant_colour/named_idiom are consumed only
+    # by the copy stage - they must never re-enter build_brief_prompt's output,
+    # the defect class that made the first live run print lifestyle mockups.
+    candidate = {"niche": "monstera line art", "trend_source": None}
+    candidate_with_fields = dict(candidate, dominant_colour="terracotta", named_idiom="Bauhaus")
+
+    assert art_brief.build_brief_prompt(candidate) == art_brief.build_brief_prompt(candidate_with_fields)
