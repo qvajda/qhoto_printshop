@@ -118,11 +118,11 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "leaf over an image of a red cardinal, and the critic rejected it three times.)\n"
     "Art brief the artwork was generated from, as intent only: {art_brief}\n"
     "{colour_line}{idiom_line}\n"
-    "You are writing an Etsy listing draft for a botanical/minimalist wall art poster "
-    "print, niche: {niche}. THE PRODUCT: a physical, made-to-order poster, printed on "
-    "premium matte paper and shipped to the buyer. It is NOT a digital file, NOT a "
-    "printable, NOT a download, and nothing is printed at home - never describe it as "
-    "any of those, in the title, in a tag, or in the description. "
+    "You are writing an Etsy listing draft for a wall art poster print, niche: {niche}. "
+    "THE PRODUCT: a physical, made-to-order poster, printed on premium matte paper and "
+    "shipped to the buyer. It is NOT a digital file, NOT a printable, NOT a download, and "
+    "nothing is printed at home - never describe it as any of those, in the title, in a "
+    "tag, or in the description. "
     "This listing must comply with Etsy's format limits: the title must be at most "
     "{max_title_length} characters, and there must be at most 13 tags and each tag at "
     "most 20 characters. Do NOT include any AI-disclosure or production-partner "
@@ -131,10 +131,21 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "so never name a holiday, festival, sale event or dated season (no Christmas, "
     "Diwali, Black Friday, New Year, 'for the holidays'). Describing the artwork's own "
     "mood or palette as autumnal or wintry is fine; naming a date is not.\n\n"
+    "Write the DESCRIPTION as exactly THREE short paragraphs, separated by a single blank "
+    "line, totalling 80-110 words: (1) an opening naming the subject, its named art idiom "
+    "and its dominant colour, benefit-led rather than spec-led; (2) one sentence on the "
+    "interior style this suits; (3) one sentence naming two or three rooms it suits. Do "
+    "NOT mention a size, a measurement, an inch, a centimetre or any size code (A1, A2, "
+    "A3, 5x7, 8x12, 10x24) anywhere in the description - sizes, printing, delivery and a "
+    "colour note are appended by the shop after your text and must not be written by you. "
+    "Keep the voice plain, specific and calm: no exclamation marks, no emoji, and never "
+    "'stunning', 'must-have', 'perfect gift for anyone', 'hand-drawn', 'hand-painted' or "
+    "'original painting' - this is a printed reproduction, not a one-of-a-kind artwork.\n\n"
     "The product gallery (mockup photographs of this same artwork, not shown to you) has "
     "{image_count} images in this order: {image_types}. Write one "
     "short, descriptive alt text per image, in the same order, distinguishing a flat print "
-    "mockup shot from a lifestyle/room-context shot.\n\n"
+    "mockup shot from a lifestyle/room-context shot. Describe what the photograph actually "
+    "shows - never just repeat the title's own keywords.\n\n"
     "TITLE FORMULA: write the title as short comma-separated clauses (4 to 5 of them), "
     "commas only - never a pipe, colon or dash as a separator. Front-load the artwork's "
     "subject in the first clause. The whole title must be at most {max_title_length} "
@@ -153,8 +164,8 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "or a dated term ('2026', 'calendar') - this shop cannot serve personalised or dated "
     "products.\n\n"
     "Reply with ONLY a JSON object with keys 'title' (string), 'tags' (list of strings), "
-    "'description' (string), and 'alt_texts' (list of strings, same length and order as the "
-    "gallery), no other text."
+    "'description' (string, the three paragraphs above only), and 'alt_texts' (list of "
+    "strings, same length and order as the gallery), no other text."
 )
 
 
@@ -249,6 +260,154 @@ _SEASONAL_PATTERN = re.compile(
 NEUTRAL_NICHE = "botanical minimalist wall art"
 
 
+# GL-10c §3. Blocks 4-6 of the description are facts, identical on every listing,
+# so they are module constants rendered once - never model output. A model
+# regenerating "SIZES" per listing risks stating a wrong size (CLAUDE.md).
+def _format_size_line(size: str) -> str:
+    short_in, long_in = image_crop.SIZE_INCHES[size]
+    return f"{size}: {short_in}\" x {long_in}\" ({short_in * 2.54:.1f}cm x {long_in * 2.54:.1f}cm)"
+
+
+# Block 4. Derived from image_crop.SIZE_INCHES (CLAUDE.md: the one table the
+# printed ratios and the Gelato DPI guard both read) rather than hand-typed, so
+# this cannot drift from what the shop actually prints. "unframed" appears once,
+# by decision (§5); "framed" never appears at all.
+DESCRIPTION_BLOCK_SIZES = (
+    "SIZES\n" + "\n".join(_format_size_line(size) for size in image_crop.SIZE_INCHES) +
+    "\nEvery print is sold unframed on premium matte paper. All sizes match standard "
+    "off-the-shelf dimensions, so it fits a standard shop-bought frame."
+)
+
+# Block 5. Only facts already recorded (docs/reference/static-config.md): made
+# to order, premium matte paper, free delivery (Gelato "Free shipping" profile,
+# EUR0 to every destination). No gsm, no tube-vs-flat and no packaging claim -
+# none of those are recorded anywhere, and an invented one is a buyer complaint.
+DESCRIPTION_BLOCK_PRINTING = (
+    "PRINTING & DELIVERY\n"
+    "Each print is made to order on premium matte paper once you place your order, "
+    "and delivery is free to every destination."
+)
+
+# Block 6.
+DESCRIPTION_BLOCK_COLOUR_NOTE = (
+    "A NOTE ON COLOUR\n"
+    "Screens vary, and matte paper reads a little softer and warmer than a backlit "
+    "screen - the colours you see here are a close guide, not an exact match."
+)
+
+DESCRIPTION_STATIC_BLOCKS = (
+    DESCRIPTION_BLOCK_SIZES, DESCRIPTION_BLOCK_PRINTING, DESCRIPTION_BLOCK_COLOUR_NOTE,
+)
+
+
+def assemble_description(prose: str) -> str:
+    """Joins the model's 3 prose blocks (1-3) with the 3 static blocks (4-6).
+
+    Called once, at the end of generate_draft_text, so every downstream reader
+    (validate_listing_text, write_listing_texts, publish) sees the shipped text.
+    """
+    return "\n\n".join([prose.strip(), *DESCRIPTION_STATIC_BLOCKS])
+
+
+DESCRIPTION_PROSE_MIN_WORDS = 80
+DESCRIPTION_PROSE_MAX_WORDS = 110
+
+# Sizes are variants (v4.12); block 4 owns them. A size word in the model's
+# prose is the same defect class as a hand-typed size table - it can say
+# something the shop does not actually print.
+_SIZE_WORDING_PATTERN = re.compile(
+    r'\bcm\b|\binch(?:es)?\b|"|\bA[123]\b|\b5x7\b|\b8x12\b|\b10x24\b', re.IGNORECASE,
+)
+
+
+def check_prose_shape(prose: str) -> None:
+    """Rejects a model description that isn't exactly the 3 required blocks (GL-10c §3).
+
+    Raised inside generate_draft_text, before assembly, so the feedback names the
+    prose the model actually wrote rather than the assembled text.
+    """
+    blocks = (prose or "").strip().split("\n\n")
+    if len(blocks) != 3 or any(not block.strip() for block in blocks):
+        raise ValueError(
+            f"description must be exactly 3 paragraphs (opening, interior context, "
+            f"placement) separated by a single blank line; got {len(blocks)}. Sizes, "
+            f"printing, delivery and a colour note are appended by the shop - do not "
+            f"write them."
+        )
+    word_count = len(prose.split())
+    if not (DESCRIPTION_PROSE_MIN_WORDS <= word_count <= DESCRIPTION_PROSE_MAX_WORDS):
+        raise ValueError(
+            f"description is {word_count} words; the 3 paragraphs must total "
+            f"{DESCRIPTION_PROSE_MIN_WORDS}-{DESCRIPTION_PROSE_MAX_WORDS} words."
+        )
+    size_match = _SIZE_WORDING_PATTERN.search(prose)
+    if size_match:
+        raise ValueError(
+            f"description contains the size wording {size_match.group(0)!r}: sizes are "
+            f"listing variants and block 4 owns them - never mention a size, a "
+            f"measurement or a size code in the description."
+        )
+
+
+# GL-10c §4. A banned-token list is testable; "write with a calm voice" is not.
+# Two classes: overclaiming adjectives/exclamation/emoji (register), and claims
+# the shop does not make - a print run is not hand-drawn, hand-painted or an
+# original painting.
+BRAND_VOICE_BANNED = (
+    "stunning", "must-have", "perfect gift for anyone",
+    "hand-drawn", "hand-painted", "original painting",
+)
+_EMOJI_PATTERN = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U00002190-\U000021FF\U00002B00-\U00002BFF]"
+)
+
+
+def check_brand_voice(title: str, tags: list, description: str, alt_texts: list = None) -> None:
+    """Rejects copy that breaks brand voice (GL-10c §4). See BRAND_VOICE_BANNED."""
+    fields = [("title", title), ("tags", ", ".join(tags)), ("description", description)]
+    for index, alt_text in enumerate(alt_texts or []):
+        fields.append((f"alt_texts[{index}]", alt_text))
+    for field, value in fields:
+        value = value or ""
+        lowered = value.lower()
+        for term in BRAND_VOICE_BANNED:
+            if term in lowered:
+                raise ValueError(
+                    f"{field} contains the banned brand-voice term {term!r}: the shop's "
+                    f"voice is plain, specific and calm, and never claims a hand-made "
+                    f"one-of-a-kind original. Rewrite the {field} without that term."
+                )
+        if "!" in value:
+            raise ValueError(
+                f"{field} contains '!': the copy voice is calm, never urgent - remove the "
+                f"exclamation mark from the {field}."
+            )
+        emoji_match = _EMOJI_PATTERN.search(value)
+        if emoji_match:
+            raise ValueError(
+                f"{field} contains an emoji {emoji_match.group(0)!r}: remove it, the copy "
+                f"voice carries no emoji."
+            )
+
+
+def check_alt_text_not_title_echo(title: str, alt_texts: list) -> None:
+    """Rejects an alt text that is just the title's own words (GL-10c §6).
+
+    Alt text is a genuine accessibility surface, so it must describe the image
+    itself. A real description always introduces at least one word the title
+    doesn't have; a pure keyword echo, by definition, cannot.
+    """
+    title_tokens = set(re.findall(r"[a-z0-9]+", (title or "").lower()))
+    for index, alt_text in enumerate(alt_texts or []):
+        alt_tokens = set(re.findall(r"[a-z0-9]+", (alt_text or "").lower()))
+        if alt_tokens and alt_tokens <= title_tokens:
+            raise ValueError(
+                f"alt_texts[{index}] ({alt_text!r}) only repeats the title's own words: "
+                f"alt text must describe what the photograph actually shows, not restate "
+                f"the title's keywords."
+            )
+
+
 def sanitize_niche(niche: str) -> str:
     """Strips event/season vocabulary out of a raw niche before it reaches the prompt.
 
@@ -331,6 +490,9 @@ def validate_listing_text(title: str, tags: list, description: str = "", alt_tex
             )
     check_forbidden_terms(title, tags, description, alt_texts)
     check_seasonal_terms(title, tags, description, alt_texts)
+    check_brand_voice(title, tags, description, alt_texts)
+    if alt_texts:
+        check_alt_text_not_title_echo(title, alt_texts)
 
 
 def _title_head_noun(title: str) -> str:
@@ -519,6 +681,8 @@ def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = No
             f"Claude draft response has {len(draft['alt_texts'])} alt_texts, "
             f"expected {len(image_types)} to match the gallery: {draft!r}"
         )
+    check_prose_shape(draft["description"])
+    draft["description"] = assemble_description(draft["description"])
     return draft
 
 

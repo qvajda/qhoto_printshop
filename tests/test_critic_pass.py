@@ -10,6 +10,19 @@ import pipeline.db as db
 import pipeline.http as http
 import pipeline.replicate_client as replicate_client
 
+# GL-10c: generate_draft_text now requires exactly 3 paragraphs, 80-110 words, no
+# size wording - see compliance_draft.check_prose_shape.
+_VALID_DESCRIPTION_PROSE = (
+    "Bring a calm botanical moment into your space with this sage green monstera line "
+    "art print, drawn in a minimalist herbarium style that keeps every leaf vein crisp "
+    "and quietly detailed.\n\n"
+    "It suits a modern, plant-filled interior built around warm neutral tones, natural "
+    "textures, and simple, uncluttered furniture that lets the print do the talking.\n\n"
+    "This print looks equally at home above a bed in a calm bedroom, along a hallway "
+    "wall, or tucked into a quiet reading nook, adding a soft natural accent wherever "
+    "it hangs."
+)
+
 
 # Compliant against compliance_draft.validate_draft_formula (#208): 4 comma clauses,
 # 12 words, no repeated word >2x, no banned title term; 13 unique tags <=20 chars.
@@ -497,7 +510,7 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
     # (cheap master-image check) then tier 3 (full rubric) - two vision calls total.
     dispatch = _VisionDispatch(
         {"text": _json.dumps({"title": _DRAFT_TITLE, "tags": _DRAFT_TAGS,
-                              "description": "d", "alt_texts": []})},
+                              "description": _VALID_DESCRIPTION_PROSE, "alt_texts": []})},
         _verdict_response("good"),
     )
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
@@ -825,7 +838,7 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
     fake_draft_response = {
         "text": _json.dumps({
             "title": _DRAFT_TITLE,
-            "tags": _DRAFT_TAGS, "description": "Retried description.",
+            "tags": _DRAFT_TAGS, "description": _VALID_DESCRIPTION_PROSE,
             # STATIC_CONFIG has no mockup_templates scenes wired in, so the regenerated
             # gallery is empty (Task 2/3's valid "nothing to render" case) - alt_texts
             # must match that count, not a hardcoded gallery size.
@@ -916,7 +929,7 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
 
     fake_draft_response = {
         "text": _json.dumps({
-            "title": _DRAFT_TITLE, "tags": _DRAFT_TAGS, "description": "Retried description.",
+            "title": _DRAFT_TITLE, "tags": _DRAFT_TAGS, "description": _VALID_DESCRIPTION_PROSE,
             # See test_run_critic_pass_retries_once_then_passes - empty gallery, empty alt_texts.
             "alt_texts": [],
         })
