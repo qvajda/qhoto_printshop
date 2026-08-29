@@ -1,0 +1,12 @@
+#!/bin/sh
+# GL-... : runs after `git pull` / `git merge` so a migration that just landed
+# on master reaches this checkout's live DB without a human remembering to
+# type `migrate.py`. Non-blocking by design - git ignores this hook's exit
+# status, so migrate.py --post-merge always exits 0 and the record lives in
+# logs/migrate.log, not in the hook's output.
+cd "$(git rev-parse --show-toplevel)" || exit 0
+mkdir -p logs
+{
+  printf '[%s] ' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  py -3 migrate.py --post-merge
+} >> logs/migrate.log 2>&1

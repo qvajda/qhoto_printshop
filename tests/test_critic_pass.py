@@ -24,6 +24,20 @@ _VALID_DESCRIPTION_PROSE = (
 )
 
 
+# Compliant against compliance_draft.validate_draft_formula (#208): 4 comma clauses,
+# 12 words, no repeated word >2x, no banned title term; 13 unique tags <=20 chars.
+_DRAFT_TITLE = (
+    "Monstera Line Art Print, Botanical Wall Decor, "
+    "Bedroom Poster, Modern Green Foliage"
+)
+_DRAFT_TAGS = [
+    "monstera print", "botanical wall art", "line art poster", "green plant print",
+    "bedroom wall decor", "living room art", "modern home decor", "leaf wall art",
+    "tropical plant art", "minimalist poster", "nature wall print", "foliage artwork",
+    "plant lover gift",
+]
+
+
 class _VisionDispatch:
     """GL-68: the drafter now sends the artwork too, so compliance_draft and critic_pass
     both call anthropic_client.complete_with_images - and since they import the SAME
@@ -495,7 +509,8 @@ def test_run_critic_pass_local_gate_fails_attempt_without_vision_call(tmp_path):
     # attempt 2's local gate is inconclusive (nonexistent file) -> falls through to tier 2
     # (cheap master-image check) then tier 3 (full rubric) - two vision calls total.
     dispatch = _VisionDispatch(
-        {"text": _json.dumps({"title": "T", "tags": ["a"], "description": _VALID_DESCRIPTION_PROSE, "alt_texts": []})},
+        {"text": _json.dumps({"title": _DRAFT_TITLE, "tags": _DRAFT_TAGS,
+                              "description": _VALID_DESCRIPTION_PROSE, "alt_texts": []})},
         _verdict_response("good"),
     )
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
@@ -822,8 +837,8 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
 
     fake_draft_response = {
         "text": _json.dumps({
-            "title": "Monstera Line Art Botanical Print v2",
-            "tags": ["botanical"], "description": _VALID_DESCRIPTION_PROSE,
+            "title": _DRAFT_TITLE,
+            "tags": _DRAFT_TAGS, "description": _VALID_DESCRIPTION_PROSE,
             # STATIC_CONFIG has no mockup_templates scenes wired in, so the regenerated
             # gallery is empty (Task 2/3's valid "nothing to render" case) - alt_texts
             # must match that count, not a hardcoded gallery size.
@@ -872,7 +887,7 @@ def test_run_critic_pass_retries_once_then_passes(tmp_path):
         "SELECT * FROM listing_texts WHERE candidate_id = ?", (candidate_id,)
     ).fetchall()
     assert len(listing_rows) == 1
-    assert listing_rows[0]["title"] == "Monstera Line Art Botanical Print v2"
+    assert listing_rows[0]["title"] == _DRAFT_TITLE
 
     attempts = conn.execute(
         "SELECT * FROM critic_pass_attempts WHERE group_id = "
@@ -914,7 +929,7 @@ def test_run_critic_pass_abandons_after_three_failures_and_triggers_fallback(tmp
 
     fake_draft_response = {
         "text": _json.dumps({
-            "title": "Retried Title", "tags": ["botanical"], "description": _VALID_DESCRIPTION_PROSE,
+            "title": _DRAFT_TITLE, "tags": _DRAFT_TAGS, "description": _VALID_DESCRIPTION_PROSE,
             # See test_run_critic_pass_retries_once_then_passes - empty gallery, empty alt_texts.
             "alt_texts": [],
         })

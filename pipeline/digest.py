@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+import pipeline.artwork_store as artwork_store
 import pipeline.config as config
 import pipeline.telegram_client as telegram_client
 
@@ -59,7 +60,7 @@ def get_primary_gallery_urls(conn, candidate_id: int) -> list:
         """,
         (candidate_id,),
     ).fetchall()
-    return [row["image_url"] for row in rows]
+    return [artwork_store.resolve_artefact_path(row["image_url"]) for row in rows]
 
 
 def get_listing_text(conn, candidate_id: int) -> dict:

@@ -179,6 +179,74 @@ def test_generate_for_candidate_computes_and_persists_art_brief_once(tmp_path):
     conn.close()
 
 
+def test_generate_for_candidate_persists_dominant_colour_and_named_idiom(tmp_path):
+    # GL-10c/1 (#207): threaded to draft time via candidates columns, not parsed
+    # back out of the stored art_brief prose.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(conn, niche="monstera line art")
+
+    def fake_generate_art_brief(candidate, *, api_key=None):
+        return {
+            "art_brief": "A dense mid-century modern botanical bouquet.",
+            "occupant": "none",
+            "dominant_colour": "terracotta",
+            "named_idiom": "mid-century modern botanical",
+        }
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/raw.png", "prediction_id": "pred123"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/upscaled.png", "prediction_id": "pred-up1"}
+
+    with patch("pipeline.generate.art_brief.generate_art_brief", side_effect=fake_generate_art_brief), \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        generate.generate_for_candidate(
+            conn, candidate_id, api_token="test-token", now=datetime(2026, 7, 9, 10, 0, 0)
+        )
+
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["dominant_colour"] == "terracotta"
+    assert row["named_idiom"] == "mid-century modern botanical"
+    conn.close()
+
+
+def test_generate_for_candidate_retry_leaves_colour_and_idiom_null(tmp_path):
+    # A candidate that already has art_brief never calls the writer again (the
+    # retry path) - its dominant_colour/named_idiom stay NULL, which is exactly
+    # the fallback build_draft_prompt is required to take.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_pending_candidate(
+        conn, niche="monstera line art", status="generating",
+        art_brief="An already-computed stored brief.",
+    )
+
+    def fake_generate_image(prompt, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry.png", "prediction_id": "pred456"}
+
+    def fake_upscale_image(image_url, *, api_token=None):
+        return {"image_url": "https://replicate.delivery/retry-upscaled.png", "prediction_id": "pred-up2"}
+
+    with patch("pipeline.generate.art_brief.generate_art_brief") as mock_brief, \
+         patch("pipeline.generate.replicate_client.generate_image", side_effect=fake_generate_image), \
+         patch("pipeline.generate.replicate_client.upscale_image", side_effect=fake_upscale_image), \
+         patch("pipeline.generate.http.fetch_bytes", return_value=b"fake-image-bytes"), \
+         patch("pipeline.generate.artwork_store.persist_base_artwork", side_effect=_fake_persist_base_artwork):
+        generate.generate_for_candidate(
+            conn, candidate_id, correction_note="composition was off-center",
+            now=datetime(2026, 7, 9, 11, 0, 0),
+        )
+
+    mock_brief.assert_not_called()
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["dominant_colour"] is None
+    assert row["named_idiom"] is None
+    conn.close()
+
+
 def test_build_prompt_never_contains_the_occupant_declaration(tmp_path):
     """GL-63 (#90) seam test: the model's raw reply carries a trailing
     OCCUPANT declaration line, which must be parsed off before the prose

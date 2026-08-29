@@ -533,3 +533,25 @@ def test_an_on_demand_topic_is_honoured_regardless_of_research_mode(tmp_path, mo
 
     assert len(inserted_ids) == 1
     conn.close()
+
+
+def test_automatic_sources_are_pinned_to_botanical():
+    """GL-131: collect_event_lookahead and TRENDING_NOW_PROMPT are hard/soft
+    pinned to botanical; pick_safe_evergreen_fallback is not, it just never
+    fires in practice (docs/2026-08-28-131-research-niche-pin-findings.md)."""
+    event_niches = [raw["niche"] for raw in research.collect_event_lookahead()]
+    assert len(event_niches) == 6
+    assert all("botanical" in niche for niche in event_niches)
+
+    assert "botanical" in research.TRENDING_NOW_PROMPT
+
+    class FakeRng:
+        def choice(self, seq):
+            for term in seq:
+                if not any(word in term for word in ("botanical", "flower", "fern", "leaf")):
+                    return term
+            raise AssertionError("no non-botanical term found in safe-evergreen bucket")
+
+    fallback = research.pick_safe_evergreen_fallback(rng=FakeRng())
+    niche = fallback["niche"]
+    assert not any(word in niche for word in ("botanical", "flower", "fern", "leaf"))

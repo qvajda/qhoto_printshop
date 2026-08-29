@@ -107,6 +107,7 @@ from pipeline.image_crop import SIZE_INCHES as _SIZE_INCHES  # noqa: E402
 def _assert_print_dpi(sizes: list, local_path) -> None:
     """Refuse a live Gelato create if the archived master resolves below 150 DPI at
     any offered size. Reads pixel dims from the local archive - no network call."""
+    local_path = artwork_store.resolve_artefact_path(local_path)
     if not local_path or not Path(local_path).exists():
         raise PrintResolutionError(
             f"Cannot verify print DPI: base_image_local_path missing or unreadable "
@@ -151,7 +152,7 @@ def _group_print_crop(candidate: dict, group_type: str) -> dict:
     field they need - built once per create_or_reuse_group_product call, not twice:
     persist_group_crop's R2 PUT is an unconditional overwrite every call, so a second
     call with identical bytes would be a wasted duplicate network write."""
-    local_path = candidate.get("base_image_local_path")
+    local_path = artwork_store.resolve_artefact_path(candidate.get("base_image_local_path"))
     if not local_path or not Path(local_path).exists():
         raise PrintResolutionError(
             f"Cannot build a {group_type} print crop: base_image_local_path missing "
@@ -298,7 +299,7 @@ def _render_scenes(candidate: dict, group_type: str, orientation: str, static_co
         # Primary is close enough to the master's own ratio that CLAUDE.md already
         # treats it as "a small crop, not a re-composition" - render straight from the
         # archived master, no crop step.
-        render_source_path = candidate.get("base_image_local_path")
+        render_source_path = artwork_store.resolve_artefact_path(candidate.get("base_image_local_path"))
         if not render_source_path or not Path(render_source_path).exists():
             raise PrintResolutionError(
                 f"Cannot render mockups: base_image_local_path missing or unreadable "
@@ -306,7 +307,9 @@ def _render_scenes(candidate: dict, group_type: str, orientation: str, static_co
                 f"mockups can be composited."
             )
     else:
-        render_source_path = _group_print_crop(candidate, group_type)["local_path"]
+        render_source_path = artwork_store.resolve_artefact_path(
+            _group_print_crop(candidate, group_type)["local_path"]
+        )
 
     art = Image.open(render_source_path).convert("RGB")
     images = []
@@ -578,6 +581,15 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
     timestamp = now if isinstance(now, str) else (now or datetime.now(timezone.utc).replace(tzinfo=None)).isoformat()
     shop_id = shop_id or config.require_env("ETSY_SHOP_ID")
 
+    # GL-63b / #157: this is the one function every publish path routes through, so the
+    # forbidden/seasonal-term guard belongs here rather than in each caller (a stale
+    # pre-guardrail listing_texts row, or a hand-edited one, must never reach Etsy).
+    # Checked before any upload/reconcile work, not just before update_listing, and
+    # never gated on dry_run - CLAUDE.md: dry-run gates the HTTP call, never the code path.
+    compliance_draft.validate_listing_text(
+        listing_text["title"], json.loads(listing_text["tags"]), listing_text["description"],
+    )
+
     gp_row = conn.execute(
         "SELECT gelato_product_id, etsy_listing_id FROM group_products WHERE id = ?", (group_product_id,)
     ).fetchone()
@@ -626,7 +638,7 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
         # that already uploaded carry Etsy's own listing_image_id and are skipped.
         if row["etsy_listing_image_id"]:
             continue
-        url = row["image_url"]
+        url = artwork_store.resolve_artefact_path(row["image_url"])
         image_bytes = b"" if dry_run else (
             http.fetch_bytes(url) if url.startswith(("http://", "https://")) else Path(url).read_bytes()
         )

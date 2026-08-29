@@ -81,6 +81,13 @@ def get_shipping_profile_id(static_config: dict) -> str:
 # evaluates the publish gate on a cadence - test it by lowering this, never by waiting.
 GROUP_REVIEW_STALL_DAYS = 14
 
+# GL-31: the deferred half of [D2] - re-send a still-open secondary group's digest
+# entry once, this many days before it ages out, so the only signal isn't the owner
+# remembering an untapped entry. Must stay below GROUP_REVIEW_STALL_DAYS or the ping
+# would never fire before the group is already skipped.
+GROUP_REVIEW_REMINDER_DAYS = 10
+assert GROUP_REVIEW_REMINDER_DAYS < GROUP_REVIEW_STALL_DAYS
+
 
 def get_mockup_templates(static_config: dict, group_type: str, orientation: str) -> list[str]:
     """Ordered scene IDs for (group_type, orientation). Resolved once from
@@ -151,3 +158,15 @@ R2_ENV_VARS = (
 
 def is_r2_configured() -> bool:
     return all(os.environ.get(key) for key in R2_ENV_VARS)
+
+
+def artefact_root() -> Path:
+    """GL-51a (#200): machine-specific root that candidates.base_image_local_path and
+    the local rows of product_images.image_url are stored relative to. Env
+    ARTEFACT_ROOT, default REPO_ROOT/db/base_artwork (today's
+    artwork_store.ARTWORK_CACHE_DIR). Belongs beside the R2_* vars in .env, never in
+    config/static_config.json. Read fresh from os.environ on every call - never
+    cached - so repointing it (a host move) takes effect without reimporting
+    anything."""
+    raw = os.environ.get("ARTEFACT_ROOT", "").strip()
+    return Path(raw) if raw else REPO_ROOT / "db" / "base_artwork"
