@@ -252,6 +252,13 @@ def test_group_review_stall_days_is_a_named_constant():
     assert config.GROUP_REVIEW_STALL_DAYS == 14
 
 
+def test_group_review_reminder_days_is_below_the_stall_window():
+    # GL-31: a reminder that fires at or after the stall window would never beat the
+    # ping it exists to precede - the group would already be stalled_skipped.
+    assert config.GROUP_REVIEW_REMINDER_DAYS == 10
+    assert config.GROUP_REVIEW_REMINDER_DAYS < config.GROUP_REVIEW_STALL_DAYS
+
+
 # --- GL-61 knobs: every default must reproduce today's behaviour exactly ---
 
 def test_research_mode_defaults_to_always(monkeypatch):

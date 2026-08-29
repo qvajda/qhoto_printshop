@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS groups (
     'publish_failed','stalled_skipped'
   )),
   failed_reason TEXT,
+  reminder_sent_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(candidate_id, group_type)

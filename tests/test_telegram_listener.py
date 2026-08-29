@@ -643,6 +643,101 @@ def test_a_dead_listener_is_reported_but_does_not_hold_the_digest(tmp_path, monk
     assert any("listener-down" in str(call) for call in mock_send.call_args_list)
 
 
+def test_wedged_is_reported_without_a_telegram_send(tmp_path, monkeypatch):
+    # #180: a live process holding the token lock means the second listener correctly
+    # refused to start - that is not an alert, it is the mechanism working.
+    from contextlib import ExitStack
+
+    import run_batch
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        for target in _BATCH_STAGE_PATCHES:
+            stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+        stack.enter_context(patch("run_batch.digest.run_digest_cycle", return_value=[]))
+        stack.enter_context(patch(
+            "run_batch.telegram_listener.ensure_alive",
+            return_value={"status": "wedged", "detail": "listener-down: h2 error"},
+        ))
+        mock_send = stack.enter_context(patch("run_batch.telegram_client.send_message"))
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                   load_dotenv=False)
+
+    assert exit_code == 0
+    mock_send.assert_not_called()
+    conn = db.get_connection(db_path)
+    assert "listener-down" in heartbeat.last(conn, run_batch.JOB_NAME)["detail"]
+    conn.close()
+
+    with patch("pipeline.telegram_client.get_updates", return_value=[]),          patch("run_hourly.telegram_listener.ensure_alive",
+               return_value={"status": "wedged", "detail": "listener-down: h2 error"}),          patch("run_hourly.telegram_client.send_message") as mock_send_hourly:
+        exit_code = run_hourly.main(db_path=db_path, lock_path=tmp_path / "pipeline2.lock",
+                                    token_lock_path=tmp_path / "token.lock", load_dotenv=False)
+
+    assert exit_code == 0
+    mock_send_hourly.assert_not_called()
+    conn = db.get_connection(db_path)
+    assert "listener-down" in heartbeat.last(conn, "hourly")["detail"]
+    conn.close()
+
+
+@pytest.mark.parametrize("status", ["started", "failed"])
+def test_failed_and_started_still_notify(tmp_path, monkeypatch, status):
+    from contextlib import ExitStack
+
+    import run_batch
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        for target in _BATCH_STAGE_PATCHES:
+            stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+        stack.enter_context(patch("run_batch.digest.run_digest_cycle", return_value=[]))
+        stack.enter_context(patch(
+            "run_batch.telegram_listener.ensure_alive",
+            return_value={"status": status, "detail": f"listener-down: {status}", "pid": 1},
+        ))
+        mock_send = stack.enter_context(patch("run_batch.telegram_client.send_message"))
+        run_batch.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock", load_dotenv=False)
+
+    mock_send.assert_called()
+
+
+def test_the_batch_heartbeat_carries_the_listener_detail(tmp_path, monkeypatch):
+    from contextlib import ExitStack
+
+    import run_batch
+
+    db_path = _migrated_db(tmp_path)
+    _set_required_env(monkeypatch)
+
+    with ExitStack() as stack:
+        for target in _BATCH_STAGE_PATCHES:
+            stack.enter_context(patch(target, return_value=[]))
+        stack.enter_context(patch("run_batch.reconcile.run_reconcile", return_value={}))
+        stack.enter_context(patch("run_batch.cleanup.run_cleanup", return_value={}))
+        stack.enter_context(patch("run_batch.digest.run_digest_cycle", return_value=[]))
+        stack.enter_context(patch(
+            "run_batch.telegram_listener.ensure_alive",
+            return_value={"status": "wedged", "detail": "listener-down: h2 error"},
+        ))
+        stack.enter_context(patch("run_batch.telegram_client.send_message"))
+        exit_code = run_batch.main(db_path=db_path, lock_path=tmp_path / "pipeline.lock",
+                                   load_dotenv=False)
+
+    assert exit_code == 0
+    conn = db.get_connection(db_path)
+    assert "listener-down" in heartbeat.last(conn, run_batch.JOB_NAME)["detail"]
+    conn.close()
+
+
 # --- no supervisor task: the cron jobs are the supervisor ------------------
 
 def test_the_hourly_starts_a_listener_that_is_not_running(tmp_path, monkeypatch):
