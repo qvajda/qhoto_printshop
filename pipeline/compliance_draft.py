@@ -42,7 +42,8 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "niche/brief below disagree, THE ARTWORK WINS: the buyer receives the artwork, not "
     "the brief. (GL-68: copy written from the niche alone described a minimalist line "
     "leaf over an image of a red cardinal, and the critic rejected it three times.)\n"
-    "Art brief the artwork was generated from, as intent only: {art_brief}\n\n"
+    "Art brief the artwork was generated from, as intent only: {art_brief}\n"
+    "{colour_line}{idiom_line}\n"
     "You are writing an Etsy listing draft for a botanical/minimalist wall art poster "
     "print, niche: {niche}. THE PRODUCT: a physical, made-to-order poster, printed on "
     "premium matte paper and shipped to the buyer. It is NOT a digital file, NOT a "
@@ -259,9 +260,21 @@ def build_draft_prompt(candidate: dict, image_types: list) -> str:
     # GL-55: the raw niche never reaches the model - see SEASONAL_TERMS. The art brief
     # goes through the same sanitiser: it was written FROM the niche, so a pre-GL-55
     # brief carries the event wording the niche no longer does (candidates 77/78/79).
+    #
+    # GL-10c/1 (#207): dominant_colour/named_idiom are candidate columns computed at
+    # generate time (art_brief.generate_art_brief), NOT parsed back out of the brief
+    # prose above (spec §1.3 option A, rejected as fragile). Either can be absent
+    # (pre-migration rows, a reply that skipped the declaration) - the slot is then
+    # dropped from the prompt entirely, never filled with a guessed colour word.
+    dominant_colour = candidate.get("dominant_colour")
+    named_idiom = candidate.get("named_idiom")
+    colour_line = f"Dominant colour: {sanitize_niche(dominant_colour)}\n" if dominant_colour else ""
+    idiom_line = f"Named art idiom: {sanitize_niche(named_idiom)}\n" if named_idiom else ""
     return DRAFT_TEXT_PROMPT_TEMPLATE.format(
         niche=sanitize_niche(candidate["niche"]),
         art_brief=sanitize_niche(candidate.get("art_brief") or ""),
+        colour_line=colour_line,
+        idiom_line=idiom_line,
         image_count=len(image_types),
         image_types=", ".join(image_types),
         max_title_length=MAX_TITLE_LENGTH,
