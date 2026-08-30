@@ -309,6 +309,13 @@ def assemble_description(prose: str) -> str:
     return "\n\n".join([prose.strip(), *DESCRIPTION_STATIC_BLOCKS])
 
 
+# The model's thinking blocks count against max_tokens, and this prompt is now ~5000
+# characters of hard constraints (title formula, tag bands, three-block prose, brand
+# voice, 10 alt texts). Measured live 2026-08-30 on candidate 244: output_tokens=3425
+# for a ~600-token JSON answer - the rest is thinking. 2048 truncated 4 of 4 drafts;
+# 4096 would leave ~600 tokens of headroom, which is not headroom.
+DRAFT_MAX_TOKENS = 8192
+
 DESCRIPTION_PROSE_MIN_WORDS = 80
 DESCRIPTION_PROSE_MAX_WORDS = 110
 
@@ -668,10 +675,10 @@ def generate_draft_text(candidate: dict, image_types: list, *, api_key: str = No
         artwork_path = None
     if artwork_path:
         result = anthropic_client.complete_with_images(
-            prompt, [artwork_path], api_key=api_key, max_tokens=2048,
+            prompt, [artwork_path], api_key=api_key, max_tokens=DRAFT_MAX_TOKENS,
         )
     else:
-        result = anthropic_client.complete(prompt, api_key=api_key, max_tokens=2048)
+        result = anthropic_client.complete(prompt, api_key=api_key, max_tokens=DRAFT_MAX_TOKENS)
     draft = anthropic_client.parse_json_response(result["text"])
     for key in ("title", "tags", "description", "alt_texts"):
         if key not in draft:
