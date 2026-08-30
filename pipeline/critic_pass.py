@@ -337,7 +337,9 @@ def evaluate_copy_match(gallery_image_urls: list, listing_text: dict, *,
         title=listing_text["title"], description=listing_text["description"],
     )
     result = anthropic_client.complete_with_images(
-        prompt, gallery_image_urls, api_key=api_key, max_tokens=1024,
+        # Sonnet thinks before it answers and that thinking is charged to max_tokens;
+        # 1024 was sized for the {passed, reason} JSON alone. See DRAFT_MAX_TOKENS.
+        prompt, gallery_image_urls, api_key=api_key, max_tokens=4096,
     )
     parsed = anthropic_client.parse_json_response(result["text"])
     for key in ("passed", "reason"):
