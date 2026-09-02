@@ -60,6 +60,41 @@ class StaleSchemaError(Exception):
     pass
 
 
+class ShapeMismatchError(StaleSchemaError):
+    """Same fail-fast contract as StaleSchemaError (GL-35): run_batch.py,
+    run_hourly.py and telegram_listener.py all catch StaleSchemaError to
+    refuse to start, and a shape mismatch is exactly that failure mode -
+    a DB that isn't actually current, whatever schema_version says."""
+
+
+def check_shape(db_path) -> dict:
+    """#221: schema_version is a status code, not a measurement (GL-48, GL-53
+    already made this mistake elsewhere). This asks the only question that
+    matters directly - does every table/column db/schema.sql declares actually
+    exist on the live DB - so a lagging registry, an unapplied migration, a
+    hand-edited DB or a restored backup all collapse into one check instead of
+    each needing its own guard.
+
+    One-directional: schema.sql subset-of live DB, never the reverse. Extra
+    columns on the live DB (hand-applied, predate a script) are fine.
+    """
+    expected = sqlite3.connect(":memory:")
+    expected.executescript(db.SCHEMA_PATH.read_text())
+    live = sqlite3.connect(db_path)
+    try:
+        missing = []
+        for (table,) in expected.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ):
+            want = {r[1] for r in expected.execute(f"PRAGMA table_info({table})")}
+            got = {r[1] for r in live.execute(f"PRAGMA table_info({table})")}
+            missing += [f"{table}.{c}" for c in sorted(want - got)]
+        return {"missing": missing}
+    finally:
+        expected.close()
+        live.close()
+
+
 def _current_version(conn) -> int:
     # C1 fix: on a real production DB that predates db/schema.sql's
     # schema_version/heartbeats additions, this table doesn't exist at all (not
@@ -147,9 +182,15 @@ def check(db_path) -> int:
             raise StaleSchemaError(
                 f"schema_version is {current}, expected {expected} - run migrate.py before starting"
             )
-        return current
     finally:
         conn.close()
+
+    shape = check_shape(db_path)
+    if shape["missing"]:
+        raise ShapeMismatchError(
+            f"live DB is missing columns declared in schema.sql: {', '.join(shape['missing'])}"
+        )
+    return current
 
 
 def main():
@@ -168,6 +209,12 @@ def main():
             print(f"{row['table']} {row['row_id']} {row['value']}")
         sys.exit(1 if report["missing"] else 0)
 
+    if "--check-shape" in sys.argv:
+        shape = check_shape(db_path)
+        for column in shape["missing"]:
+            print(column)
+        sys.exit(1 if shape["missing"] else 0)
+
     check_only = "--check" in sys.argv
     if check_only:
         version = check(db_path)
@@ -183,6 +230,9 @@ def main():
         else:
             print("nothing to apply")
         print(f"schema_version={result['current_version']}")
+        shape = check_shape(db_path)
+        if shape["missing"]:
+            print(f"shape mismatch: {', '.join(shape['missing'])}")
         return
     result = migrate(db_path)
     if result["applied"]:
