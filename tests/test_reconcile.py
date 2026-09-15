@@ -201,3 +201,49 @@ def test_reconcile_probes_the_listing_resource_not_its_inventory(tmp_path):
     mock_inventory.assert_not_called()
     assert mock_listing.call_count == 1
     assert result["marked_missing"] == [1]
+
+
+def test_reports_etsy_listings_no_db_row_claims(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_published_group_product(conn, 1, "111")
+
+    fake_listings = [
+        {"listing_id": 111, "images": [{"listing_image_id": 1}]},
+        {"listing_id": 222, "images": [{"listing_image_id": 2}]},
+    ]
+
+    with patch("pipeline.reconcile._fetch_all_shop_listings", return_value=fake_listings):
+        result = reconcile.find_unclaimed_etsy_listings(conn, shop_id="shop")
+
+    assert result["unclaimed"] == [222]
+    assert result["unclaimed_zero_images"] == []
+
+
+def test_unclaimed_report_flags_zero_image_listing_separately(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_published_group_product(conn, 1, "111")
+
+    fake_listings = [
+        {"listing_id": 111, "images": [{"listing_image_id": 1}]},
+        {"listing_id": 222, "images": []},
+        {"listing_id": 333, "images": [{"listing_image_id": 3}]},
+    ]
+
+    with patch("pipeline.reconcile._fetch_all_shop_listings", return_value=fake_listings):
+        result = reconcile.find_unclaimed_etsy_listings(conn, shop_id="shop")
+
+    assert result["unclaimed"] == [222, 333]
+    assert result["unclaimed_zero_images"] == [222]
+
+
+def test_orphan_report_never_deletes_a_listing(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_published_group_product(conn, 1, "111")
+
+    fake_listings = [{"listing_id": 222, "images": []}]
+
+    with patch("pipeline.reconcile._fetch_all_shop_listings", return_value=fake_listings),          patch("pipeline.etsy_client.get_listing", return_value={"listing_id": "111"}),          patch("pipeline.etsy_client.delete_listing") as mock_delete:
+        result = reconcile.run_reconcile(conn, shop_id="shop", dry_run_override=False)
+
+    mock_delete.assert_not_called()
+    assert result["unclaimed_etsy_listings"]["unclaimed_zero_images"] == [222]
