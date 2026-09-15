@@ -125,6 +125,9 @@ its record, not editing this list.
   says the copy must never contain something, an assertion has to say so too, in
   code, next to the decision. GL-53: `DISCLOSURE_TEXT` was emptied and 27 of 27
   drafts kept the sentence. When auditing one field, read the whole row.
+- **Assert the state, not the bookkeeping that was supposed to produce it.**
+  GL-48 (status code), GL-53 (prompt instruction), #219 (`schema_version`) all
+  read green while the real thing was wrong. Measure the live shape/output.
 - **Listing copy is evergreen.** No dated event, festival or retail moment —
   sanitised before the drafting prompt and checked after
   (`compliance_draft.SEASONAL_TERMS`). Telegram's `📝 Redo copy only` redrafts
