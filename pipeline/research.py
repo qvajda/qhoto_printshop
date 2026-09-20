@@ -36,6 +36,26 @@ def _read_section_terms(lines: list, heading: str) -> list:
     return terms
 
 
+def load_safe_evergreen_categories(path=None) -> dict:
+    """#229. `## Buckets` as {### heading: [terms]} - same walker, keeps the structure."""
+    path = Path(path) if path else SAFE_EVERGREEN_BUCKET_PATH
+    lines = path.read_text(encoding="utf-8").splitlines()
+    categories = {}
+    current = None
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == SAFE_EVERGREEN_SECTION_HEADINGS["subject"]:
+            in_section = True
+        elif in_section and stripped.startswith("## "):
+            break
+        elif in_section and stripped.startswith("### "):
+            current = categories.setdefault(stripped[4:], [])
+        elif in_section and current is not None and stripped:
+            current.extend(term.strip() for term in stripped.split(","))
+    return categories
+
+
 def load_safe_evergreen_terms(path=None, *, classes=("subject",)) -> list:
     path = Path(path) if path else SAFE_EVERGREEN_BUCKET_PATH
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -128,10 +148,15 @@ EVENT_WINDOWS_2026 = [
 ]
 
 
-def collect_event_lookahead() -> list:
+def collect_event_lookahead(*, rng=None) -> list:
+    """#229. The window supplies the timing; the subject is drawn from the bucket,
+    one distinct category per window (never placement terms - see FALLBACK_CLASSES)."""
+    rng = rng or random
+    categories = list(load_safe_evergreen_categories().values())
+    picked = rng.sample(categories, k=min(len(EVENT_WINDOWS_2026), len(categories)))
     return [
         {
-            "niche": f"botanical/minimalist nature illustration - {window['name']}",
+            "niche": rng.choice(terms),
             "trend_source": f"event_lookahead:{window['name']}",
             "rationale": window["niche_note"],
             "window_start": window["start"],
@@ -139,7 +164,7 @@ def collect_event_lookahead() -> list:
             "demand_ratio": None,
             "listing_count": None,
         }
-        for window in EVENT_WINDOWS_2026
+        for window, terms in zip(EVENT_WINDOWS_2026, picked)
     ]
 
 
@@ -178,12 +203,13 @@ def _classify_by_timing(raw: dict, now: date) -> dict:
 KILL_DEMAND_RATIO_THRESHOLD = 0.002
 
 TRENDING_NOW_PROMPT = (
-    "You are researching Etsy trends for a shop selling AI-generated botanical/minimalist "
-    "wall art and posters. Using web search, identify 3-5 currently trending or rising search "
-    "keywords/niches on Etsy that fit this niche (nature, botanical, minimalist landscape wall "
-    "art). For each, give a short keyword phrase suitable for an Etsy search and a one-sentence "
-    "rationale. Reply with ONLY a JSON list of objects with 'keyword' and 'rationale' fields, "
-    "no other text."
+    "You are researching Etsy trends for a shop selling AI-generated minimalist wall art and "
+    "posters. Using web search, identify 3-5 currently trending or rising search "
+    "keywords/niches on Etsy across these categories: "
+    + "; ".join(load_safe_evergreen_categories())
+    + ". Spread the picks over different categories. For each, give a short keyword phrase "
+    "suitable for an Etsy search and a one-sentence rationale. Reply with ONLY a JSON list of "
+    "objects with 'keyword' and 'rationale' fields, no other text."
 )
 
 
