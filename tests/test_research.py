@@ -535,15 +535,20 @@ def test_an_on_demand_topic_is_honoured_regardless_of_research_mode(tmp_path, mo
     conn.close()
 
 
-def test_automatic_sources_are_pinned_to_botanical():
-    """GL-131: collect_event_lookahead and TRENDING_NOW_PROMPT are hard/soft
-    pinned to botanical; pick_safe_evergreen_fallback is not, it just never
-    fires in practice (docs/2026-08-28-131-research-niche-pin-findings.md)."""
-    event_niches = [raw["niche"] for raw in research.collect_event_lookahead()]
-    assert len(event_niches) == 6
-    assert all("botanical" in niche for niche in event_niches)
+def test_automatic_sources_are_not_pinned_to_botanical():
+    """#229: event niches span >=3 bucket categories, the prompt names >=5."""
+    import random
 
-    assert "botanical" in research.TRENDING_NOW_PROMPT
+    categories = research.load_safe_evergreen_categories()
+    assert len(categories) == 9
+    event_niches = [raw["niche"] for raw in research.collect_event_lookahead(rng=random.Random(0))]
+    assert len(event_niches) == 6
+    hit = {name for name, terms in categories.items() if any(n in terms for n in event_niches)}
+    assert len(hit) >= 3
+    placement = research.load_safe_evergreen_terms(classes=("placement",))
+    assert not set(event_niches) & set(placement)
+
+    assert sum(name in research.TRENDING_NOW_PROMPT for name in categories) >= 5
 
     class FakeRng:
         def choice(self, seq):
