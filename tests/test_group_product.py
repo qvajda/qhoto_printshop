@@ -727,6 +727,36 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
     assert gp_row["status"] == "published"
 
 
+def test_patch_etsy_listing_writes_listing_properties_from_static_config(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+    with patch("pipeline.etsy_client.update_listing"),          patch("pipeline.etsy_client.update_listing_inventory"),          patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}),          patch("pipeline.etsy_client.update_listing_property") as mock_prop:
+        group_product.patch_etsy_listing(
+            conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+            shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+        )
+    written = {c[0][2]: (c[0][3], c[0][4]) for c in mock_prop.call_args_list}
+    assert written == {148789511893: ([5285], ["Archival paper"]), 145330288558: ([2342], ["Unframed"])}
+
+
+def test_patch_etsy_listing_property_failure_leaves_status_and_reason_and_raises(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    ctx = _publishable(conn, tmp_path)
+    with patch("pipeline.etsy_client.update_listing"),          patch("pipeline.etsy_client.update_listing_inventory"),          patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}),          patch("pipeline.etsy_client.update_listing_property", side_effect=RuntimeError("boom")) as mock_prop:
+        with pytest.raises(RuntimeError, match="Material multi"):
+            group_product.patch_etsy_listing(
+                conn, ctx["group_product_id"], LISTING_TEXT, ctx["static_config"],
+                shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
+            )
+    assert mock_prop.call_count == 1
+    row = conn.execute(
+        "SELECT g.status, c.failed_reason FROM group_products g JOIN candidates c ON c.id = g.candidate_id "
+        "WHERE g.id = ?", (ctx["group_product_id"],)
+    ).fetchone()
+    assert row["status"] == "publish_failed"
+    assert "Material multi" in row["failed_reason"] and "boom" in row["failed_reason"]
+
+
 def test_patch_etsy_listing_rejects_pre_guardrail_copy(tmp_path):
     # GL-63b / #157: a listing_texts row drafted before the GL-53 guardrail (or
     # hand-edited afterwards) must never reach Etsy, regardless of dry_run - dry_run

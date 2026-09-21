@@ -235,6 +235,36 @@ def update_listing(
     return _call_with_refresh(_build, access_token)
 
 
+def update_listing_property(
+    shop_id: str, listing_id: str, property_id: int, value_ids: list, values: list, *,
+    api_key: str = None, api_secret: str = None, access_token: str = None, dry_run: bool = None
+) -> dict:
+    """PUT one listing attribute. Form-urlencoded, not JSON: Etsy answers 200 to a JSON
+    body and silently drops it (#228)."""
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    # Computed before the dry-run gate: dry-run gates the HTTP call, never the value.
+    body = urllib.parse.urlencode(
+        [("value_ids[]", v) for v in value_ids] + [("values[]", v) for v in values]
+    ).encode("utf-8")
+
+    if dry_run:
+        return {"listing_id": listing_id, "property_id": property_id, "_dry_run": True, "body": body.decode()}
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/shops/{shop_id}/listings/{listing_id}/properties/{property_id}"
+
+    def _build(token):
+        headers = _headers(api_key, api_secret, token)
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        return urllib.request.Request(url, data=body, headers=headers, method="PUT")
+
+    return _call_with_refresh(_build, access_token)
+
+
 def get_listing_inventory(
     shop_id: str, listing_id: str, *, api_key: str = None, api_secret: str = None,
     access_token: str = None, dry_run: bool = None

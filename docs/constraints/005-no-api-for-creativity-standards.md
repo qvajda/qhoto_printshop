@@ -8,8 +8,9 @@ verify-by: 2026-11-06
 
 "How does your shop produce this item?" (`production_process`) and "What tools are
 used to make this item?" (`tools_used`, where "an AI generator" lives) are absent
-from the v3 API entirely — not on the listing, not among `taxonomy_id` 1027's 15
-properties, and not settable as a shop-level default. Verified by full raw
+from the v3 API entirely — not on the listing, not among `taxonomy_id` 1027's properties
+(15 when first verified; 18 as of 2026-09-19 — Framing, Frame mat included and Frame
+color were added, `production_process`/`tools_used` still absent), and not settable as a shop-level default. Verified by full raw
 response dumps on two live listings, not by a field-name grep.
 
 **The operational consequence matters more than the API answer.** The only way to
@@ -27,3 +28,8 @@ the description carries no disclosure would publish a listing with neither.
 
 **How to re-verify:** start from `etsy/open-api` Discussion #1630 (opened
 2026-06-22). If it looks shipped, confirm with a full response dump.
+
+**Not the same thing (#228):** the *listing attributes* Material multi and Framing are
+settable, by `PUT /shops/{shop_id}/listings/{listing_id}/properties/{property_id}`
+(form-urlencoded). The pipeline writes both; this constraint is only about the two
+Creativity Standards questions above.
