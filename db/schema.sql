@@ -146,7 +146,8 @@ CREATE TABLE IF NOT EXISTS listing_metrics_snapshots (
   snapshot_date TEXT NOT NULL,
   views INTEGER NOT NULL,
   num_favorers INTEGER NOT NULL,
-  orders_count INTEGER NOT NULL
+  orders_count INTEGER,
+  UNIQUE(group_product_id, snapshot_date)
 );
 
 CREATE TABLE IF NOT EXISTS telegram_offset (
