@@ -28,6 +28,7 @@ import pipeline.heartbeat as heartbeat
 import pipeline.lock as lock
 import pipeline.primary_mockup as primary_mockup
 import pipeline.publish_primary_group as publish_primary_group
+import pipeline.listing_metrics as listing_metrics
 import pipeline.reconcile as reconcile
 import pipeline.research as research
 import pipeline.runlog as runlog
@@ -255,6 +256,13 @@ def main(*, db_path=None, lock_path=None, load_dotenv=True) -> int:
                 lambda: reconcile.run_reconcile(
                     conn, shop_id=etsy_shop_id, api_key=etsy_api_key,
                     api_secret=etsy_api_secret, access_token=etsy_access_token,
+                ),
+                admin_chat_id, bot_token, failures,
+            )
+            _run_stage(
+                "listing_metrics",
+                lambda: listing_metrics.run_listing_metrics(
+                    conn, api_key=etsy_api_key, api_secret=etsy_api_secret, access_token=etsy_access_token,
                 ),
                 admin_chat_id, bot_token, failures,
             )
