@@ -372,6 +372,7 @@ _STATIC_CONFIG = {
     "etsy_who_made": "i_did",
     "etsy_production_partner_ids": [5717252],
     "etsy_shop_section_id": 59380312,
+    "etsy_listing_properties": [],
     "etsy_shipping_profile_id": "288734253315",
     "prices_eur": {"5x7": 19, "8x12": 24, "A3": 35, "A2": 39, "10x24": 45, "A1": 49},
     "gelato_templates": {},

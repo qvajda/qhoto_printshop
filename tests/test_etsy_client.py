@@ -498,3 +498,35 @@ def test_upload_listing_image_omits_rank_when_not_given():
         )
 
     assert b'name="rank"' not in captured["body"]
+
+
+def test_update_listing_property_sends_urlencoded_body_with_framing_value_id():
+    captured = {}
+
+    def fake_send(request, timeout=30):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["ctype"] = request.get_header("Content-type")
+        captured["body"] = request.data.decode()
+        return {}
+
+    with patch("pipeline.etsy_client.http.send", side_effect=fake_send):
+        etsy_client.update_listing_property(
+            "shop1", "listing1", 145330288558, [2342], ["Unframed"],
+            api_key="k", api_secret="s", access_token="t", dry_run=False,
+        )
+
+    assert captured["url"].endswith("/shops/shop1/listings/listing1/properties/145330288558")
+    assert captured["method"] == "PUT"
+    assert captured["ctype"] == "application/x-www-form-urlencoded"
+    assert "value_ids%5B%5D=2342" in captured["body"]
+    assert "values%5B%5D=Unframed" in captured["body"]
+
+
+def test_update_listing_property_dry_run_computes_payload_but_makes_no_http_call():
+    with patch("pipeline.etsy_client.http.send") as mock_send:
+        result = etsy_client.update_listing_property(
+            "shop1", "listing1", 145330288558, [2342], ["Unframed"], dry_run=True,
+        )
+    mock_send.assert_not_called()
+    assert "value_ids%5B%5D=2342" in result["body"]

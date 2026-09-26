@@ -91,6 +91,10 @@
   ],
   "etsy_who_made": "i_did",
   "etsy_shop_section_id": 59380312,
+  "etsy_listing_properties": [
+    {"name": "Material multi", "property_id": 148789511893, "value_id": 5285, "value": "Archival paper"},
+    {"name": "Framing", "property_id": 145330288558, "value_id": 2342, "value": "Unframed"}
+  ],
   "mockup_templates": {
     "primary": {
       "portrait": [

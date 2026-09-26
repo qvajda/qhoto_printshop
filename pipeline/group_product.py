@@ -724,6 +724,29 @@ def patch_etsy_listing(conn, group_product_id: int, listing_text: dict, static_c
         access_token=etsy_access_token, dry_run=dry_run,
     )
 
+    # #228: listing attributes the owner used to tick by hand. A failure must leave a
+    # status plus a reason on the row (GL-46) and still fail the stage.
+    for prop in static_config["etsy_listing_properties"]:
+        try:
+            etsy_client.update_listing_property(
+                shop_id, listing_id, prop["property_id"], [prop["value_id"]], [prop["value"]],
+                api_key=etsy_api_key, api_secret=etsy_api_secret,
+                access_token=etsy_access_token, dry_run=dry_run,
+            )
+        except Exception as exc:
+            reason = f"listing property {prop['name']!r} write failed: {exc}"
+            conn.execute(
+                "UPDATE group_products SET status = 'publish_failed', updated_at = ? WHERE id = ?",
+                (timestamp, group_product_id),
+            )
+            conn.execute(
+                "UPDATE candidates SET failed_reason = ? WHERE id = "
+                "(SELECT candidate_id FROM group_products WHERE id = ?)",
+                (reason, group_product_id),
+            )
+            conn.commit()
+            raise RuntimeError(reason) from exc
+
     variant_rows = conn.execute(
         f"SELECT v.size, v.price_eur FROM group_product_variants v "
         f"JOIN groups g ON g.id = v.group_id "
