@@ -50,12 +50,13 @@ def test_load_safe_evergreen_terms_contains_no_placement_modifiers():
 def test_load_safe_evergreen_terms_default_is_unchanged_regression_lock():
     """GL-44: the class filter must not widen what a no-argument call sees.
     Locks the exact list, not just its length, against a silent default
-    change."""
+    change. Count dropped 44->42 in #236 (2026-09-26): `star chart poster` and
+    `lunar cycle art` removed from the Celestial bucket as BLOCKED."""
     terms = research.load_safe_evergreen_terms()
 
     assert terms[0] == "monstera line art"
     assert terms[-1] == "japanese bird art"
-    assert len(terms) == 44
+    assert len(terms) == 42
     assert terms == research.load_safe_evergreen_terms(classes=("subject",))
 
 
