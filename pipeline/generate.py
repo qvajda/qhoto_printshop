@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 # R3-a (docs/2026-07-21-generation-quality-round3-plan.md sec 3, open
 # question 2, owner-approved): bumped to "v2" for the round-3 scaffold
 # rework (drops "centered subject"/"dense composition" - see below).
-SCAFFOLD_VERSION = "v2"
+# GL-234: bumped to "v3" for the maker's-mark negative-tail addition.
+SCAFFOLD_VERSION = "v3"
 
 # R2-d (same plan, FM-6): Replicate's documented cap for granted-credit
 # accounts without a payment method on file is 1 request/second, 6/minute
@@ -58,8 +59,8 @@ def _generate_cycle_pacing_seconds() -> float:
 POSITIVE_SCAFFOLD = (
     "Flat 2D full-bleed artwork, composition reaching the frame's edges wherever "
     "the subject meets them. Bold filled color zones with crisp clean edges, no "
-    "smudging. Warm muted palette on a soft cream ground. Print-ready, no text "
-    "or watermarks."
+    "smudging. Warm muted palette on a soft cream ground. Print-ready, no text, "
+    "watermarks, or signature seal."
 )
 
 
