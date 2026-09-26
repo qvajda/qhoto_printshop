@@ -101,6 +101,11 @@ def test_build_critic_prompt_includes_rubric_and_listing_text():
     # R3-b (FM-13): criterion 6's text itself carries the owner's sparse-gate ruling.
     assert "legitimate, deliberate style" in prompt
     assert "the subject itself is small" in prompt
+    # GL-234: criterion 1 gains its own maker's-mark reject clause (candidate 530),
+    # independent of legibility.
+    assert "seal/chop/hanko" in prompt
+    assert "monogram" in prompt
+    assert "illegible" in prompt
 
 
 def _verdict_response(overall="good", failing=None):
@@ -264,6 +269,51 @@ def test_evaluate_critic_pass_raises_on_missing_key():
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
         with pytest.raises(ValueError, match="missing required key"):
             critic_pass.evaluate_critic_pass(["https://gelato/a.jpg"], listing_text, api_key="key1")
+
+
+# GL-234: candidate 530 (niche='ukiyo-e style print') was owner-rejected by eye for
+# a rendered hanko-style seal block the critic passed - the rubric had nothing that
+# named it. Pinned by sha256 so the fixture can't silently drift from the real
+# candidate. This asserts the verdict evaluate_critic_pass returns, not that the
+# rubric string contains a word (GL-53).
+_CANDIDATE_530_FIXTURE = Path(__file__).parent / "fixtures" / "candidates" / "530_makers_mark.png"
+_CANDIDATE_530_SHA256 = "8b07b55d658c2d9b739dc5343391fcc2e2725ff676e175710bdc6ad1993ac2dd"
+
+
+def test_candidate_530_fixture_matches_pinned_sha256():
+    import hashlib
+    assert hashlib.sha256(_CANDIDATE_530_FIXTURE.read_bytes()).hexdigest() == _CANDIDATE_530_SHA256
+
+
+def test_evaluate_critic_pass_rejects_candidate_530_makers_mark():
+    listing_text = {"title": "Ukiyo-E Woodblock Print", "description": "A woodblock-style print."}
+    fake_response = _verdict_response(
+        "reject", failing={1: "corner cartouche reads as a hand-carved artist seal/chop"}
+    )
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result = critic_pass.evaluate_critic_pass(
+            [str(_CANDIDATE_530_FIXTURE)], listing_text, api_key="key1"
+        )
+
+    assert result["overall"] == "reject"
+    assert result["passed"] is False
+    assert result["criteria"]["criterion_1"]["passed"] is False
+
+
+def test_evaluate_critic_pass_does_not_reject_a_clean_approved_candidate():
+    """Counter-case: the new clause must not turn into a blanket reject on flat art
+    that carries no maker's mark - only candidate 530's specific defect should fire."""
+    listing_text = {"title": "Monstera Line Art Botanical Print", "description": "A minimalist botanical print."}
+    fake_response = _verdict_response("good")
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_response):
+        result = critic_pass.evaluate_critic_pass(
+            ["https://gelato/a.jpg"], listing_text, api_key="key1"
+        )
+
+    assert result["overall"] != "reject"
+    assert result["criteria"]["criterion_1"]["passed"] is True
 
 
 def test_evaluate_critic_pass_raises_on_invalid_overall():

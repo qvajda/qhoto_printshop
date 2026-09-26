@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 import pipeline.config as config
+import pipeline.image_crop as image_crop
 import pipeline.telegram_client as telegram_client
 import telegram_listener
 
@@ -74,7 +75,11 @@ def stub_mockup_bundles(monkeypatch, tmp_path_factory):
         if not d.exists():
             d.mkdir(parents=True)
             W, H, ah = 200, 300, 200
-            aw = round(ah * MASTER_ASPECT)
+            # A secondary group prints its own ratio; the 2% crop budget rejects a
+            # master-aspect aperture for 5x7/10x24.
+            aspect = MASTER_ASPECT if group_type == "primary" else (
+                image_crop.SIZE_INCHES[group_type][0] / image_crop.SIZE_INCHES[group_type][1])
+            aw = round(ah * aspect)
             x0, y0 = (W - aw) // 2, 50
             Image.new("RGBA", (W, H), (180, 170, 160, 255)).save(d / "background.png")
             Image.new("RGBA", (W, H), (0, 0, 0, 0)).save(d / "overlay.png")
