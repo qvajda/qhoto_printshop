@@ -143,7 +143,7 @@ def test_render_group_mockups_makes_no_gelato_call(stub_mockup_bundles, tmp_path
     assert {r["group_id"] for r in variant_rows} == {group_id}
 
 
-def test_render_group_mockups_reuses_the_candidates_one_listing_record(tmp_path):
+def test_render_group_mockups_reuses_the_candidates_one_listing_record(stub_mockup_bundles, tmp_path):
     # v4.12 reuse key is candidate_id: a second group of the SAME candidate renders into
     # the candidate's existing listing record, it does not open a second one.
     conn = _fresh_conn(tmp_path)
@@ -164,7 +164,7 @@ def test_render_group_mockups_reuses_the_candidates_one_listing_record(tmp_path)
     assert conn.execute("SELECT COUNT(*) AS n FROM group_products").fetchone()["n"] == 1
 
 
-def test_rendering_a_secondary_group_leaves_the_primary_gallery_untouched(tmp_path):
+def test_rendering_a_secondary_group_leaves_the_primary_gallery_untouched(stub_mockup_bundles, tmp_path):
     # THE reason GL-22 session 2 exists. group_product.py's image rebuild used to be
     # `DELETE FROM product_images WHERE group_product_id = ?`; with one product per
     # candidate that unscoped delete wipes the primary group's already-reviewed gallery
@@ -194,7 +194,7 @@ def test_rendering_a_secondary_group_leaves_the_primary_gallery_untouched(tmp_pa
     assert _images(conn, gpid, secondary_group_id)
 
 
-def test_render_group_mockups_rerender_replaces_only_its_own_images(tmp_path):
+def test_render_group_mockups_rerender_replaces_only_its_own_images(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn, base_image_local_path=_make_master(tmp_path))
     primary_group_id = _insert_group(conn, candidate_id, group_type="primary")
@@ -268,7 +268,7 @@ def test_render_group_mockups_renders_gallery_from_the_real_bundles(tmp_path):
         "flat_mockup" if s.startswith("flat") else "lifestyle" for s in scenes]
 
 
-def test_render_group_mockups_5x7_builds_crop_then_renders_its_gallery(tmp_path):
+def test_render_group_mockups_5x7_builds_crop_then_renders_its_gallery(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     master_path = _make_master(tmp_path, size=(1600, 3700))  # clears 150 DPI at 5x7
     candidate_id = _insert_candidate(conn, base_image_local_path=master_path)
@@ -373,7 +373,7 @@ def _rendered_candidate(conn, tmp_path, *, size=(900, 1316), secondary="5x7",
     }
 
 
-def test_create_candidate_gelato_product_makes_one_call_with_every_validated_size(tmp_path):
+def test_create_candidate_gelato_product_makes_one_call_with_every_validated_size(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _rendered_candidate(conn, tmp_path)
 
@@ -397,7 +397,7 @@ def test_create_candidate_gelato_product_makes_one_call_with_every_validated_siz
     assert gp_row["status"] == "created"
 
 
-def test_create_candidate_gelato_product_excludes_a_rejected_group(tmp_path):
+def test_create_candidate_gelato_product_excludes_a_rejected_group(stub_mockup_bundles, tmp_path):
     # [D1]: a rejected group contributes no variant. It is excluded, not deleted.
     conn = _fresh_conn(tmp_path)
     ctx = _rendered_candidate(conn, tmp_path, decide_secondary="rejected")
@@ -426,7 +426,7 @@ def test_create_candidate_gelato_product_excludes_a_rejected_group(tmp_path):
     ).fetchone()["n"] == 1
 
 
-def test_create_candidate_gelato_product_never_creates_a_second_product(tmp_path):
+def test_create_candidate_gelato_product_never_creates_a_second_product(stub_mockup_bundles, tmp_path):
     # Idempotency, a hard constraint: the first live run duplicated products because a
     # create succeeded, the readiness poll timed out and the retry re-created. A product
     # id on the row means the create already succeeded - re-poll, never re-create.
@@ -457,7 +457,7 @@ def test_create_candidate_gelato_product_never_creates_a_second_product(tmp_path
     assert first == second
 
 
-def test_create_candidate_gelato_product_repolls_a_mockup_failed_product(tmp_path):
+def test_create_candidate_gelato_product_repolls_a_mockup_failed_product(stub_mockup_bundles, tmp_path):
     # A row that carries a gelato_product_id but landed on mockup_failed is NOT stale:
     # the create succeeded and only the readiness poll timed out (Gelato rehosting can
     # lag past the window). Reuse + re-poll; deleting and recreating would restart the
@@ -489,7 +489,7 @@ def test_create_candidate_gelato_product_repolls_a_mockup_failed_product(tmp_pat
     ).fetchone()["status"] == "created"
 
 
-def test_create_candidate_gelato_product_leaves_intent_set_when_the_id_update_never_lands(tmp_path):
+def test_create_candidate_gelato_product_leaves_intent_set_when_the_id_update_never_lands(stub_mockup_bundles, tmp_path):
     # GL-32: simulates the crash window - the Gelato POST returns an id, but the process
     # dies before the id-recording UPDATE commits. The intent write (before the POST)
     # already landed, so the row is findable by find_unconfirmed_gelato_creates.
@@ -515,7 +515,7 @@ def test_create_candidate_gelato_product_leaves_intent_set_when_the_id_update_ne
     ) == [ctx["group_product_id"]]
 
 
-def test_create_candidate_gelato_product_clears_intent_on_a_successful_create(tmp_path):
+def test_create_candidate_gelato_product_clears_intent_on_a_successful_create(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _rendered_candidate(conn, tmp_path)
 
@@ -537,7 +537,7 @@ def test_create_candidate_gelato_product_clears_intent_on_a_successful_create(tm
     ) == []
 
 
-def test_render_group_mockups_refuses_to_add_a_size_after_the_product_exists(tmp_path):
+def test_render_group_mockups_refuses_to_add_a_size_after_the_product_exists(stub_mockup_bundles, tmp_path):
     # GL-22a Q2: there is no API path to add a variant to an existing product, and the
     # product is the candidate's - deleting it to recreate would destroy sizes another
     # group already published. So a group arriving with sizes AFTER the create fails
@@ -572,7 +572,7 @@ def test_render_group_mockups_refuses_to_add_a_size_after_the_product_exists(tmp
     ).fetchone()["status"] == "created"
 
 
-def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
+def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(stub_mockup_bundles, tmp_path):
     # End-to-end (real image_crop + artwork_store, only http.put_bytes and the Gelato
     # call are mocked): the create call must receive the cropped, hosted URL - not
     # candidate.base_image_url - for a non-primary group type.
@@ -608,7 +608,7 @@ def test_real_create_sends_hosted_print_crop_not_raw_master_for_10x24(tmp_path):
     ]
 
 
-def test_dry_run_create_sends_the_same_hosted_print_crop_as_a_live_one(tmp_path):
+def test_dry_run_create_sends_the_same_hosted_print_crop_as_a_live_one(stub_mockup_bundles, tmp_path):
     # GL-48: the crop URL used to be gated on GELATO live mode, so a dry run submitted
     # the uncropped master and never exercised the crop path - which is why two soak
     # nights could not observe the 10x24 letterbox defect. Dry-run must change what the
@@ -638,7 +638,7 @@ def test_dry_run_create_sends_the_same_hosted_print_crop_as_a_live_one(tmp_path)
     ]
 
 
-def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(tmp_path, monkeypatch):
+def test_real_create_fails_loud_for_secondary_group_when_r2_not_configured(stub_mockup_bundles, tmp_path, monkeypatch):
     # If R2 isn't configured, persist_group_crop's durable_url is a local filesystem
     # path - the create-path's non-http(s) guard must reject it, not silently fall back
     # to the uncropped master.
@@ -688,7 +688,7 @@ def _publishable(conn, tmp_path, **kwargs):
     return ctx
 
 
-def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path):
+def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
     static_config = ctx["static_config"]
@@ -727,7 +727,7 @@ def test_patch_etsy_listing_resolves_id_patches_and_sets_variant_prices(tmp_path
     assert gp_row["status"] == "published"
 
 
-def test_patch_etsy_listing_writes_listing_properties_from_static_config(tmp_path):
+def test_patch_etsy_listing_writes_listing_properties_from_static_config(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
     with patch("pipeline.etsy_client.update_listing"),          patch("pipeline.etsy_client.update_listing_inventory"),          patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}),          patch("pipeline.etsy_client.update_listing_property") as mock_prop:
@@ -739,7 +739,7 @@ def test_patch_etsy_listing_writes_listing_properties_from_static_config(tmp_pat
     assert written == {148789511893: ([5285], ["Archival paper"]), 145330288558: ([2342], ["Unframed"])}
 
 
-def test_patch_etsy_listing_property_failure_leaves_status_and_reason_and_raises(tmp_path):
+def test_patch_etsy_listing_property_failure_leaves_status_and_reason_and_raises(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
     with patch("pipeline.etsy_client.update_listing"),          patch("pipeline.etsy_client.update_listing_inventory"),          patch("pipeline.etsy_client.upload_listing_image", return_value={"listing_image_id": "i"}),          patch("pipeline.etsy_client.update_listing_property", side_effect=RuntimeError("boom")) as mock_prop:
@@ -757,7 +757,7 @@ def test_patch_etsy_listing_property_failure_leaves_status_and_reason_and_raises
     assert "Material multi" in row["failed_reason"] and "boom" in row["failed_reason"]
 
 
-def test_patch_etsy_listing_rejects_pre_guardrail_copy(tmp_path):
+def test_patch_etsy_listing_rejects_pre_guardrail_copy(stub_mockup_bundles, tmp_path):
     # GL-63b / #157: a listing_texts row drafted before the GL-53 guardrail (or
     # hand-edited afterwards) must never reach Etsy, regardless of dry_run - dry_run
     # only gates the HTTP call, never the code path (CLAUDE.md).
@@ -780,7 +780,7 @@ def test_patch_etsy_listing_rejects_pre_guardrail_copy(tmp_path):
         assert mock_update.call_count == 0
 
 
-def test_patch_etsy_listing_assembles_the_gallery_in_group_rank_order(tmp_path):
+def test_patch_etsy_listing_assembles_the_gallery_in_group_rank_order(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
     expected = [
@@ -807,7 +807,7 @@ def test_patch_etsy_listing_assembles_the_gallery_in_group_rank_order(tmp_path):
         assert call.args[:2] == ("shop1", "DRY_RUN_ETSY_LISTING_ID")
 
 
-def test_patch_etsy_listing_skips_a_rejected_groups_images_and_sizes(tmp_path):
+def test_patch_etsy_listing_skips_a_rejected_groups_images_and_sizes(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path, decide_secondary="rejected")
     primary_images = len(_images(conn, ctx["group_product_id"], ctx["primary_group_id"]))
@@ -827,7 +827,7 @@ def test_patch_etsy_listing_skips_a_rejected_groups_images_and_sizes(tmp_path):
     assert set(mock_inventory.call_args[0][2]) == {"8x12"}
 
 
-def test_patch_etsy_listing_is_idempotent_and_does_not_duplicate_the_gallery(tmp_path):
+def test_patch_etsy_listing_is_idempotent_and_does_not_duplicate_the_gallery(stub_mockup_bundles, tmp_path):
     # The upload loop is a full re-upload with no delta, so a second call after a partial
     # failure would duplicate every photo on the live listing. Each row records Etsy's
     # own listing_image_id and is skipped on the next pass.
@@ -856,7 +856,7 @@ def test_patch_etsy_listing_is_idempotent_and_does_not_duplicate_the_gallery(tmp
     ).fetchone()["n"] == 0
 
 
-def test_patch_etsy_listing_refuses_a_gallery_over_etsys_20_image_cap(tmp_path):
+def test_patch_etsy_listing_refuses_a_gallery_over_etsys_20_image_cap(stub_mockup_bundles, tmp_path):
     # Asserted, never assumed: today's worst case is 13 images, but the scene library
     # grows and Etsy rejects the 21st photo.
     conn = _fresh_conn(tmp_path)
@@ -882,7 +882,7 @@ def test_patch_etsy_listing_refuses_a_gallery_over_etsys_20_image_cap(tmp_path):
     mock_update.assert_not_called()
 
 
-def test_patch_etsy_listing_never_activates_a_listing(tmp_path):
+def test_patch_etsy_listing_never_activates_a_listing(stub_mockup_bundles, tmp_path):
     # B1 (inverted): drafts stay drafts. patch_etsy_listing must never call
     # update_listing_state, and must never send a 'state' field in update_listing's
     # payload - either would activate the listing ($0.20 each).
@@ -903,7 +903,7 @@ def test_patch_etsy_listing_never_activates_a_listing(tmp_path):
     assert "state" not in mock_update.call_args[0][2]
 
 
-def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
+def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(stub_mockup_bundles, tmp_path):
     # patch_etsy_listing's dry_run parameter only gates the Etsy write calls. Resolving
     # etsy_listing_id is a Gelato-side read that always makes a real HTTP call, so it
     # must be gated on Gelato's own liveness - otherwise the standard dev state would
@@ -932,7 +932,7 @@ def test_patch_etsy_listing_uses_placeholder_id_when_gelato_not_live(tmp_path):
     mock_inventory.assert_called_once()
 
 
-def test_patch_etsy_listing_uploads_nothing_when_no_gallery_images(tmp_path):
+def test_patch_etsy_listing_uploads_nothing_when_no_gallery_images(stub_mockup_bundles, tmp_path):
     # A group_type with no authored scenes lands with zero product_images rows.
     # patch_etsy_listing must not error - it uploads nothing and the rest still runs.
     conn = _fresh_conn(tmp_path)
@@ -960,7 +960,7 @@ def test_patch_etsy_listing_uploads_nothing_when_no_gallery_images(tmp_path):
 
 # --- GL-33: reconcile step deletes Gelato's contaminating gallery images ---
 
-def test_patch_etsy_listing_deletes_images_not_owned_by_this_group_product(tmp_path):
+def test_patch_etsy_listing_deletes_images_not_owned_by_this_group_product(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
 
@@ -985,7 +985,7 @@ def test_patch_etsy_listing_deletes_images_not_owned_by_this_group_product(tmp_p
         assert call.args[:2] == ("shop1", "DRY_RUN_ETSY_LISTING_ID")
 
 
-def test_patch_etsy_listing_reconcile_is_idempotent_second_pass_deletes_nothing(tmp_path):
+def test_patch_etsy_listing_reconcile_is_idempotent_second_pass_deletes_nothing(stub_mockup_bundles, tmp_path):
     conn = _fresh_conn(tmp_path)
     ctx = _publishable(conn, tmp_path)
 
@@ -1014,7 +1014,7 @@ def test_patch_etsy_listing_reconcile_is_idempotent_second_pass_deletes_nothing(
     assert _patch(second_pass_images) == 0
 
 
-def test_patch_etsy_listing_never_deletes_an_image_it_cannot_positively_account_for(tmp_path):
+def test_patch_etsy_listing_never_deletes_an_image_it_cannot_positively_account_for(stub_mockup_bundles, tmp_path):
     # Positive-match only: an image absent from product_images.etsy_listing_image_id for
     # THIS group_product_id is treated as foreign and deleted - even ambiguous cases are
     # not silently kept. Confirms the flip side: an owned id is never touched no matter
@@ -1110,7 +1110,7 @@ def test_live_product_row_resolves_a_pre_migration_row_by_group_id(tmp_path):
 
 # --- GL-57: the gallery order must leave the process ---
 
-def test_patch_etsy_listing_sends_an_explicit_rank_in_group_rank_order(tmp_path):
+def test_patch_etsy_listing_sends_an_explicit_rank_in_group_rank_order(stub_mockup_bundles, tmp_path):
     # The whole sequence is ranked, not just rank=1 on the first image - the outcome
     # must not depend on an Etsy default-ordering rule nobody has verified.
     conn = _fresh_conn(tmp_path)
