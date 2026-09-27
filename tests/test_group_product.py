@@ -736,7 +736,11 @@ def test_patch_etsy_listing_writes_listing_properties_from_static_config(stub_mo
             shop_id="shop1", dry_run=True, now="2026-07-16T09:20:00",
         )
     written = {c[0][2]: (c[0][3], c[0][4]) for c in mock_prop.call_args_list}
-    assert written == {148789511893: ([5285], ["Archival paper"]), 145330288558: ([2342], ["Unframed"])}
+    expected = {
+        p["property_id"]: ([p["value_id"]], [p["value"]])
+        for p in ctx["static_config"]["etsy_listing_properties"]
+    }
+    assert written == expected
 
 
 def test_patch_etsy_listing_property_failure_leaves_status_and_reason_and_raises(stub_mockup_bundles, tmp_path):
