@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO))
 
 from qops import config as qconfig  # noqa: E402
 from qops import guard, install  # noqa: E402
+from scripts.schema_drift import SCHEMA_SQL, schema_drift  # noqa: E402
 
 FEATURE = {"branch": "gl-63-thing", "worktrees": 1}
 
@@ -80,7 +81,7 @@ def test_guard_scan_catches_a_planted_string(tmp_path):
 # --------------------------------------------------------------------------
 
 def _schema_sql_path():
-    return REPO / qconfig.load(REPO)["schema_check"]["sql"]
+    return REPO / SCHEMA_SQL
 
 
 def test_schema_drift_reports_a_column_dropped_from_the_live_db(tmp_path):
@@ -96,7 +97,7 @@ def test_schema_drift_reports_a_column_dropped_from_the_live_db(tmp_path):
     conn.commit()
     conn.close()
 
-    problems = install.schema_drift(REPO, qconfig.load(REPO), db_path)
+    problems = schema_drift(REPO, qconfig.load(REPO), db_path)
     assert any("group_products.gelato_create_intent_at" in p for p in problems)
 
 
@@ -106,17 +107,20 @@ def test_schema_drift_is_clean_on_a_fully_migrated_db(tmp_path):
     conn.executescript(_schema_sql_path().read_text(encoding="utf-8"))
     conn.commit()
     conn.close()
-    assert install.schema_drift(REPO, qconfig.load(REPO), db_path) == []
+    assert schema_drift(REPO, qconfig.load(REPO), db_path) == []
 
 
 def test_schema_drift_is_quiet_when_there_is_no_live_db(tmp_path):
-    assert install.schema_drift(tmp_path, qconfig.load(REPO)) == []
+    assert schema_drift(tmp_path, qconfig.load(REPO)) == []
 
 
-def test_schema_drift_is_quiet_when_the_config_declares_no_schema():
-    """A substrate repo has no database. No `schema_check:` block, no check —
-    and no reaching for one project's filenames from substrate code (leak 5)."""
-    assert install.schema_drift(REPO, {}) == []
+def test_doctor_runs_the_schema_drift_check():
+    """qops v0.5.0 dropped the built-in check (qops#210); `doctor_checks:` is
+    the only thing that still runs it. An entry that fails to import is
+    reported as a `failed` problem, not skipped."""
+    cfg = qconfig.load(REPO)
+    assert "scripts.schema_drift:schema_drift" in cfg["doctor_checks"]
+    assert not [p for p in install.consumer_checks(REPO, cfg) if "failed" in p]
 
 
 def test_the_portability_word_list_names_this_project():

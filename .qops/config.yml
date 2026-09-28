@@ -105,14 +105,12 @@ doc_link_roots: [pipeline, scripts, tests]
 portability_forbidden: [qhoto, printshop, etsy, gelato, replicate, flux,
                         schnell, mockup, listing]
 
-# --- schema check (#160) ---------------------------------------------------
-# `qops doctor` compares the live DB against the declared schema: schema.sql is
-# all `CREATE TABLE IF NOT EXISTS`, so a column added there is a silent no-op
-# against a table that already exists. Both paths are THIS project's — a config
-# omitting this block gets no check, which is what a substrate repo wants.
-schema_check:
-  sql: db/schema.sql
-  db: db/qhoto.sqlite3
+# --- doctor checks (#160, qops#210) ------------------------------------------
+# Project checks `qops doctor` runs as `fn(root, cfg)`. schema_drift compares
+# the live DB against db/schema.sql: a column added there is a silent no-op
+# against a table that already exists.
+doctor_checks:
+  - scripts.schema_drift:schema_drift
 
 # --- CI --------------------------------------------------------------------
 ci:
