@@ -51,8 +51,7 @@ Required keys are marked ●. Everything else has a default and may be omitted.
 | Key | Type | Meaning |
 |---|---|---|
 | `portability_forbidden` | list[str] | Words no substrate file may contain. The project name and every tripwire name are added automatically. |
-| `schema_check.sql` | path | A declared SQL schema to compare the live DB against. Omit the block and no check runs. |
-| `schema_check.db` | path | The live DB. Absent on a fresh checkout, which is not drift. |
+| `doctor_checks` | list[str] | `module:callable` entries `qops doctor` imports from the repo root and calls as `fn(root, cfg) -> list[str]`. This project registers `scripts.schema_drift:schema_drift` (live DB vs `db/schema.sql`; replaces the `schema_check:` block removed in qops v0.5.0). |
 
 ### pickup-loop
 
