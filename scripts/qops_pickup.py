@@ -16,7 +16,7 @@ reads nothing, and exits 0 doing it.
 Eligibility is deliberately narrow, and every condition is the owner's to grant:
 
     state:planned  AND  NOT no-auto  AND  gate: is not none
-    AND ( ready:auto  OR  ( origin:owner  AND  NOT gate:taste  AND  body names a test ) )
+    AND ( ready:auto  OR  ( origin:owner  AND  body names a test ) )
 
 `ready:auto` is never applied by the triager (see .claude/agents/triager.md) —
 only the owner grants it. `gate:none` blocks pickup because a sortie with no
@@ -66,7 +66,7 @@ from pathlib import Path
 # falls through to site-packages exactly as before.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qops import config as qconfig, install, ledger, pending, review  # noqa: E402
+from qops import config as qconfig, install, ledger, pending, reconcile, review  # noqa: E402
 
 # eligible(), unwritable(), UNWRITABLE, plannable(), decomposable(),
 # interviewed(), strikes() and struck_out() live in qops/install.py (#71,
@@ -107,14 +107,7 @@ def backlog(root: Path) -> list[dict] | None:
         print(out.stderr.strip(), file=sys.stderr)
         return None
     if out.stdout is None:
-        # `gh` exited 0 and the pipe still yielded nothing: the reader thread
-        # died decoding it. Without `encoding=` above that is what one non-
-        # cp1252 byte in one issue body does on a Windows host, and
-        # `json.loads(None or "[]")` turned it into an *empty backlog* - a
-        # queue that reads idle rather than unknown, hourly, forever. The
-        # encoding is the fix; this is the assertion that the fix held.
-        print("could not read the backlog: the query returned no output",
-              file=sys.stderr)
+        print("gh issue list: stdout could not be decoded", file=sys.stderr)
         return None
     return json.loads(out.stdout or "[]")
 
@@ -271,13 +264,20 @@ def main(argv: list[str]) -> int:
         return _review(root)
     if "--unreached-triage" in argv:
         return _print_unreached_triage(root)
+    cfg = qconfig.load(root)
+    # Rides this same registered run, ahead of `_run` (#241): the merge that
+    # triggered this fire cannot see itself on a later PR event, so a
+    # bot-merged row would otherwise sit `state:building` until the next PR
+    # event or the daily floor. `--launch`'s rule applies unchanged - a dry
+    # run reconciles nothing, same as `_review`.
+    reconcile_rc = _reconcile(root, cfg) if "--launch" in argv else 0
     rc = _run(argv, root)
     ledger.append(root, "pickup_ran", {"rc": rc})
     # The alert pass rides this run too (#120), and it owns its own read
     # rather than reusing `_run`'s: it must still fire when `_run` bailed
     # early, and `pending.backlog()` already prints the unreadable-vs-empty
     # distinction the pass needs.
-    alert_rc = _alert(argv, root, qconfig.load(root))
+    alert_rc = _alert(argv, root, cfg)
     # After the pickup and the alert, so a PR this run just opened is judged
     # this run - and behind `--launch`, by the rule this script already
     # follows: a dry run says what it would have done and writes nothing
@@ -286,7 +286,19 @@ def main(argv: list[str]) -> int:
     # a picker that could not pick.
     if "--launch" not in argv:
         return rc or alert_rc
-    return rc or alert_rc or _review(root)
+    return reconcile_rc or rc or alert_rc or _review(root)
+
+
+def _reconcile(root: Path, cfg: dict) -> int:
+    """The reconcile pass, ridden ahead of the picker rather than a second
+    scheduled task (#241). A config naming no tracker is a config defect
+    `doctor` already reports, not a picker failure repeated hourly - the same
+    reasoning `_alert` follows for the same check."""
+    if not cfg.get("repo"):
+        return 0
+    rc = reconcile.main([], root, cfg)
+    ledger.append(root, "reconcile_ran", {"rc": rc})
+    return rc
 
 
 def _review(root: Path) -> int:
@@ -304,12 +316,15 @@ def _review(root: Path) -> int:
 ALERT_NAME_MAX = 80  # a session name the owner scans, not a full render
 
 
-def alert_session_name(num: int, clause: str) -> str:
+def alert_session_name(project: str, num: int, clause: str) -> str:
     """The triage surface (ADR-0031 §4). Several rows may wait at once, and
     the name is how the owner tells them apart without opening the tracker
-    first — a struck-out row reads differently from a taste-judgement one."""
+    first — a struck-out row reads differently from a taste-judgement one.
+
+    Named from `cfg["project"]`, not the root directory or the git remote:
+    config is the only project-specific surface (#215)."""
     clause = " ".join(clause.split())
-    return f"qops #{num} {clause}"[:ALERT_NAME_MAX]
+    return f"{project} #{num} {clause}"[:ALERT_NAME_MAX]
 
 
 def alert_prompt(num: int, clause: str) -> str:
@@ -317,7 +332,21 @@ def alert_prompt(num: int, clause: str) -> str:
     `pending` render — two concurrent alerts would each recite the other.
     Short by construction: the issue body is never embedded in argv,
     `review.WINDOWS_CMDLINE_MAX` is a live failure mode on this host
-    (#111)."""
+    (#111).
+
+    The review clause (`pending.py`'s "the loop asked for eyes") gets its own
+    text (ADR-0036 §5): that clause is the row's one owner moment end to end,
+    artefact in hand, not a proposal-and-wait. Every other clause keeps
+    today's text. Matched on the clause's own wording, not a new label
+    literal — the alerter still holds no trigger predicate of its own."""
+    if clause.endswith("the loop asked for eyes"):
+        return (
+            f"Read issue #{num} on this repo's tracker and its open PR - "
+            f"the loop asked for eyes. Present the artefact and what the "
+            f"row asked for. If the owner approves, merge. If the owner "
+            f"rejects, ask what comes next (abandon / retry in-session / "
+            f"record the feedback on the row / something else the context "
+            f"suggests) - do not choose for them.")
     return (
         f"Read issue #{num} on this repo's tracker - it is waiting on the "
         f"owner ({clause}). State the situation in a few lines, propose "
@@ -365,7 +394,7 @@ def _alert(argv: list[str], root: Path, cfg: dict) -> int:
     line = waiting[0]
     num = int(line.split()[0].lstrip("#"))
     clause = line.split(" — ", 1)[1]
-    name = alert_session_name(num, clause)
+    name = alert_session_name(cfg.get("project", "qops"), num, clause)
     print(f"pickup-loop: #{num} is waiting on the owner - {clause}")
     if "--launch" not in argv:
         print(f"pickup-loop: dry run, not alerting. Would launch {name!r}.")
@@ -936,6 +965,13 @@ def _decompose(argv: list[str], root: Path, cfg: dict, rows: list[dict]) -> int:
         if struck_out(root, num, labels):
             strike_out(root, num, strikes(root, num, labels), why)
         return rc or 1
+    if not covers(root, repo, num, epic):
+        why = "the child set does not cover the epic's ADR"
+        release(root, num, why, log, relabel=False)
+        labels = {l["name"] for l in epic.get("labels", [])}
+        if struck_out(root, num, labels):
+            strike_out(root, num, strikes(root, num, labels), why)
+        return 1
     print(f"pickup-loop: #{num} decomposed.")
     return 0
 
@@ -951,23 +987,30 @@ def first_decomposable(root: Path, repo: str, rows: list[dict]) -> dict | None:
             print(f"pickup-loop: skipping #{num} - struck out after "
                   f"{STRIKES} failed runs (#49).")
             continue
-        if sub_issue_count(root, repo, num) > 0:
+        # An epic with sub-issues is skipped unless it already carries a
+        # does-not-cover verdict for exactly this child set - otherwise a
+        # partial cut would be invisible to every later pass.
+        if sub_issue_count(root, repo, num) > 0 and not uncovered(root, repo, num):
             continue
         return row
     return None
 
 
-def sub_issue_count(root: Path, repo: str, num: str) -> int:
-    """The epic's native sub-issue count, read through the REST endpoint
+def sub_issues(root: Path, repo: str, num: str) -> list[dict]:
+    """The epic's native sub-issues, read through the REST endpoint
     `qops/reconcile.py:parent_origin` already reads the other side of (#81)."""
     out = subprocess.run(["gh", "api", f"repos/{repo}/issues/{num}/sub_issues"],
                          cwd=root, capture_output=True, text=True)
     if out.returncode:
-        return 0
+        return []
     try:
-        return len(json.loads(out.stdout or "[]"))
+        return json.loads(out.stdout or "[]")
     except json.JSONDecodeError:
-        return 0
+        return []
+
+
+def sub_issue_count(root: Path, repo: str, num: str) -> int:
+    return len(sub_issues(root, repo, num))
 
 
 def produced_children(root: Path, repo: str, num: str, before: int) -> bool:
@@ -975,6 +1018,139 @@ def produced_children(root: Path, repo: str, num: str, before: int) -> bool:
     decomposed epic (the same rule `produced_work()` and `produced_plan()`
     apply to their own runs)."""
     return sub_issue_count(root, repo, num) > before
+
+
+COVERAGE_MARKER = "<!-- qops-coverage:"
+
+_COVERAGE_PROMPT = """You are judging whether a set of child issues covers the outcome an ADR states.
+
+Judge ONE question: does this child set reach the outcome the ADR describes?
+Not whether the children are well-written, not whether more could be added for
+polish. Only whether the ADR's stated outcome is covered.
+
+Reply with exactly one first line, then a short reason naming any uncovered
+scope:
+
+VERDICT: covers
+VERDICT: does-not-cover
+
+Use `does-not-cover` only when you can name scope the ADR states that no child
+covers. Uncertainty is `covers` - a coverage judge that blocks when unsure
+blocks every decomposition.
+
+Answer from what is below. Do not read files, run commands or use tools.
+
+--- THE EPIC ---
+{epic}
+
+--- THE ADR ---
+{adr}
+
+--- THE CHILDREN ---
+{children}
+"""
+
+
+def coverage_marker(children: list[int]) -> str:
+    """The line that makes a comment a coverage verdict, and ties it to one
+    child set - a verdict over an earlier, smaller set is no verdict for a
+    child set filed after it."""
+    return f"{COVERAGE_MARKER}{','.join(str(n) for n in sorted(children))} -->"
+
+
+def coverage_verdict(text: str | None) -> str | None:
+    """`covers`, `does-not-cover`, or None for anything else - the same strict
+    first-line parse `review.verdict()` uses, for the same reason: a rambling
+    answer must not become a rejection."""
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line.startswith("VERDICT:"):
+            value = line[len("VERDICT:"):].strip().lower()
+            return value if value in ("covers", "does-not-cover") else None
+    return None
+
+
+def coverage_prompt(epic: dict, adr_text: str, children: list[dict]) -> str:
+    rendered = "\n\n".join(
+        f"#{c['number']}: {c.get('title', '')}\n{c.get('body') or ''}"
+        for c in children)
+    return _COVERAGE_PROMPT.format(
+        epic=epic.get("body") or "", adr=adr_text, children=rendered)
+
+
+def issue_coverage_comments(root: Path, repo: str, num: str) -> list[str]:
+    """Oldest first. Split on the marker itself, same reasoning as
+    `review.comments()`: a comment's own text could otherwise forge a
+    boundary."""
+    out = subprocess.run(["gh", "issue", "view", num, "--repo", repo,
+                          "--json", "comments", "-q", ".comments[].body"],
+                         cwd=root, capture_output=True, text=True, encoding="utf-8")
+    if out.returncode:
+        return []
+    return [COVERAGE_MARKER + part
+            for part in out.stdout.split(COVERAGE_MARKER)[1:]]
+
+
+def uncovered(root: Path, repo: str, num: str) -> bool:
+    """Whether the epic already carries a does-not-cover verdict for its
+    *current* child set - the dedup `first_decomposable()` needs to revisit a
+    partial cut instead of skipping it forever."""
+    children = sub_issues(root, repo, num)
+    if not children:
+        return False
+    marker = coverage_marker([c["number"] for c in children])
+    for body in reversed(issue_coverage_comments(root, repo, num)):
+        if marker in body:
+            return coverage_verdict(body) == "does-not-cover"
+    return False
+
+
+def covers(root: Path, repo: str, num: str, epic: dict) -> bool:
+    """The second pass: read the epic's ADR and the filed children off the
+    tracker, and ask whether the set covers the ADR's stated outcome.
+
+    Read off the tracker, never off the decomposing session's prose or run
+    log - that is what makes this a separate judgement rather than the first
+    session grading itself.
+
+    Fails open (returns True) on anything that stops the judgement from
+    happening at all - no ADR, unreadable children, a call that raised, an
+    answer with no verdict - and says why on stdout every time. The
+    asymmetry is `qops/review.py`'s: a wrong fail-closed re-decomposes an
+    already-cut epic and files duplicate children nothing cleans up, while a
+    wrong fail-open accepts one partial cut that the next filing catches.
+    Only an explicit `does-not-cover` returns False.
+    """
+    children = sub_issues(root, repo, num)
+    if not children:
+        print(f"pickup-loop: #{num} - no sub-issues to judge coverage of; accepting.")
+        return True
+    adr = install.interview_adr(root, epic)
+    if adr is None:
+        print(f"pickup-loop: #{num} - epic names no readable ADR; accepting.")
+        ledger.append(root, "decompose_unjudged", {"issue": num, "why": "no ADR"})
+        return True
+    try:
+        adr_text = adr.read_text(encoding="utf-8", errors="replace")
+        answer = review.ask(coverage_prompt(epic, adr_text, children), root)
+    except Exception as exc:
+        print(f"pickup-loop: #{num} - coverage pass failed ({exc}); accepting.")
+        ledger.append(root, "decompose_unjudged", {"issue": num, "why": str(exc)})
+        return True
+    call = coverage_verdict(answer)
+    if call is None:
+        print(f"pickup-loop: #{num} - coverage answer carried no verdict; accepting.")
+        ledger.append(root, "decompose_unjudged", {"issue": num, "why": "no verdict"})
+        return True
+    marker = coverage_marker([c["number"] for c in children])
+    out = subprocess.run(["gh", "issue", "comment", num, "--repo", repo,
+                         "--body", f"{marker}\n\n{answer.strip()}"],
+                        cwd=root, capture_output=True, text=True)
+    if out.returncode:
+        print(f"pickup-loop: #{num} - could not post the coverage verdict "
+              f"({out.stderr.strip()}).")
+    print(f"pickup-loop: #{num} - coverage {call}.")
+    return call == "covers"
 
 
 def decompose_prompt(num: str) -> str:

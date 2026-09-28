@@ -5,7 +5,8 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
 effort: medium
 ---
-
+
+
 **Read this file from disk before you act.** What you were injected with is a
 snapshot taken when the session started (#57) - if this role was edited since,
 your copy is the old one, and where they differ the file on disk wins. Nothing
