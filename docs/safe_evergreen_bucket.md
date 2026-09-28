@@ -18,7 +18,7 @@ monstera line art, botanical print set, pressed flower art, fern illustration pr
 minimalist line art poster, abstract arch print, geometric shapes wall art, negative space poster
 
 ### Celestial / astronomy (not zodiac)
-star chart poster, lunar cycle art, constellation line art, celestial minimalist print
+constellation line art, celestial minimalist print
 
 ### Landscape / nature photography-adjacent
 mountain line art, minimalist landscape print, coastal line drawing, forest silhouette poster, desert minimalist art
@@ -77,8 +77,10 @@ A third tag the bucket did not previously have. A term can pass the flat-volume 
 
 - **`moon phase print`** — top 10 is 4 dated lunar calendars (2026/2027) and 4 personalised-from-a-date products; the category anchor is a 3-listing shop whose only section is named `2026`. An undated generated moon-phase print is not competing with those, it is invisible behind them.
 - **`single line drawing art`** and **`continuous line illustration`** — "one line drawing" *is* the custom couple/pet-portrait product on Etsy; the term has been colonised by personalisation. `minimalist line art poster` and `negative space poster` survive, they return mixed results.
+- **`star chart poster`** (#236, 2026-09-26) — same anchor problem as `moon phase print`: SERP is owned by `PaperEmporiumCo`'s 35.6k-review Bestseller `Custom Star Map Print`, a personalisation product. Also a producibility failure independent of demand: a star *chart* inherently asks for labelled coordinates/magnitude markers, which is exactly what candidate 540's brief asked for and what got it rejected at primary-group review for garbled text — FLUX schnell cannot render legible glyphs. Two independent reasons to remove. Evidence: `docs/2026-09-26-236-celestial-verdict.md`.
+- **`lunar cycle art`** (#236, 2026-09-26) — resolves the "at risk, re-check at next sweep" flag GL-43 left on this term. Same phase-sequence subject as `moon phase print`/520/526/533 (all `trending_now` paraphrases of "moon phase", 3/3 rejected or killed) under a different name; no evidence surfaced since GL-43 to un-flag it. Evidence: `docs/2026-09-26-236-celestial-verdict.md`.
 
-**At risk, kept for now, re-check at the next sweep:** `star chart poster` (adjacent to a 35.6k-review Bestseller custom star-map product) and `lunar cycle art` (a weaker form of `moon phase print`'s problem). Both are still in the Celestial bucket above — this is a flag, not a removal.
+`moon phase print` was removed above as a literal string, but `trending_now` has no filter against this section at all (see `docs/2026-09-26-236-celestial-verdict.md` "Enforcement gap") — candidates 520/526/533 reintroduced the same subject three times as paraphrases (`minimalist moon phase astronomy poster`, `moon phase wall art print`, `moon phase minimalist wall art`) that never matched the blocked string. A code-level filter is filed as a follow-up to #236, not just this doc edit — doc-only removal was already tried once (GL-43) and it didn't hold.
 
 **Careful with section placement:** `load_safe_evergreen_terms()` reads every non-blank, non-`###` line between a class heading (`## Buckets`, `## Style modifiers`, `## Placement modifiers`, `## Tag-safe short forms`) and the next `##`, splitting on commas. Prose inside one of those four sections becomes term data for that class. All annotation — including the mapping table above — belongs in a section of its own, never inside one of the four.
 
