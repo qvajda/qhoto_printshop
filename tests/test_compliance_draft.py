@@ -535,7 +535,7 @@ def test_generate_draft_text_returns_parsed_draft():
     candidate = {"niche": "monstera line art"}
     fake_response = {
         "text": _json.dumps({
-            "title": "Monstera Line Art Botanical Print",
+            "title": "Monstera Line Art Botanical Poster",
             "tags": ["botanical", "wall art"],
             "description": VALID_DESCRIPTION_PROSE,
             "alt_texts": ["Flat mockup of monstera line art print", "Monstera print shown in a living room"],
@@ -549,7 +549,7 @@ def test_generate_draft_text_returns_parsed_draft():
 
     mock_complete.assert_called_once()
     assert mock_complete.call_args.kwargs["api_key"] == "key1"
-    assert draft["title"] == "Monstera Line Art Botanical Print"
+    assert draft["title"] == "Monstera Line Art Botanical Poster"
     assert draft["tags"] == ["botanical", "wall art"]
     assert len(draft["alt_texts"]) == 2
     # generate_draft_text assembles blocks 4-6 onto the model's prose before returning.
@@ -585,7 +585,7 @@ def test_write_listing_texts_inserts_row_with_json_encoded_lists(tmp_path):
     conn = _fresh_conn(tmp_path)
     candidate_id = _insert_candidate(conn)
     draft = {
-        "title": "Monstera Line Art Botanical Print",
+        "title": "Monstera Line Art Botanical Poster",
         "tags": ["botanical", "wall art"],
         "description": "A minimalist botanical print.",
         "alt_texts": ["alt one", "alt two"],
@@ -603,7 +603,7 @@ def test_write_listing_texts_inserts_row_with_json_encoded_lists(tmp_path):
 
     row = conn.execute("SELECT * FROM listing_texts WHERE id = ?", (listing_text_id,)).fetchone()
     assert row["candidate_id"] == candidate_id
-    assert row["title"] == "Monstera Line Art Botanical Print"
+    assert row["title"] == "Monstera Line Art Botanical Poster"
     assert _json.loads(row["tags"]) == ["botanical", "wall art"]
     assert row["description"] == "A minimalist botanical print."
     # Retained NOT NULL column, deliberately written empty since GL-37 - see the
@@ -661,7 +661,7 @@ def test_update_gallery_alt_text_raises_on_count_mismatch(tmp_path):
 # 104 chars, no repeated word >2x, no banned title term; 13 unique tags each <=20
 # chars, none over-length/banned, only 2 share the title's head noun ("sage").
 _FAKE_DRAFT_TITLE = (
-    "Sage Green Fern Botanical Print, Minimalist Herbarium Wall Art, "
+    "Sage Green Fern Botanical Poster, Minimalist Herbarium Wall Art, "
     "Bedroom Decor, Calm Neutral Nature Print"
 )
 _FAKE_DRAFT_TAGS = [
@@ -1017,7 +1017,7 @@ def test_title_formula_and_tag_bands_enforced():
 
     # accepts the worked example (spec §5) and the module's own compliant fixture
     compliance_draft.validate_draft_formula(
-        "Sage Green Fern Botanical Print, Minimalist Herbarium Wall Art, Bedroom "
+        "Sage Green Fern Botanical Poster, Minimalist Herbarium Wall Art, Bedroom "
         "Decor, Calm Neutral Nature Print",
         valid_tags,
     )
@@ -1028,17 +1028,17 @@ def test_title_formula_and_tag_bands_enforced():
 
     title_cases = {
         "pipe separator": (
-            "Sage Green Fern | Botanical Print, Minimalist Herbarium Wall Art, "
+            "Sage Green Fern | Botanical Poster, Minimalist Herbarium Wall Art, "
             "Bedroom Decor, Calm Neutral Nature Print",
             "|",
         ),
         "colon separator": (
-            "Sage Green Fern: Botanical Print, Minimalist Herbarium Wall Art, "
+            "Sage Green Fern: Botanical Poster, Minimalist Herbarium Wall Art, "
             "Bedroom Decor, Calm Neutral Nature Print",
             ":",
         ),
         "16 words at <=140 chars": (
-            "Sage Fern Print, Minimalist Herbarium Wall Art Piece, Bedroom Decor "
+            "Sage Fern Poster, Minimalist Herbarium Wall Art Piece, Bedroom Decor "
             "Room, Calm Neutral Nature Warm Print",
             "16 words",
         ),
@@ -1049,26 +1049,26 @@ def test_title_formula_and_tag_bands_enforced():
             "exceeds the 140-char limit",
         ),
         "3 comma clauses": (
-            "Sage Fern Botanical Print, Minimalist Wall Art, Calm Neutral Print",
+            "Sage Fern Botanical Poster, Minimalist Wall Art, Calm Neutral Print",
             "3 comma-separated clause",
         ),
         "word repeated 3x": (
-            "Sage Sage Fern Print, Minimalist Herbarium Wall Art, Bedroom Decor, "
+            "Sage Sage Fern Poster, Minimalist Herbarium Wall Art, Bedroom Decor, "
             "Calm Neutral Sage Print",
             "repeats 'sage' 3 times",
         ),
         "size label": (
-            "A2 Sage Fern Botanical Print, Minimalist Herbarium Wall Art, "
+            "A2 Sage Fern Botanical Poster, Minimalist Herbarium Wall Art, "
             "Bedroom Decor, Calm Neutral Print",
             "'A2'",
         ),
         "set quantity": (
-            "Set Of 3 Sage Fern Prints, Minimalist Herbarium Wall Art, Bedroom "
+            "Poster Set Of 3 Sage Fern, Minimalist Herbarium Wall Art, Bedroom "
             "Decor, Calm Neutral Print",
             "'Set Of'",
         ),
         "shop name": (
-            "Qhoto Sage Fern Botanical Print, Minimalist Herbarium Wall Art, "
+            "Qhoto Sage Fern Botanical Poster, Minimalist Herbarium Wall Art, "
             "Bedroom Decor, Calm Neutral Print",
             "'Qhoto'",
         ),
@@ -1096,7 +1096,7 @@ def test_title_formula_and_tag_bands_enforced():
     }
     for label, (tags, expected) in tag_cases.items():
         title = (
-            "Meadow Wildflower Botanical Print, Minimalist Herbarium Wall Art, "
+            "Meadow Wildflower Botanical Poster, Minimalist Herbarium Wall Art, "
             "Bedroom Decor, Calm Neutral Nature Print"
         ) if label == "7 tags sharing head noun" else valid_title
         with pytest.raises(ValueError, match=re.escape(expected)):
@@ -1115,7 +1115,7 @@ def test_build_compliance_draft_retries_after_formula_violation_then_succeeds(tm
     candidate_id = _insert_ready_candidate(conn, image_types=("flat_mockup", "lifestyle"))
     bad_response = {
         "text": _json.dumps({
-            "title": "Sage Fern Botanical Print, Minimalist Wall Art, Calm Neutral Print",
+            "title": "Sage Fern Botanical Poster, Minimalist Wall Art, Calm Neutral Print",
             "tags": _FAKE_DRAFT_TAGS, "description": "A minimalist botanical print.",
             "alt_texts": ["alt one", "alt two"],
         })
@@ -1136,3 +1136,44 @@ def test_build_compliance_draft_retries_after_formula_violation_then_succeeds(tm
     candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     assert candidate_row["status"] == "generating"
     conn.close()
+
+
+# --- #245: first clause names a poster; digital words banned from titles ---
+
+_TAIL = ", Minimalist Herbarium Wall Art, Bedroom Decor, Calm Neutral Nature Print"
+
+
+def test_title_first_clause_must_name_a_poster():
+    tags = _FAKE_DRAFT_TAGS
+    compliance_draft.validate_draft_formula("Sage Fern Poster" + _TAIL, tags)
+    compliance_draft.validate_draft_formula("Sage Fern POSTER" + _TAIL, tags)
+    with pytest.raises(ValueError, match="no 'poster'"):
+        compliance_draft.validate_draft_formula("Sage Fern Botanical Print" + _TAIL, tags)
+    # poster only in a later clause does not count
+    with pytest.raises(ValueError, match="no 'poster'"):
+        compliance_draft.validate_draft_formula(
+            "Sage Fern Botanical Print, Minimalist Poster, Bedroom Decor, Calm Nature Print",
+            tags,
+        )
+    # not inside another word
+    with pytest.raises(ValueError, match="no 'poster'"):
+        compliance_draft.validate_draft_formula("Sage Fern Imposter" + _TAIL, tags)
+
+
+def test_title_rejects_digital_words_word_bounded():
+    tags = _FAKE_DRAFT_TAGS
+    for bad in ("Printable Wall Art", "Digital Download", "Instant Decor", "download"):
+        title = f"Sage Fern Poster, Minimalist {bad}, Bedroom Decor, Calm Nature Print"
+        with pytest.raises(ValueError, match="digital word"):
+            compliance_draft.validate_draft_formula(title, tags)
+    # word-bounded: a longer word containing one is fine
+    compliance_draft.validate_draft_formula(
+        "Sage Fern Poster, Instantly Calming Wall Art, Bedroom Decor, Digitally Toned Print",
+        tags,
+    )
+
+
+def test_draft_prompt_names_poster_for_first_clause():
+    prompt = compliance_draft.DRAFT_TEXT_PROMPT_TEMPLATE
+    assert "first clause must name the object as a poster" in prompt
+    assert "'printable'" in prompt and "'digital'" in prompt

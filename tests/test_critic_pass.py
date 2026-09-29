@@ -27,7 +27,7 @@ _VALID_DESCRIPTION_PROSE = (
 # Compliant against compliance_draft.validate_draft_formula (#208): 4 comma clauses,
 # 12 words, no repeated word >2x, no banned title term; 13 unique tags <=20 chars.
 _DRAFT_TITLE = (
-    "Monstera Line Art Print, Botanical Wall Decor, "
+    "Monstera Line Art Poster, Botanical Wall Decor, "
     "Bedroom Poster, Modern Green Foliage"
 )
 _DRAFT_TAGS = [
