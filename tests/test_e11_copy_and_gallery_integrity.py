@@ -42,7 +42,7 @@ _VALID_DESCRIPTION_PROSE = (
 # Compliant against compliance_draft.validate_draft_formula (#208): 4 comma clauses,
 # 15 words, no repeated word >2x, no banned title term; 13 unique tags <=20 chars.
 _DRAFT_TITLE = (
-    "Sage Green Fern Botanical Print, Minimalist Herbarium Wall Art, "
+    "Sage Green Fern Botanical Poster, Minimalist Herbarium Wall Art, "
     "Bedroom Decor, Calm Neutral Nature Print"
 )
 _DRAFT_TAGS = [
