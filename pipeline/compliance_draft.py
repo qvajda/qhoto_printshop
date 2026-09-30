@@ -64,11 +64,11 @@ TAG_BANDS = (
 )
 assert sum(count for _, count in TAG_BANDS) == MAX_TAGS
 
-# §5: the medium clause should prefer these over "poster". This is a generation
-# preference only (per spec: "prefers", not "must never say poster") - the prompt
-# states it; there is no code assertion for it, deliberately, same reasoning as
-# TAG_BANDS above.
+# #245 (TITLE-FORMAT F2): the first clause names the object as a poster - that is
+# what the market calls it (53 % of bestseller titles). These stay allowed in later
+# clauses. The first-clause "poster" is asserted in validate_draft_formula.
 PREFERRED_MEDIUM_TERMS = ("art print", "wall art")
+_POSTER_PATTERN = re.compile(r"\bposter\b", re.IGNORECASE)
 
 # §2.2: "where a good phrase is over 20 chars, put it in the title and its short
 # head in tags." These are the five over-length phrases named in #28 - a tag
@@ -105,7 +105,8 @@ _TITLE_BANNED_PATTERN = re.compile(
     "|".join(
         [rf"\b{re.escape(term)}\b" for term in _TITLE_BRAND_TERMS]
         + [rf"\b{re.escape(size)}\b" for size in _TITLE_SIZE_LABELS]
-        + [r"\bset of\b", r"\d+\s*x\s*\d+", r"\d+\s*(cm|inch(?:es)?|in)\b", r"\d+\s*\""]
+        + [rf"\b{word}\b" for word in ("printable", "download", "digital", "instant")]
+        + [r"\bset of\b",r"\d+\s*x\s*\d+", r"\d+\s*(cm|inch(?:es)?|in)\b", r"\d+\s*\""]
     ),
     re.IGNORECASE,
 )
@@ -152,8 +153,10 @@ DRAFT_TEXT_PROMPT_TEMPLATE = (
     "characters AND at most {max_title_words} words - both limits apply separately. Never "
     "repeat the same word more than {max_word_repeats} times. Never name a size (no 'A2', "
     "no 'set of 3', no inch/cm measurements - every size is a variant, not a listing "
-    "attribute) and never name this shop or 'Etsy'. For the medium clause prefer 'art "
-    "print' or 'wall art' over 'poster'.\n\n"
+    "attribute) and never name this shop or 'Etsy'. The first clause must name the "
+    "object as a poster (e.g. 'Vintage Eucalyptus Herbarium Poster'); 'art print' or "
+    "'wall art' may follow in later clauses. Never use 'printable', 'download', "
+    "'digital' or 'instant': this is a physical, shipped poster.\n\n"
     "TAG BANDS: write exactly {max_tags} tags across five bands - "
     "{tag_bands}. Every tag at most {max_tag_length} characters: where a good phrase is "
     "over {max_tag_length} characters, put the full phrase in the title and only its short "
@@ -538,6 +541,12 @@ def validate_draft_formula(title: str, tags: list) -> None:
             f"separated by commas."
         )
 
+    if not _POSTER_PATTERN.search(clauses[0]):
+        raise ValueError(
+            f"first title clause has no 'poster': {clauses[0]!r}. Rewrite it to name the "
+            f"object as a poster, e.g. 'Vintage Eucalyptus Herbarium Poster'."
+        )
+
     for separator in TITLE_BANNED_SEPARATORS:
         if separator in title:
             raise ValueError(
@@ -563,8 +572,8 @@ def validate_draft_formula(title: str, tags: list) -> None:
     match = _TITLE_BANNED_PATTERN.search(title)
     if match:
         raise ValueError(
-            f"title contains {match.group(0)!r}: no brand/shop name, size or set quantity "
-            f"belongs in the title (sizes are variants under v4.12). Rewrite {title!r} "
+            f"title contains {match.group(0)!r}: no brand/shop name, size, set quantity or "
+            f"digital word belongs in the title (sizes are variants under v4.12). Rewrite {title!r} "
             f"without it."
         )
 
