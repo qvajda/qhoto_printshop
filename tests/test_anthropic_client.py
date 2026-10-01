@@ -67,7 +67,7 @@ def test_research_web_search_concatenates_multiple_text_blocks():
     with _patch_anthropic(_fake_client(fake_create)):
         result = anthropic_client.research_web_search("prompt", api_key="key1")
 
-    assert result["text"] == "line one\nline two"
+    assert result["text"] == "line oneline two"
 
 
 def test_complete_builds_correct_request_without_tools():
@@ -94,7 +94,7 @@ def test_complete_concatenates_multiple_text_blocks():
     with _patch_anthropic(_fake_client(fake_create)):
         result = anthropic_client.complete("prompt", api_key="key1")
 
-    assert result["text"] == "line one\nline two"
+    assert result["text"] == "line oneline two"
 
 
 def test_complete_raises_no_text_content_error_when_no_text_blocks():
@@ -179,7 +179,7 @@ def test_complete_with_images_concatenates_multiple_text_blocks():
          patch("pipeline.anthropic_client.http.head", return_value=_fake_head_response()):
         result = anthropic_client.complete_with_images("prompt", ["https://gelato/a.jpg"], api_key="key1")
 
-    assert result["text"] == "line one\nline two"
+    assert result["text"] == "line oneline two"
 
 
 def test_complete_with_images_falls_back_to_base64_when_over_size_cap():
@@ -255,3 +255,19 @@ def test_parse_json_response_still_strips_json_fence():
     result = anthropic_client.parse_json_response('```json\n{"a": 1}\n```')
 
     assert result == {"a": 1}
+
+
+def test_research_web_search_rejoins_cited_blocks_split_mid_json_string():
+    def fake_create(**kwargs):
+        return _message([_text_block('[{"keyword": "k", "rationale": "'), _text_block("quotes a "), _text_block('listing"}]')])
+
+    with _patch_anthropic(_fake_client(fake_create)):
+        result = anthropic_client.research_web_search("prompt", api_key="key1")
+
+    assert anthropic_client.parse_json_response(result["text"]) == [{"keyword": "k", "rationale": "quotes a listing"}]
+
+
+def test_parse_json_response_strips_fence_after_prose_preamble():
+    text = 'Based on my research, here is the JSON list:\n\n```json\n[{"a": 1}]\n```'
+
+    assert anthropic_client.parse_json_response(text) == [{"a": 1}]
