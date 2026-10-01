@@ -812,10 +812,18 @@ def build_compliance_draft(conn, candidate_id: int, *, static_config: dict = Non
         listing_text_id = write_listing_texts(conn, candidate_id, draft, metadata, now=now)
         update_gallery_alt_text(conn, candidate_id, draft["alt_texts"])
     except Exception as exc:
-        conn.execute(
-            "UPDATE candidates SET status = 'compliance_failed', failed_reason = ?, updated_at = ? WHERE id = ?",
-            (str(exc), timestamp, candidate_id),
-        )
+        # Vendor/account fault (e.g. credit lapse): keep the pre-draft status so the
+        # cycle re-selects the candidate; still record why. #249
+        if anthropic_client.is_transient_fault(exc):
+            conn.execute(
+                "UPDATE candidates SET failed_reason = ?, updated_at = ? WHERE id = ?",
+                (str(exc), timestamp, candidate_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE candidates SET status = 'compliance_failed', failed_reason = ?, updated_at = ? WHERE id = ?",
+                (str(exc), timestamp, candidate_id),
+            )
         conn.commit()
         raise
 
@@ -847,7 +855,7 @@ def run_compliance_draft_cycle(conn, *, static_config: dict = None,
     # returned success, so run_batch's _run_stage never fired its Telegram
     # notification. Finish the loop so one bad candidate does not strand the
     # rest, then raise once with every failure named. No re-queue: a
-    # 'compliance_failed' row is terminal here (an existing test pins that),
+    # 'compliance_failed' row is terminal here (transient vendor faults never reach it, #249) (an existing test pins that),
     # and the retry budget lives inside build_compliance_draft's 3 attempts.
     processed_ids = []
     failures = []

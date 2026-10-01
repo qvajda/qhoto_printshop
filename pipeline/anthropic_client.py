@@ -40,6 +40,24 @@ HAIKU_MODEL = "claude-haiku-4-5-20251001"
 WEB_SEARCH_TOOL_TYPE = "web_search_20250305"
 
 
+# Account/vendor faults, not verdicts on a candidate's art: credit lapse, a file-download
+# timeout on Anthropic's side, and the connection/rate-limit/5xx/overloaded family.
+_TRANSIENT_400_MARKERS = ("credit balance is too low", "timed out while trying to download")
+TRANSIENT_FAULT_EXC_TYPES = (
+    anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError,
+)
+
+
+def is_transient_fault(exc: Exception) -> bool:
+    if isinstance(exc, TRANSIENT_FAULT_EXC_TYPES):
+        return True
+    if not isinstance(exc, anthropic.APIStatusError):
+        return False
+    if exc.status_code in (429, 529) or exc.status_code >= 500:  # 529 = overloaded
+        return True
+    return exc.status_code == 400 and any(m in str(exc) for m in _TRANSIENT_400_MARKERS)
+
+
 class NoTextContentError(RuntimeError):
     """A successful Anthropic response had zero text blocks (e.g. a tool-only
     turn that ended without ever producing text). This is a domain invariant

@@ -3,6 +3,8 @@ import re
 from datetime import datetime
 from unittest.mock import patch
 
+import anthropic
+import httpx
 import pytest
 
 import pipeline.anthropic_client as anthropic_client
@@ -1177,3 +1179,68 @@ def test_draft_prompt_names_poster_for_first_clause():
     prompt = compliance_draft.DRAFT_TEXT_PROMPT_TEMPLATE
     assert "first clause must name the object as a poster" in prompt
     assert "'printable'" in prompt and "'digital'" in prompt
+
+
+def _credit_balance_error():
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.BadRequestError(
+        "Your credit balance is too low to access the Anthropic API",
+        response=httpx.Response(400, request=request), body=None,
+    )
+
+
+def test_credit_balance_fault_leaves_candidate_requeueable(tmp_path):
+    # #249: an account fault is not a verdict - status stays 'generating', reason is
+    # written, the stage still fails once, and the next cycle picks the candidate up.
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", side_effect=_credit_balance_error()):
+        with pytest.raises(compliance_draft.ComplianceDraftCycleError):
+            compliance_draft.run_compliance_draft_cycle(
+                conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    row = conn.execute("SELECT status, failed_reason FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["status"] == "generating"
+    assert "credit balance" in row["failed_reason"]
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", return_value=_fake_draft_response(2)):
+        second_run = compliance_draft.run_compliance_draft_cycle(
+            conn, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            now=datetime(2026, 7, 10, 11, 0, 0),
+        )
+    assert second_run == [candidate_id]
+    conn.close()
+
+
+def test_malformed_json_after_retries_still_compliance_failed(tmp_path):
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+
+    with patch("pipeline.compliance_draft.anthropic_client.complete", return_value={"text": "not json"}):
+        with pytest.raises(anthropic_client.MalformedJSONError):
+            compliance_draft.build_compliance_draft(
+                conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+                now=datetime(2026, 7, 10, 10, 0, 0),
+            )
+
+    row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert row["status"] == "compliance_failed"
+    conn.close()
+
+
+def test_is_transient_fault_classification():
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def status_err(code, msg):
+        return anthropic.APIStatusError(msg, response=httpx.Response(code, request=request), body=None)
+
+    assert anthropic_client.is_transient_fault(_credit_balance_error())
+    assert anthropic_client.is_transient_fault(
+        status_err(400, "The request timed out while trying to download the file"))
+    assert anthropic_client.is_transient_fault(status_err(529, "Overloaded"))
+    assert anthropic_client.is_transient_fault(anthropic.APIConnectionError(request=request))
+    assert not anthropic_client.is_transient_fault(status_err(400, "prompt is too long"))
+    assert not anthropic_client.is_transient_fault(ValueError("bad"))
