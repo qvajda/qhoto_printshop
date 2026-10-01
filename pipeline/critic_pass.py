@@ -663,7 +663,13 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                 anthropic_api_key=anthropic_api_key, correction_note=correction_note,
                 now=now,
             )
-        except TRANSIENT_REGEN_EXC_TYPES as exc:
+        except Exception as exc:
+            if not (isinstance(exc, TRANSIENT_REGEN_EXC_TYPES) or anthropic_client.is_transient_fault(exc)):
+                # A crash here (e.g. Claude returning malformed JSON) would otherwise leave the
+                # candidate in whatever terminal status that stage set (e.g. compliance_failed)
+                # while this group stays 'pending_review' - stuck state cleanup.py never sweeps.
+                abandon_candidate(conn, candidate_id, state["group_id"], f"retry regeneration failed: {exc}", now=now)
+                raise
             # A vendor/network blip mid-regen, not a verdict on the art (GL-16). No new
             # critic_pass_attempts row was written for this failed regen and attempt_number
             # doesn't advance, so candidates.status stays 'generating' exactly as it was -
@@ -677,12 +683,6 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                 "candidate_id": candidate_id, "passed": False,
                 "attempts": attempt_number, "transient": True,
             }
-        except Exception as exc:
-            # A crash here (e.g. Claude returning malformed JSON) would otherwise leave the
-            # candidate in whatever terminal status that stage set (e.g. compliance_failed)
-            # while this group stays 'pending_review' - stuck state cleanup.py never sweeps.
-            abandon_candidate(conn, candidate_id, state["group_id"], f"retry regeneration failed: {exc}", now=now)
-            raise
 
         attempt_number += 1
 
