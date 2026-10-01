@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
 import statistics
 
@@ -30,6 +31,9 @@ TRANSIENT_REGEN_EXC_TYPES = (
     http.HTTPError, replicate_client.ReplicateThrottledError,
 ) + http._TRANSIENT_CONNECTION_ERRORS
 
+
+# #250: consecutive NSFW false positives on one candidate before it is abandoned.
+NSFW_REGEN_CAP = 3
 
 logger = logging.getLogger(__name__)
 
@@ -663,6 +667,26 @@ def run_critic_pass(conn, candidate_id: int, *, static_config: dict = None,
                 anthropic_api_key=anthropic_api_key, correction_note=correction_note,
                 now=now,
             )
+        except replicate_client.ReplicateNSFWError as exc:
+            # #250: classifier false positive - retry the same attempt next run, but count
+            # consecutive hits in failed_reason (cleared on pass) so a prompt that truly
+            # trips the filter cannot loop forever.
+            prior = conn.execute(
+                "SELECT failed_reason FROM candidates WHERE id = ?", (candidate_id,)
+            ).fetchone()["failed_reason"] or ""
+            hit = re.match(r"NSFW hit (\d+)", prior)
+            hits = (int(hit.group(1)) if hit else 0) + 1
+            reason = f"NSFW hit {hits}/{NSFW_REGEN_CAP}: retry regeneration failed: {exc}"
+            if hits >= NSFW_REGEN_CAP:
+                abandon_candidate(conn, candidate_id, state["group_id"], reason, now=now)
+                raise
+            conn.execute("UPDATE candidates SET failed_reason = ? WHERE id = ?", (reason, candidate_id))
+            conn.commit()
+            logger.warning("NSFW false positive in critic-pass regen for candidate %s: %s", candidate_id, exc)
+            return {
+                "candidate_id": candidate_id, "passed": False,
+                "attempts": attempt_number, "transient": True,
+            }
         except TRANSIENT_REGEN_EXC_TYPES as exc:
             # A vendor/network blip mid-regen, not a verdict on the art (GL-16). No new
             # critic_pass_attempts row was written for this failed regen and attempt_number
