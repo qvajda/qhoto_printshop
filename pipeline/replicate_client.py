@@ -85,6 +85,12 @@ class ReplicatePredictionFailedError(Exception):
     does not go looking for a slow network."""
 
 
+class ReplicateNSFWError(ReplicatePredictionFailedError):
+    """flux-schnell's NSFW classifier tripped. A known false positive on clean prompts
+    (#181, #250): the same prompt usually passes on retry, so callers may treat it as
+    transient - but must bound the retries."""
+
+
 def _send(request):
     """Shared 429 -> ReplicateThrottledError translation. A rate-cap 429 is NOT a
     timeout and must never be reported as one."""
@@ -126,7 +132,8 @@ def _predict(model: str, input_body: dict, *, api_token: str,
         result = _send(urllib.request.Request(poll_url, headers=auth_headers, method="GET"))
 
     if result["status"] != "succeeded":
-        raise ReplicatePredictionFailedError(
+        err_cls = ReplicateNSFWError if "NSFW" in str(result.get("error")) else ReplicatePredictionFailedError
+        raise err_cls(
             f"Replicate prediction {result.get('id')} on {model} ended {result['status']}: "
             f"{result.get('error')}"
         )

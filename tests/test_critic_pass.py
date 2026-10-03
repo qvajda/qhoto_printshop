@@ -1162,6 +1162,55 @@ def test_run_critic_pass_does_not_abandon_on_anthropic_credit_balance_during_reg
     conn.close()
 
 
+def _run_nsfw_regen(conn, candidate_id):
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images",
+               return_value=_verdict_response("reject", {4: "off-center composition"})),          patch("pipeline.generate.generate_for_candidate",
+               side_effect=replicate_client.ReplicateNSFWError(
+                   "Replicate prediction x on m ended failed: NSFW content detected. Try running it again")):
+        return critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+
+def test_run_critic_pass_nsfw_during_regen_is_transient_then_abandons_at_cap(tmp_path, monkeypatch):
+    # cap 2 so it is reachable inside the 3-attempt budget (re-entry advances attempt_number)
+    monkeypatch.setattr(critic_pass, "NSFW_REGEN_CAP", 2)
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+    group_id = conn.execute(
+        "SELECT id FROM groups WHERE candidate_id = ? AND group_type = 'primary'", (candidate_id,),
+    ).fetchone()["id"]
+    saved = dict(conn.execute("SELECT * FROM listing_texts WHERE candidate_id = ?",
+                              (candidate_id,)).fetchone())
+
+    def restore_draft():
+        # the regen path deletes listing_texts before regenerating; the next run's
+        # compliance_draft sweep rewrites it - stand in for that here.
+        conn.execute("INSERT OR REPLACE INTO listing_texts (%s) VALUES (%s)" % (
+            ",".join(saved), ",".join("?" * len(saved))), list(saved.values()))
+        conn.commit()
+
+    for hit in range(1, critic_pass.NSFW_REGEN_CAP):
+        restore_draft()
+        assert _run_nsfw_regen(conn, candidate_id)["transient"] is True
+        assert conn.execute("SELECT status FROM candidates WHERE id = ?",
+                            (candidate_id,)).fetchone()["status"] == "generating"
+        if hit == 1:  # the failed regen itself adds no attempt row beyond the real verdict
+            assert conn.execute("SELECT COUNT(*) n FROM critic_pass_attempts WHERE group_id = ?",
+                                (group_id,)).fetchone()["n"] == 1
+
+    restore_draft()
+    with pytest.raises(replicate_client.ReplicateNSFWError):
+        _run_nsfw_regen(conn, candidate_id)
+    row = conn.execute("SELECT status, failed_reason FROM candidates WHERE id = ?",
+                       (candidate_id,)).fetchone()
+    assert row["status"] == "failed"
+    assert "NSFW" in row["failed_reason"]
+    conn.close()
+
+
 def test_run_critic_pass_still_abandons_on_non_transient_regen_crash(tmp_path):
     # RuntimeError (malformed data / code defect) must still abandon exactly as
     # before - only vendor/network faults get the transient treatment.
