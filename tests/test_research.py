@@ -34,6 +34,15 @@ def test_load_safe_evergreen_terms_excludes_gl43_blocked_terms():
     assert "continuous line illustration" not in terms
 
 
+def test_safe_evergreen_loaders_return_no_map_niche():
+    """#243: maps are a labelled-geometry genre FLUX schnell cannot render."""
+    terms = research.load_safe_evergreen_terms(classes=("subject", "style", "placement", "tag_safe"))
+    for term in ("world map line art", "minimalist travel print", "topographic map poster"):
+        assert term not in terms
+    for category in research.load_safe_evergreen_categories():
+        assert "map" not in category.lower() and "travel" not in category.lower()
+
+
 def test_load_safe_evergreen_terms_contains_no_placement_modifiers():
     """GL-43 deferred the colour and room/placement modifier buckets to GL-44
     precisely because this list also feeds art_brief.py, where a room word is
@@ -51,12 +60,13 @@ def test_load_safe_evergreen_terms_default_is_unchanged_regression_lock():
     """GL-44: the class filter must not widen what a no-argument call sees.
     Locks the exact list, not just its length, against a silent default
     change. Count dropped 44->42 in #236 (2026-09-26): `star chart poster` and
-    `lunar cycle art` removed from the Celestial bucket as BLOCKED."""
+    `lunar cycle art` removed from the Celestial bucket as BLOCKED; 42->39 in
+    #243: the World map / travel category removed as BLOCKED."""
     terms = research.load_safe_evergreen_terms()
 
     assert terms[0] == "monstera line art"
     assert terms[-1] == "japanese bird art"
-    assert len(terms) == 42
+    assert len(terms) == 39
     assert terms == research.load_safe_evergreen_terms(classes=("subject",))
 
 
@@ -541,7 +551,7 @@ def test_automatic_sources_are_not_pinned_to_botanical():
     import random
 
     categories = research.load_safe_evergreen_categories()
-    assert len(categories) == 9
+    assert len(categories) == 8  # 9->8 in #243: World map / travel removed
     event_niches = [raw["niche"] for raw in research.collect_event_lookahead(rng=random.Random(0))]
     assert len(event_niches) == 6
     hit = {name for name, terms in categories.items() if any(n in terms for n in event_niches)}
