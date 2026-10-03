@@ -21,7 +21,7 @@ MAX_IMAGE_URL_BYTES = 5 * 1024 * 1024
 # stuck turn fails loudly instead of looping forever.
 _MAX_PAUSE_TURN_CONTINUATIONS = 5
 
-_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 ANTHROPIC_MODEL = "claude-sonnet-5"
 # Cheap-tier model for calls that don't need Sonnet's full reasoning (S4-b's art-brief
@@ -38,6 +38,24 @@ HAIKU_MODEL = "claude-haiku-4-5-20251001"
 # may provide the response back as-is in a subsequent request to let the model
 # continue" - i.e. resend the returned content as an assistant turn to continue.
 WEB_SEARCH_TOOL_TYPE = "web_search_20250305"
+
+
+# Account/vendor faults, not verdicts on a candidate's art: credit lapse, a file-download
+# timeout on Anthropic's side, and the connection/rate-limit/5xx/overloaded family.
+_TRANSIENT_400_MARKERS = ("credit balance is too low", "timed out while trying to download")
+TRANSIENT_FAULT_EXC_TYPES = (
+    anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError,
+)
+
+
+def is_transient_fault(exc: Exception) -> bool:
+    if isinstance(exc, TRANSIENT_FAULT_EXC_TYPES):
+        return True
+    if not isinstance(exc, anthropic.APIStatusError):
+        return False
+    if exc.status_code in (429, 529) or exc.status_code >= 500:  # 529 = overloaded
+        return True
+    return exc.status_code == 400 and any(m in str(exc) for m in _TRANSIENT_400_MARKERS)
 
 
 class NoTextContentError(RuntimeError):
@@ -73,9 +91,9 @@ class MalformedJSONError(ValueError):
 
 def parse_json_response(text: str) -> dict:
     """Parse a Claude text response as JSON, tolerating a ```json ... ``` fence
-    around it - despite "no other text" instructions, the model wraps its
+    around it (even after a prose preamble) - despite "no other text" instructions, the model wraps its
     answer in a markdown fence often enough that a bare json.loads is unreliable."""
-    match = _JSON_FENCE_RE.match(text.strip())
+    match = _JSON_FENCE_RE.search(text)
     candidate = match.group(1) if match else text
     try:
         return json.loads(candidate)
@@ -122,7 +140,9 @@ def _send_message(client, **params) -> dict:
     text_blocks = [block.text for block in message.content if getattr(block, "type", None) == "text"]
     if not text_blocks:
         raise NoTextContentError([getattr(block, "type", None) for block in message.content])
-    return {"text": "\n".join(text_blocks), "raw": message}
+    # "" not "\n": cited web_search answers are split into text blocks mid-string at
+    # each citation, so a newline separator corrupts the JSON (#248).
+    return {"text": "".join(text_blocks), "raw": message}
 
 
 # 4096, not 2048 (GL-13 precedent, critic_pass): web_search tool results eat

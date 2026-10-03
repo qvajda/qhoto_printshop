@@ -3,6 +3,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import anthropic
+import httpx
 import pytest
 
 import pipeline.critic_pass as critic_pass
@@ -1123,6 +1125,31 @@ def test_run_critic_pass_does_not_abandon_on_replicate_throttled_during_regen(tm
     with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response), \
          patch("pipeline.generate.generate_for_candidate",
                side_effect=replicate_client.ReplicateThrottledError(retry_after=10.0)):
+        result = critic_pass.run_critic_pass(
+            conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
+            store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
+            now=datetime(2026, 7, 10, 12, 0, 0),
+        )
+
+    assert result["transient"] is True
+    candidate_row = conn.execute("SELECT status FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    assert candidate_row["status"] == "generating"
+    conn.close()
+
+
+def test_run_critic_pass_does_not_abandon_on_anthropic_credit_balance_during_regen(tmp_path):
+    # #249
+    conn = _fresh_conn(tmp_path)
+    candidate_id = _insert_ready_candidate(conn, niche="monstera line art")
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    credit_error = anthropic.BadRequestError(
+        "Your credit balance is too low to access the Anthropic API",
+        response=httpx.Response(400, request=request), body=None,
+    )
+
+    fake_critic_response = _verdict_response("reject", {4: "off-center composition"})
+
+    with patch("pipeline.critic_pass.anthropic_client.complete_with_images", return_value=fake_critic_response),          patch("pipeline.generate.generate_for_candidate", side_effect=credit_error):
         result = critic_pass.run_critic_pass(
             conn, candidate_id, static_config=STATIC_CONFIG, anthropic_api_key="key1",
             store_id="store1", gelato_api_key="key2", replicate_api_token="tok1",
