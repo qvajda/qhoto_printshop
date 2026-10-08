@@ -349,10 +349,15 @@ def alert_prompt(num: int, clause: str) -> str:
             f"suggests) - do not choose for them.")
     return (
         f"Read issue #{num} on this repo's tracker - it is waiting on the "
-        f"owner ({clause}). State the situation in a few lines, propose "
-        f"exactly one recommendation with at most four options, then wait "
-        f"for the owner - this reaches them, it does not act on their "
-        f"behalf.")
+        f"owner ({clause}). Read the issue's comments first: the loop "
+        f"writes why it stopped there, with each failed run's tail. Find "
+        f"the cause, not just the label. If the loop did something it "
+        f"should not have (re-cut a cut epic, retried done work), say so "
+        f"plainly as a qops defect - a label on the row only hides it. "
+        f"State the situation in a few lines, propose exactly one "
+        f"recommendation with at most four options. Leaving the row as it "
+        f"is is a valid answer. Then wait for the owner - this reaches "
+        f"them, it does not act on their behalf.")
 
 
 def alert_argv(num: int, clause: str, name: str) -> list[str]:
@@ -386,25 +391,66 @@ def _alert(argv: list[str], root: Path, cfg: dict) -> int:
               "state is UNKNOWN, which is not the same as empty.",
               file=sys.stderr)
         return 1
-    reap_rc = _reap(argv, root, cfg, rows)
-    waiting = pending.waiting_on_owner(root, rows)
+    freed: set = set()
+    reap_rc = _reap(argv, root, cfg, rows, freed)
+    # A row released this pass is judged on the next one: `rows` still shows
+    # the labels just taken off it, and a leftover hold read from there
+    # would relaunch - and reclaim - the very row it freed (#301).
+    waiting = [l for l in pending.waiting_on_owner(root, rows)
+               if int(l.split()[0].lstrip("#")) not in freed]
     if not waiting:
         print("pickup-loop: nothing waiting on the owner.")
         return reap_rc
-    line = waiting[0]
-    num = int(line.split()[0].lstrip("#"))
+    # A row whose last alert session is still running (or cannot be told) is
+    # skipped whatever relabelled it since (#300): the label claim is not the
+    # only writer, so the pid is asked here, in the one launch path.
+    image = Path(alert_argv(0, "", "")[0]).name
+    for line in waiting:
+        num = int(line.split()[0].lstrip("#"))
+        launch = None
+        for rec in ledger.read(root):
+            if rec.get("event") == "alert_launched" and rec.get("issue") == num:
+                launch = rec
+        if launch is None or "pid" not in launch:
+            break
+        if _pid_alive(launch["pid"], image) is False:
+            # Edge, not level (#304, ADR-0031 §5): a row left exactly as the
+            # owner was shown it was answered, so it is not shown again.
+            # Whole snapshot, never the clause alone - a row with two
+            # clauses would alternate between them every pass.
+            if "seen" not in launch or launch["seen"] != _seen(rows, waiting, num):
+                break
+            print(f"pickup-loop: #{num} is waiting on the owner but is "
+                  f"unchanged since its alert session was shown - not "
+                  f"launching another.")
+            continue
+        print(f"pickup-loop: #{num} is waiting on the owner but its alert "
+              f"session {launch['pid']} is still running - not launching "
+              f"another.")
+    else:
+        return reap_rc
     clause = line.split(" — ", 1)[1]
     name = alert_session_name(cfg.get("project", "qops"), num, clause)
     print(f"pickup-loop: #{num} is waiting on the owner - {clause}")
     if "--launch" not in argv:
         print(f"pickup-loop: dry run, not alerting. Would launch {name!r}.")
         return reap_rc
+    seen = _seen(rows, waiting, num)
     row = next((r for r in rows if r["number"] == num), None)
     existing = {l["name"] for l in (row or {}).get("labels", [])}
     prior_state = next((l for l in existing if l.startswith("state:")), None)
-    added = ["state:building", "no-auto"]
+    # Only what this claim adds: a label the owner put there is never recorded,
+    # so `_reap` can never take it away (#301).
+    # A done row stays done (#316): its PR is merged, so a swap to building
+    # only has reconcile swap it back, with a comment, hourly.
+    # The pid is the claim that holds (#300).
+    done = prior_state == "state:done"
+    wanted = ["state:building", "no-auto"]
+    if done:
+        del wanted[0]
+    added = [l for l in wanted if l not in existing]
     claim = ["gh", "issue", "edit", str(num)]
-    if prior_state:
+    if prior_state and not done:
         claim += ["--remove-label", prior_state]
     for label in added:
         claim += ["--add-label", label]
@@ -433,9 +479,20 @@ def _alert(argv: list[str], root: Path, cfg: dict) -> int:
     # `session` (the display name) alone carries neither.
     ledger.append(root, "alert_launched",
                   {"issue": num, "session": name, "pid": proc.pid,
-                   "prior_state": prior_state, "added": added})
+                   "prior_state": prior_state, "added": added,
+                   "seen": seen})
     print(f"pickup-loop: launched {name!r} for #{num}.")
     return reap_rc
+
+
+def _seen(rows: list[dict], waiting: list[str], num: int) -> dict:
+    """The row as the owner is shown it: its labels and every clause that
+    holds it in `waiting_on_owner()` (#304). Read before the claim, so the
+    labels are the ones `_reap` restores."""
+    row = next((r for r in rows if r["number"] == num), None)
+    return {"labels": sorted(l["name"] for l in (row or {}).get("labels", [])),
+            "clauses": sorted(l.split(" — ", 1)[1] for l in waiting
+                              if int(l.split()[0].lstrip("#")) == num)}
 
 
 def _pid_alive(pid: int, image: str) -> bool | None:
@@ -474,7 +531,8 @@ def _pid_alive(pid: int, image: str) -> bool | None:
     return str(pid) in out.stdout
 
 
-def _reap(argv: list[str], root: Path, cfg: dict, rows: list[dict]) -> int:
+def _reap(argv: list[str], root: Path, cfg: dict, rows: list[dict],
+          freed: set | None = None) -> int:
     """Release a claim whose session is gone (#147, ADR-0031 §5).
 
     Runs ahead of `waiting_on_owner()` (called from `_alert`, before it reads
@@ -490,13 +548,28 @@ def _reap(argv: list[str], root: Path, cfg: dict, rows: list[dict]) -> int:
     written here, so this function names no label of its own.
     """
     unreadable = False
-    for row, _ in pending.claimed_rows(root, rows):
+    # The latest launch/release per row: a launch is open until a release
+    # follows it, so a row is never reaped twice for one claim.
+    latest: dict = {}
+    for rec in ledger.read(root):
+        if rec.get("event") in ("alert_launched", "alert_released"):
+            latest[rec.get("issue")] = rec
+    for row in rows:
         num = row["number"]
-        launch = None
-        for rec in ledger.read(root):
-            if rec.get("event") == "alert_launched" and rec.get("issue") == num:
-                launch = rec
-        if launch is None or "pid" not in launch:
+        launch = latest.get(num)
+        if (launch is None or launch.get("event") != "alert_launched"
+                or "pid" not in launch):
+            continue
+        labels = {l["name"] for l in row.get("labels", [])}
+        # A row someone else moved since (reconcile's done) is no longer
+        # claimed, but the launch's leftover labels still are ours (#301).
+        # None left means nothing to release, so no pid is asked.
+        added = launch.get("added", [])
+        leftover = [l for l in added if l in labels]
+        if not leftover:
+            if "--launch" in argv:
+                ledger.append(root, "alert_released",
+                              {"issue": num, "pid": launch["pid"]})
             continue
         image = Path(alert_argv(0, "", "")[0]).name
         alive = _pid_alive(launch["pid"], image)
@@ -510,10 +583,11 @@ def _reap(argv: list[str], root: Path, cfg: dict, rows: list[dict]) -> int:
                   f"{launch['pid']} is gone.")
             continue
         claim = ["gh", "issue", "edit", str(num)]
-        for label in launch.get("added", []):
+        for label in leftover:
             claim += ["--remove-label", label]
         prior_state = launch.get("prior_state")
-        if prior_state:
+        # Restored only while the state this claim wrote is still on the row.
+        if prior_state and any(l.startswith("state:") for l in leftover):
             claim += ["--add-label", prior_state]
         released = subprocess.run(claim, cwd=root, capture_output=True, text=True)
         if released.returncode:
@@ -522,6 +596,8 @@ def _reap(argv: list[str], root: Path, cfg: dict, rows: list[dict]) -> int:
             unreadable = True
             continue
         ledger.append(root, "alert_released", {"issue": num, "pid": launch["pid"]})
+        if freed is not None:
+            freed.add(num)
         print(f"pickup-loop: released #{num} - session {launch['pid']} is gone.")
     if unreadable:
         print("pickup-loop: could not tell whether every claimed session is "
@@ -943,10 +1019,13 @@ def _decompose(argv: list[str], root: Path, cfg: dict, rows: list[dict]) -> int:
     if "--launch" not in argv:
         print("pickup-loop: dry run, not decomposing. Pass --launch to start an agent.")
         return 0
+    before = sub_issue_count(root, repo, num)
+    if before is None:
+        print(f"pickup-loop: #{num} - sub-issues unreadable; not decomposing.")
+        return 1
     log = run_log_path(root, num)
     ledger.append(root, "pickup", {"issue": num, "log": str(log), "mode": "decompose"})
     print(f"pickup-loop: run log {log}")
-    before = sub_issue_count(root, repo, num)
     with log.open("w", encoding="utf-8", errors="replace") as fh:
         # The planner role's toolset and model, reused rather than a second
         # role file: filing a child is `gh issue create`, which is Bash - the
@@ -987,37 +1066,47 @@ def first_decomposable(root: Path, repo: str, rows: list[dict]) -> dict | None:
             print(f"pickup-loop: skipping #{num} - struck out after "
                   f"{STRIKES} failed runs (#49).")
             continue
-        # An epic with sub-issues is skipped unless it already carries a
-        # does-not-cover verdict for exactly this child set - otherwise a
-        # partial cut would be invisible to every later pass.
-        if sub_issue_count(root, repo, num) > 0 and not uncovered(root, repo, num):
+        # A cut epic is not touched while any child is open (a child with no
+        # `state` is not known closed). Once all are closed it is skipped
+        # unless it carries a does-not-cover verdict for exactly this child
+        # set - otherwise a partial cut would be invisible to every later pass.
+        children = sub_issues(root, repo, num)
+        if children is None:
+            print(f"pickup-loop: skipping #{num} - its sub-issues could not "
+                  f"be read, so it is not known to be uncut.")
+            continue
+        if children and (any(c.get("state") != "closed" for c in children)
+                         or not uncovered(root, repo, num)):
             continue
         return row
     return None
 
 
-def sub_issues(root: Path, repo: str, num: str) -> list[dict]:
+def sub_issues(root: Path, repo: str, num: str) -> list[dict] | None:
     """The epic's native sub-issues, read through the REST endpoint
-    `qops/reconcile.py:parent_origin` already reads the other side of (#81)."""
+    `qops/reconcile.py:parent_origin` already reads the other side of (#81).
+    `None` is an unreadable list, which is not `[]` - "no children"."""
     out = subprocess.run(["gh", "api", f"repos/{repo}/issues/{num}/sub_issues"],
                          cwd=root, capture_output=True, text=True)
     if out.returncode:
-        return []
+        return None
     try:
         return json.loads(out.stdout or "[]")
     except json.JSONDecodeError:
-        return []
+        return None
 
 
-def sub_issue_count(root: Path, repo: str, num: str) -> int:
-    return len(sub_issues(root, repo, num))
+def sub_issue_count(root: Path, repo: str, num: str) -> int | None:
+    kids = sub_issues(root, repo, num)
+    return None if kids is None else len(kids)
 
 
 def produced_children(root: Path, repo: str, num: str, before: int) -> bool:
     """A session that exits 0 having filed nothing is a failed run, not a
     decomposed epic (the same rule `produced_work()` and `produced_plan()`
     apply to their own runs)."""
-    return sub_issue_count(root, repo, num) > before
+    after = sub_issue_count(root, repo, num)
+    return after is not None and before is not None and after > before
 
 
 COVERAGE_MARKER = "<!-- qops-coverage:"
@@ -1175,7 +1264,10 @@ def decompose_prompt(num: str) -> str:
         f"its number). Leave #{num} itself untouched apart from those links: "
         f"no label, no body edit. Never decompose recursively - a child that "
         f"is itself too large is ADR-0027's refusal path, not a second pass "
-        f"of this one. Never write `type:milestone`. If the epic cannot be "
+        f"of this one. Where issues already carry some of the epic's scope "
+        f"(named in its body or comments, or cut by hand), link those "
+        f"instead of filing duplicates, as native sub-issues - a link is the cut. "
+        f"Never write `type:milestone`. If the epic cannot be "
         f"cut into sorties that pass the filing bar, file none, say so on "
         f"issue #{num} as a comment, and stop.")
 def clarified(root: Path, cfg: dict, num: str) -> bool:
