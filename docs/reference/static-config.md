@@ -59,7 +59,7 @@ currency: **EUR**.
 
 | Field | Value | How it was resolved |
 |---|---|---|
-| `taxonomy_id` | **1027** | live `getSellerTaxonomyNodes`. "Home & Living > Home Decor > Wall Decor". Etsy has no plain Posters/Wall Art leaf; this parent beat "Art & Collectibles > Prints > Giclée" (121). See `docs/adr/0011-etsy-taxonomy-1027.md` |
+| `taxonomy_id` | **1029** | live `getSellerTaxonomyNodes`: "Home & Living > Home Decor > Wall Decor > Wall Hangings", a child of 1027 (#262). Was 1027 until 2026-10-12; revert with `scripts/retaxonomy_live_listings.py --to 1027` plus this value. `etsy_listing_properties` ids (Material multi 148789511893, Framing 145330288558) are identical on 1029 per `getPropertiesByTaxonomyId`. See `docs/adr/0011-etsy-taxonomy-1027.md` |
 | `shipping_profile_id` | **288734253315** | "Gelato: Free shipping", €0 to every destination. Confirmed live 2026-08-01. **One per candidate, not per group** — see `docs/constraints/003-one-shipping-profile-per-listing.md` |
 | `production_partner_ids` | **[5717252]** | live `getShopProductionPartners`, after Gelato was added manually in Shop Manager → Settings → Partners you work with (listed as "A print shop", Brussels, Belgium) |
 | `who_made` | **`i_did`** | the API enum has only 3 raw values and no AI-disclosure field. Pair with `is_supply: false` and `when_made: "made_to_order"`. See `docs/constraints/002-who-made-i-did.md` |
