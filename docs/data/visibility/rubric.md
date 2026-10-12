@@ -206,7 +206,7 @@ Pages 1–3 (21 pages): 1,235 cards, 326 ads, 909 organic; free 660 (73 %),
 | field | theirs (20) | theirs, shops < 500 (14) | ours |
 | --- | --- | --- | --- |
 | category deeper than Wall Decor | **17** (85 %) | **12** (86 %) | **0/132** (1027 = Wall Decor) |
-| first image = room (of coded) | **13/18** (72 %) | **10/13** (77 %) | **0/133** (flat_mockup at gallery_order 0 on 133/133; live 2/2) |
+| first image = room (of coded) | **13/18** (72 %) | **10/13** (77 %) | DB: flat_mockup at gallery_order 0 on 133/133; live 2/2 flat. **Not the live order**: the owner reordered many by hand (2026-10-12) |
 | video in gallery | 14 (70 %) | 9 (64 %) | 0 |
 | gallery images | 6–17 | — | 13 |
 | free shipping (of 19 physical) | 16 | — | yes |

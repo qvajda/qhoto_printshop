@@ -19,12 +19,13 @@ this repo. Prices are owner-set. Ads budget/bid is out of scope.
 We are **absent from pages 1–3 on 7 of 7 keywords**, and even a query made of
 our own most-viewed listing's title finds it organically only on **page 3**.
 The page-1 competitors are mostly **small shops** (73 % under 500 reviews), so
-shop age is not what keeps us out. Two inputs separate us cleanly from what
-ranks, and both are inputs Etsy names itself: the **category** (132/132 of ours
-sit on a parent node, while 17/20 top listings use a deeper leaf) and the **first
-image** (all of ours lead with a flat mockup, while 13/18 top listings lead with a
-room scene). A third is a query-side trap: Etsy rewrites any "vintage" query
-to the Vintage category, and 61/134 of our titles spend a token on it.
+shop age is not what keeps us out. One input separates us cleanly from what
+ranks, and Etsy names it itself: the **category** (132/132 of ours sit on a
+parent node, while 17/20 top listings use a deeper leaf). The first image
+looked like a second one, but the owner dropped it after review (our live
+gallery order is not what the DB shows). A query-side trap comes on top:
+Etsy rewrites any "vintage" query to the Vintage category, and 61/134 of our
+titles spend a token on it.
 
 ## Rules
 
@@ -34,7 +35,7 @@ Tag: **S** = structural (what search can match, what the platform permits),
 | # | Rule | Evidence (count) | Surface | Tag |
 | --- | --- | --- | --- | --- |
 | 1 | **Use a category deeper than Wall Decor.** (L-category: **GAP**, secondary) | 17/20 top-organic listings use a category below Wall Decor (Wall Hangings 6, Giclée 4, Digital Prints 4, Watercolor 2, Murals 1). It is 12/14 among shops with < 500 reviews, and 13/14 among print-type listings only. Ours: 132/132 on `taxonomy_id` 1027, which renders as Home & Living > Home Decor > Wall Decor, the parent of Wall Hangings. Etsy's own Search Visibility help page lists "the listing's category is as specific as possible" among the requirements for priority placement | `config/static_config.json` `etsy_taxonomy_id`; amend `docs/adr/0011-etsy-taxonomy-1027.md` | S |
-| 2 | **Lead the gallery with a room scene.** (L-first-image: **GAP**, secondary, marginal) | 13/18 coded top-organic first images show the art in a room (10/13 among shops < 500). Ours: `flat_mockup` at `gallery_order` 0 on 133/133 (2/2 confirmed live). Our galleries already hold 1,119 `lifestyle` images. **Sensitivity:** recoding one room as framed drops it to 12/18 = 67 %, under the 70 % bar. Across all page-1 cards (ads included) room leads in 31/56 (55 %) | gallery order, `pipeline/group_mockup.py` | A |
+| 2 | **Lead the gallery with a room scene.** (L-first-image: was GAP, marginal; **dropped by owner** 2026-10-12, see decision) | 13/18 coded top-organic first images show the art in a room (10/13 among shops < 500). Ours: **unknown**. The DB has `flat_mockup` at `gallery_order` 0 on 133/133 (2/2 sampled live were flat), but the owner reordered many galleries by hand on Etsy, so the DB is not the live order. Our galleries already hold 1,119 `lifestyle` images. **Sensitivity:** recoding one room as framed drops it to 12/18 = 67 %, under the 70 % bar. Across all page-1 cards (ads included) room leads in 31/56 (55 %) | gallery order, `pipeline/group_mockup.py` | A |
 | 3 | **Treat "vintage" as a blocked token.** | Any query containing `vintage` is rewritten to `/search/vintage` ("Showing botanical print in vintage", Vintage filter applied) in 3 of 3 tries. 61/134 of our titles contain "vintage". Ours are `made_to_order`, so they cannot be in that result set, and must not be. 2/20 top-organic competitors carry "Vintage from the 19th century" on reproduction prints. Not verified: whether Etsy also discounts the token on non-vintage queries | title/tag prompt, `pipeline/compliance_draft.py` (with the #244 title rules) | S |
 | 4 | **More of the same niche adds no visibility.** (L-concentration: **GAP** by rule) | Keywords where we hold ≥ 10 title matches: botanical print 101, sage green wall art 39, botanical line art print 35, quiet luxury wall art 14. All 4 are absent from pages 1–3. **Confound, same breath:** the positive control shows we rank on page 3 even for our own title, so the absence is ranking-wide and not only self-competition. Etsy's disclosure names *frequency capping* (limits on the same shop at the top for a keyword), which is the mechanism that would make concentration cost slots | niche sourcing, `candidates.niche`; #243 / #134 | S |
 | 5 | **Query match is not the gap.** (L-tag/query: **NULL**) | 177/239 (74 %) page-1 organic titles carry every query token. Ours: 105/132 (80 %) carry every token of ≥ 1 keyword. The internal +35 pp exact-tag contrast (organic 15 vs zero 109) stands, but it is confounded by niche and age (rubric §2) | `TAG_BANDS`, `pipeline/compliance_draft.py`: no change | S |
@@ -85,6 +86,8 @@ Tag: **S** = structural (what search can match, what the platform permits),
 | Brief §3 "ranked primary" via internal contrast for category and first image | Not computable: ours hold one value on 132/132 and 133/133, so there is no internal contrast. Both are ranked **secondary** by construction, not by evidence against them |
 | Brief §6 treats "listed on" as recency | It tracks renewal (old ids with dozens of reviews show October dates), so it is read as a renewal signal |
 | Brief keyword list treated all 7 as poster keywords | `biophilic wall art` is BLOCKED (moss panels); `quiet luxury wall art` is a weak fit |
+| Rule 2 / rubric §8: "ours 0/133 room-first", read from `product_images.gallery_order` | The owner reordered many galleries by hand on Etsy (2026-10-12), so the DB does not hold the live first image. Ours is unknown; the lever was dropped |
+| Decision "what would change this": Search visibility page check pending | Owner checked: it flags titles only (#258), no category flag. L-category stays GAP by count, with weaker primary-source support |
 | Brief assumed our availability is uniform | gp 4 is unavailable; the other 132 could not be checked in bulk (403) |
 
 ## Verification pass

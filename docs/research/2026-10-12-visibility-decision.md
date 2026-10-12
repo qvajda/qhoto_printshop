@@ -25,7 +25,7 @@ L-concentration and L-recency have their own rules (brief §3).
 | Lever | Outcome | Theirs (top organic) | Under-500 test | Ours | Rank |
 | --- | --- | --- | --- | --- | --- |
 | **L-category** | **GAP** | 17/20 deeper than Wall Decor (85 %) | 12/14 (86 %) ✓ | 0/132 | secondary (ours is one value on 132/132, so no internal contrast exists) |
-| **L-first-image** | **GAP (marginal)** | room first 13/18 (72 %) | 10/13 (77 %) ✓ | 0/133 | secondary, same reason. One recode drops it to 67 % |
+| L-first-image | **dropped by owner** (was GAP, marginal) | room first 13/18 (72 %) | 10/13 (77 %) ✓ | **unknown**: DB says flat on 133/133, but the owner reordered many galleries by hand on Etsy (2/2 sampled live were flat) | no sales effect seen from those reorders; not pursued |
 | **L-concentration** | **GAP** (own rule) | — | — | ≥ 10 title matches on 4 keywords; absent from pages 1–3 on all 4 | — (confounded: we're page 3 even on our own title) |
 | L-tag/query match | NULL | 74 % carry every query token | — | 80 % | internal +35 pp exact-tag, but confounded |
 | L-trust | NULL | 73 % of page-1 organic from < 500-review shops | — | 2 reviews | exception: `watercolor botanical print` |
@@ -38,19 +38,32 @@ L-concentration and L-recency have their own rules (brief §3).
 | (gallery video) | NULL | 14/20 (70 %) | 9/14 (64 %) ✗ | 0 | fails test by one listing |
 
 No GAP is ranked primary. That is not because evidence ran against it: on
-both GAP fields every one of our listings holds the same value, so there is
-nothing to contrast internally.
+L-category every one of our listings holds the same value, so there is nothing
+to contrast internally.
+
+## Owner review, 2026-10-12
+
+- **First image: dropped.** The owner has already reordered many galleries by
+  hand for a nicer thumbnail. That made no visible difference (0 sales either
+  way), and it also means the DB's `gallery_order` does not show the live
+  first image, so "ours 0/133" was wrong (see findings, corrections).
+- **Category change: accepted in principle, on the condition that it helps
+  sales.** So it ships as a measured change, not a settled fix (row 1 below).
+- **Search visibility page: checked by the owner. It flags titles only**
+  (being handled in #258), with **no category flag**. Etsy's own tool
+  therefore does not confirm L-category. It stays GAP by count, but its
+  primary-source support is weaker than the findings first stated.
+- All other findings accepted.
 
 ## Recommended follow-up rows, in order
 
 Each is a **proposal**. None is applied, and each needs its own sortie and the
 owner's go-ahead, because changes to live listings are live writes.
 
-1. **Category (L-category).** Cheapest and best sourced, since Etsy's own help
-   page names a specific category as a priority-placement requirement.
-   - First, the owner reads Shop Manager → *Search visibility* and the Listings
-     "Search factors" filter. If Etsy already flags our listings for category,
-     that confirms the lever at no cost.
+1. **Category (L-category), as a measured change.** Etsy's help page names a
+   specific category as a priority-placement requirement, but the shop's
+   Search visibility page does not flag ours (owner, 2026-10-12). So the
+   change must earn its keep by measurement.
    - Build: resolve the leaf under Wall Decor (Wall Hangings is the one 6/20 top
      listings use, and it keeps ADR-0011's Home Decor reasoning) via
      `getSellerTaxonomyNodes`. Set it in `config/static_config.json`, then check
@@ -58,17 +71,15 @@ owner's go-ahead, because changes to live listings are live writes.
      `docs/adr/0011-etsy-taxonomy-1027.md` rather than overriding it.
      Re-PATCHing the 132 live listings is its own step.
    - Measure: re-run the 7-keyword rank scan 14 days after (the brief's
-     scan, same conditions).
-2. **First image (L-first-image).** Our galleries already hold room scenes
-   (1,119 `lifestyle` images). The change is the order, in
-   `pipeline/group_mockup.py`, not new generation. It is marginal by count, so
-   run it as a measured change, ideally on half the catalogue so there is a
-   contrast to read.
-3. **"vintage" token (finding 3).** Drop "vintage" from title generation
+     scan, same conditions), plus views and orders from the snapshots. The
+     owner's condition is sales; with near-zero baseline traffic, views and
+     rank are the earlier readable signal. If neither moves, revert is cheap
+     (one config value plus a PATCH).
+2. **"vintage" token (finding 3).** Drop "vintage" from title generation
    (`pipeline/compliance_draft.py`), keep "vintage-style"/"antique-style" only if
    a later check shows those aren't rewritten too. Route through the #244 title
    rules owner. Never set `when_made` to a vintage value: the prints are new.
-4. **Concentration (L-concentration).** Goes to niche sourcing (#243 / #134):
+3. **Concentration (L-concentration).** Goes to niche sourcing (#243 / #134):
    stop adding to botanical/sage until something in those clusters ranks inside
    3 pages. Drop `biophilic wall art` as a target keyword (BLOCKED, moss panels).
 
@@ -78,10 +89,10 @@ own data shows no decay); sets (#67 evidence: 33/33 on the set query).
 
 ## What would change this
 
-- A *Search visibility* page that shows no category flag on our listings
-  weakens #1. Then do #2 first.
+- (Resolved 2026-10-12: the Search visibility page shows no category flag,
+  so #1 runs as a measured change rather than a confirmed fix.)
 - A second sweep from another region/ship-to that puts us inside 3 pages
   would turn L-concentration NULL.
-- Rank scan after #1 ships with no movement on any keyword: then the
-  remaining explanation is engagement (clicks, favourites) and the first image
-  is the next lever, not category.
+- Rank scan after #1 ships with no movement on any keyword: revert #1. The
+  remaining explanation is then engagement (clicks, favourites), and the first
+  image becomes worth reopening, despite the owner's drop.
