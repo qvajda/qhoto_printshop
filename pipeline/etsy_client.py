@@ -468,3 +468,40 @@ def find_all_listings_active(
     url = f"{ETSY_API_BASE}/listings/active?{query}"
     request = urllib.request.Request(url, headers=_headers(api_key, api_secret), method="GET")
     return http.send(request)
+
+
+def get_taxonomy_properties(
+    taxonomy_id: int, *, api_key: str = None, api_secret: str = None, access_token: str = None
+) -> list:
+    """getPropertiesByTaxonomyId: the properties (and their value ids) a taxonomy node offers."""
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/seller-taxonomy/nodes/{taxonomy_id}/properties"
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="GET")
+
+    return _call_with_refresh(_build, access_token)["results"]
+
+
+def get_listing_properties(
+    shop_id: str, listing_id: str, *, api_key: str = None, api_secret: str = None,
+    access_token: str = None, dry_run: bool = None
+) -> list:
+    """getListingProperties: the attributes actually set on the listing (for read-back)."""
+    if dry_run is None:
+        dry_run = not config.is_live_mode("ETSY")
+
+    if dry_run:
+        return []
+
+    api_key = api_key or config.require_env("ETSY_API_KEY")
+    api_secret = api_secret or config.require_env("ETSY_API_SECRET")
+    access_token = access_token or config.require_env("ETSY_ACCESS_TOKEN")
+    url = f"{ETSY_API_BASE}/shops/{shop_id}/listings/{listing_id}/properties"
+
+    def _build(token):
+        return urllib.request.Request(url, headers=_headers(api_key, api_secret, token), method="GET")
+
+    return _call_with_refresh(_build, access_token)["results"]
